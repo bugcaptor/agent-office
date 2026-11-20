@@ -322,5 +322,19 @@
     "moderator": "사회자",
     "debater": "토론자",
     "none": "적힌 것 없음"
+  },
+  "meetingBoard": {
+    "title": "회의록",
+    "moderator": "사회",
+    "round": "{{round}}라운드",
+    "speaking": "말하는 중",
+    "speakingFor": "말하는 중 · {{minutes}}분째",
+    "silent": "아직 발언 없음",
+    "question": "질문: {{text}}",
+    "ageNow": "방금",
+    "ageMinutes": "{{count}}분 전",
+    "ageHours": "{{count}}시간 전",
+    "collapse": "회의록 접기",
+    "expand": "회의록 펼치기"
   }
 }

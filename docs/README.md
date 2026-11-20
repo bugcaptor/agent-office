@@ -76,8 +76,9 @@
 | 사회자 주도 진행·상한·사용량 대기·마무리 | `discussion/discussionRun.ts`(부팅 배선 `bootstrap.ts`의 `installDiscussionRunner`) |
 | 결정 메모 | 작성 `discussion/discussionMemo.ts`, 저장 `discussions/memos/<id>.md`(`persistence/discussion_store.rs`), 브라우저 열기 `ipc/commands/doc_view.rs`, 렌더링 `markdown/renderMarkdown.ts` |
 | CLI에서 만들기 `office-task --discuss` | `discussion_cli.rs`(`create`) → 수신함 `persistence/discussion_inbox.rs` → 렌더러 `discussion/discussionInbox.ts`, 에이전트 안내 `office_instructions.rs` |
-| `ctl discuss list·status·memo·start·answer` | `control/discussion.rs`·`control/client.rs`, 쓰기 중계는 렌더러 `discussion/discussionControl.ts` |
-| 오피스 회의실 연출 | 맵 `office/map/mapData.ts`의 `meetingRoom`(오피스 풍경만), 토의 → 씬 정보 `discussion/officeStage.ts` → `officeBus.onDiscussionStageChanged`(`ipc/sessionBridge.ts`가 보냄) → `office/world/OfficeWorld.ts` → `office/entities/CharacterEntity.ts`·`behaviorFsm.ts`(`meeting` 상태), 말풍선·의사봉 `office/entities/DiscussionOverlay.ts`, 회의실 그림·팔레트 `office/scenes/officeScene.ts` |
+| `ctl discuss list·status·watch·memo·start·answer` | `control/discussion.rs`(참가자별 `speaking`·`last`), `control/client.rs`(`watch` 루프 `run_discuss_watch`), 쓰기 중계는 렌더러 `discussion/discussionControl.ts` |
+| 오피스 회의실 연출 | 맵 `office/map/mapData.ts`의 `meetingRoom`(오피스 풍경만), 토의 → 씬 정보 `discussion/officeStage.ts`(`speakingSince`) → `officeBus.onDiscussionStageChanged`(`ipc/sessionBridge.ts`가 보냄) → `office/world/OfficeWorld.ts` → `office/entities/CharacterEntity.ts`·`behaviorFsm.ts`(`meeting` 상태), 분신 `office/entities/MeetingAvatar.ts`(`OfficeWorld.syncMeetingAvatars`), 말풍선·의사봉 `office/entities/DiscussionOverlay.ts`, 회의실 그림·팔레트 `office/scenes/officeScene.ts` |
+| 회의록 보드 | 행 파생 `discussion/meetingBoardModel.ts`, 화면 `discussion/MeetingBoard.tsx`(`App.tsx`에 마운트), 회의실 화면 사각형 `OfficeScene.publishMeetingRoomRect` → `officeBus.onMeetingRoomRectChanged` |
 | gui 확인 | 시나리오 `discussions`·`meeting`, 스크립트 `scripts/gui-steps/discussion*.mjs` |
 
 ### 도구

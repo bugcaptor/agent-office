@@ -34,6 +34,7 @@ import { applyTerminalBg } from "./theme/applyTheme";
 import { resolveXtermTheme } from "./terminal/theme";
 import { terminalRegistry } from "./terminal/TerminalRegistry";
 import { TaskLabelLayer } from "./labels/TaskLabelLayer";
+import { MeetingBoard } from "./discussion/MeetingBoard";
 import { TerminalOverlay } from "./terminal/TerminalOverlay";
 import { MarkdownPalette } from "./markdown/MarkdownPalette";
 import { MarkdownEditorOverlay } from "./markdown/MarkdownEditorOverlay";
@@ -58,6 +59,7 @@ import { RepositoryAuditOverlay } from "./repository-audit/RepositoryAuditOverla
 //                                     오버레이(`useLightsOff`). 캔버스 위,
 //                                     라벨/UI 아래이며 클릭은 통과시킨다.
 //   Layer 0.5 (z:5) TaskLabelLayer   -- 머리 위 작업 라벨(DOM, pointer-events:none)
+//   Layer 0.6 (z:6) MeetingBoard     -- 토의 중 회의실 옆 회의록 보드(DOM, 보드만 클릭 받음)
 //   Layer 1 (z:10) UIChrome        -- TopBar/SessionTimePanel/NotificationTicker/
 //                                     BottomBar, pointer-events:none container.
 //                                     SessionTimePanel is mounted inside
@@ -136,6 +138,7 @@ function App() {
           </div>
         )}
         <TaskLabelLayer bus={officeBus} />
+        <MeetingBoard bus={officeBus} />
       </div>
       <UIChrome />
       <AgentHoverCard />

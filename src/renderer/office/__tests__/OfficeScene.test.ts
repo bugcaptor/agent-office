@@ -511,6 +511,28 @@ describe("award trophy + frame (이 달의 우수사원)", () => {
     return { officeScene, bus };
   }
 
+  it("회의실 화면 사각형은 바뀔 때만 알리고, 회의실 없는 풍경이면 null을 알린다", async () => {
+    const { OFFICE_MAP, TILE_SIZE } = await import("../map/mapData");
+    const { SCENES } = await import("../scenes/scenes");
+    const bus = createMockOfficeBus();
+    const rects: unknown[] = [];
+    bus.onMeetingRoomRectChanged((r) => rects.push(r));
+    rects.length = 0; // 구독 replay(null) 제외
+    const { officeScene } = await makeStartedScene(bus);
+    const tick = state.tickerAddSpy.mock.calls[0][0] as (t: { deltaMS: number }) => void;
+    tick({ deltaMS: 16 });
+    tick({ deltaMS: 16 });
+    expect(rects).toHaveLength(1);
+    const room = OFFICE_MAP.meetingRoom!.rect;
+    const rect = rects[0] as { w: number; h: number };
+    expect(rect.w / rect.h).toBe(room.w / room.h);
+    expect(rect.w % (room.w * TILE_SIZE)).toBe(0); // 정수 배율
+    officeScene.setScene(SCENES.valley);
+    tick({ deltaMS: 16 });
+    expect(rects[rects.length - 1]).toBeNull();
+    officeScene.destroy();
+  });
+
   it("확정 수상자가 없으면 트로피와 액자 콘텐츠 모두 숨겨진다", async () => {
     const { officeScene } = await makeStartedScene();
     const internals = officeScene as unknown as Internals;

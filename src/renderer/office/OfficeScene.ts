@@ -32,7 +32,7 @@ import type { ThemeDef } from "../theme/themes";
 import { SCENES } from "./scenes/scenes";
 import { awardFrameRectPx } from "./scenes/officeScene";
 import type { SceneDef, SceneRender } from "./scenes/sceneTypes";
-import type { LabelAnchor, OfficeAwardee, OfficeBus } from "./bus";
+import type { LabelAnchor, OfficeAwardee, OfficeBus, ScreenRect } from "./bus";
 import type { AgentProfile } from "./types";
 import { awardeeEquals, resolveAwardeeSeat, shouldShowAwardFrame } from "./awardee";
 import { TrophyOverlay } from "./entities/TrophyOverlay";
@@ -63,6 +63,8 @@ export class OfficeScene {
   private tickerCallback?: (ticker: Ticker) => void;
   private labelAnchorsWorld = new Map<string, LabelAnchor>();
   private labelAnchorsScreen = new Map<string, LabelAnchor>();
+  // 마지막으로 알린 회의실 화면 사각형. undefined = 아직 한 번도 알리지 않음.
+  private lastMeetingRoomRect: ScreenRect | null | undefined = undefined;
   // 현재 테마·풍경 + 전환 시 파기/재구축해야 하는 표시 객체 추적.
   // (캐릭터 엔티티는 sortableLayer를 공유하므로 레이어 통째 removeChildren은 불가.)
   private theme: ThemeDef;
@@ -659,6 +661,23 @@ export class OfficeScene {
       this.labelAnchorsScreen.set(id, worldToScreen(p.x, p.y, scale, ox, oy));
     }
     this.opts.bus.emitLabelAnchorsChanged(this.labelAnchorsScreen);
+    this.publishMeetingRoomRect(scale, ox, oy);
+  }
+
+  /** 회의실의 화면 사각형을 바뀔 때만 알린다(회의록 보드가 그 옆에 붙는다). 회의실 없는 풍경이면 null. */
+  private publishMeetingRoomRect(scale: number, ox: number, oy: number): void {
+    const room = this.map.meetingRoom?.rect;
+    let rect: ScreenRect | null = null;
+    if (room) {
+      const tl = worldToScreen(room.x * TILE_SIZE, room.y * TILE_SIZE, scale, ox, oy);
+      rect = { x: tl.x, y: tl.y, w: room.w * TILE_SIZE * scale, h: room.h * TILE_SIZE * scale };
+    }
+    const last = this.lastMeetingRoomRect;
+    const same = last !== undefined && (last === rect || (last !== null && rect !== null
+      && last.x === rect.x && last.y === rect.y && last.w === rect.w && last.h === rect.h));
+    if (same) return;
+    this.lastMeetingRoomRect = rect;
+    this.opts.bus.emitMeetingRoomRectChanged(rect);
   }
 
   destroy(): void {

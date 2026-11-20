@@ -322,5 +322,19 @@
     "moderator": "moderator",
     "debater": "debater",
     "none": "Nothing noted"
+  },
+  "meetingBoard": {
+    "title": "Minutes",
+    "moderator": "Chair",
+    "round": "Round {{round}}",
+    "speaking": "Speaking",
+    "speakingFor": "Speaking · {{minutes}}m",
+    "silent": "Nothing said yet",
+    "question": "Asked: {{text}}",
+    "ageNow": "just now",
+    "ageMinutes": "{{count}}m ago",
+    "ageHours": "{{count}}h ago",
+    "collapse": "Collapse minutes",
+    "expand": "Expand minutes"
   }
 }

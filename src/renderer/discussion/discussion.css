@@ -133,3 +133,123 @@
 .discussion-memo-body h1 { font-size: 1.1rem; }
 .discussion-memo-body h2 { font-size: 1rem; }
 .discussion-memo-body h3 { font-size: 0.92rem; border-bottom: 0; }
+
+/* ── 회의록 보드(오피스 회의실 옆) ── 작업 라벨처럼 캔버스 위에 뜨므로 테마와 무관한 어두운 반투명 판을 쓴다. */
+.meeting-board-layer {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  overflow: hidden;
+  /* 작업 라벨(z:5) 위, UIChrome(z:10) 아래 */
+  z-index: 6;
+}
+
+.meeting-board {
+  position: absolute;
+  width: 280px;
+  max-width: calc(100% - 16px);
+  pointer-events: auto;
+  background: rgba(16, 16, 24, 0.84);
+  border: 1px solid rgba(255, 233, 168, 0.35);
+  border-radius: 4px;
+  font-family: "Galmuri11", monospace;
+  font-size: 11px;
+  line-height: 1.35;
+  color: #e8e8f0;
+}
+
+/* 회의실이 없는 풍경: 오피스 화면 왼쪽 위 */
+.meeting-board.docked {
+  left: 12px;
+  top: 52px;
+}
+
+.meeting-board-head {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  width: 100%;
+  padding: 4px 6px;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.meeting-board:not(.collapsed) .meeting-board-head {
+  border-bottom: 1px solid rgba(255, 255, 255, 0.12);
+}
+
+.meeting-board-title {
+  color: #ffe9a8;
+  flex: none;
+}
+
+.meeting-board-topic {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.meeting-board-state {
+  flex: none;
+  color: #9fd1ff;
+}
+
+.meeting-board-rows {
+  list-style: none;
+  margin: 0;
+  padding: 3px 6px 5px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.meeting-board-row {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  min-width: 0;
+}
+
+.meeting-board-name {
+  flex: none;
+  max-width: 84px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: #ffe9a8;
+}
+
+.meeting-board-tag {
+  margin-left: 3px;
+  padding: 0 3px;
+  border-radius: 2px;
+  background: rgba(217, 162, 74, 0.35);
+  color: #f6d58e;
+}
+
+.meeting-board-text {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.meeting-board-row.speaking .meeting-board-text {
+  color: #9fd1ff;
+}
+
+.meeting-board-row.silent .meeting-board-text {
+  opacity: 0.5;
+}
+
+.meeting-board-when {
+  flex: none;
+  opacity: 0.65;
+}

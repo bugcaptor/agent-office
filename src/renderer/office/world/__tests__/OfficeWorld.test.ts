@@ -25,6 +25,7 @@ import { tileCenterPx } from "../pathing";
 import { createMockOfficeBus } from "../../bus";
 import type { AgentProfile } from "../../types";
 import { CharacterEntity } from "../../entities/CharacterEntity";
+import { MEETING_AVATAR_ALPHA } from "../../entities/MeetingAvatar";
 
 const hoisted = vi.hoisted(() => ({
   createCharacterAssetsSpy: vi.fn(),
@@ -816,6 +817,62 @@ describe("OfficeWorld: 토의 연출(onDiscussionStageChanged)", () => {
     bus.triggerDiscussionStageChanged(null);
     settle(world);
     expect(posOf(world, "m")).not.toEqual(seatPos(0));
+  });
+
+  // 분신 = 의자에 고정된 반투명 캐릭터. 본체 스프라이트는 불투명이라 투명도로 가른다.
+  const clones = (layer: Container) =>
+    layer.children.filter((c) => (c.children[0] as { alpha?: number } | undefined)?.alpha === MEETING_AVATAR_ALPHA);
+  const shownClones = (layer: Container) => clones(layer).filter((c) => c.visible).map((c) => ({ x: c.x, y: c.y }));
+
+  it("분신: 본업 중인 참가자의 의자를 채우고, 본체가 앉으면 숨고, 본체가 일어나면 바로 다시 나온다", () => {
+    const { bus, world, characterLayer } = makeWorld(OFFICE_MAP);
+    world.syncAgents([profile("m"), profile("a")]);
+    bus.triggerSessionStateChanged("a", "running");
+    bus.triggerDiscussionStageChanged({ discussionId: "d1", members: [
+      { agentId: "m", moderator: true, speaking: false },
+      { agentId: "a", moderator: false, speaking: true },
+    ] });
+    settle(world);
+    expect(posOf(world, "a")).not.toEqual(seatPos(1));
+    expect(shownClones(characterLayer)).toEqual([seatPos(1)]); // 쉬던 사회자는 본체가 앉아 분신이 없다
+    const clone = clones(characterLayer).find((c) => c.visible)!;
+    expect(clone.children[1].visible).toBe(true); // 발언 말풍선은 분신에
+    tap(clone.children[0]);
+    expect(bus.clickedAgentIds).toEqual(["a"]);
+
+    bus.triggerSessionStateChanged("a", "exited");
+    settle(world);
+    expect(posOf(world, "a")).toEqual(seatPos(1));
+    expect(shownClones(characterLayer)).toEqual([]);
+    bus.triggerSessionStateChanged("a", "running");
+    world.update(16);
+    expect(shownClones(characterLayer)).toEqual([seatPos(1)]);
+  });
+
+  it("분신: 책상이 없어 본체가 없는 참가자도 회의실에 앉는다", () => {
+    const { bus, world, characterLayer } = makeWorld({ ...OFFICE_MAP, desks: OFFICE_MAP.desks.slice(0, 1) });
+    world.syncAgents([profile("m"), profile("a")]);
+    bus.triggerDiscussionStageChanged(stage(["m", "a"]));
+    settle(world);
+    const anchors = new Map<string, { x: number; y: number }>();
+    world.collectLabelAnchors(anchors);
+    const deskless = ["m", "a"].findIndex((id) => !anchors.has(id));
+    expect(deskless).not.toBe(-1);
+    expect(shownClones(characterLayer)).toEqual([seatPos(deskless)]);
+  });
+
+  it("분신: 토의가 끝나거나 회의실 없는 풍경이면 없다", () => {
+    const { bus, world, characterLayer } = makeWorld(OFFICE_MAP);
+    world.syncAgents([profile("m"), profile("a")]);
+    bus.triggerSessionStateChanged("a", "running");
+    bus.triggerDiscussionStageChanged(stage(["m", "a"]));
+    expect(clones(characterLayer)).toHaveLength(2);
+    world.setMap(makeMap(2));
+    expect(clones(characterLayer)).toHaveLength(0);
+    world.setMap({ ...OFFICE_MAP });
+    expect(clones(characterLayer)).toHaveLength(2);
+    bus.triggerDiscussionStageChanged(null);
+    expect(clones(characterLayer)).toHaveLength(0);
   });
 
   it("풍경 교체로 엔티티를 다시 만들어도 토의 자리가 되살아난다", () => {

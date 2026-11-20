@@ -322,5 +322,19 @@
     "moderator": "司会",
     "debater": "討論者",
     "none": "記載なし"
+  },
+  "meetingBoard": {
+    "title": "議事録",
+    "moderator": "司会",
+    "round": "{{round}}ラウンド",
+    "speaking": "発言中",
+    "speakingFor": "発言中 · {{minutes}}分目",
+    "silent": "まだ発言なし",
+    "question": "質問: {{text}}",
+    "ageNow": "たった今",
+    "ageMinutes": "{{count}}分前",
+    "ageHours": "{{count}}時間前",
+    "collapse": "議事録をたたむ",
+    "expand": "議事録を広げる"
   }
 }

@@ -788,18 +788,21 @@ describe("CharacterEntity: 토의 연출", () => {
     expect(spriteOf(e).scale.x).toBeLessThan(0); // 동쪽 끝 자리 = 왼쪽(테이블)을 본다
   });
 
-  it("일하는 중이면 자리를 지키고, 본업이 쉬면 회의실로, 다시 돌면 자리로 돌아온다", () => {
+  it("일하는 중이면 자리를 지키고(말풍선·의사봉은 분신 몫), 본업이 쉬면 회의실로, 다시 돌면 자리로 돌아온다", () => {
     const e = new CharacterEntity("a", makeTestCharacterAssets(), OFFICE_SEAT, OFFICE_MAP, () => 0.999);
     const seatPx = { x: e.root.x, y: e.root.y };
     e.setSessionActive(true);
-    e.setDiscussionRole({ seat: room.seats[1], moderator: false, speaking: true });
+    e.setDiscussionRole({ seat: room.seats[1], moderator: true, speaking: true });
     settle(e);
     expect({ x: e.root.x, y: e.root.y }).toEqual(seatPx);
-    expect(speechRootOf(e).visible).toBe(true); // 제자리 말풍선
+    expect([e.seatedInMeeting, speechRootOf(e).visible, moderatorRootOf(e).visible]).toEqual([false, false, false]);
     e.setSessionActive(false);
     settle(e);
     expect({ x: e.root.x, y: e.root.y }).toEqual(meetingPx(1));
+    expect([e.seatedInMeeting, speechRootOf(e).visible, moderatorRootOf(e).visible]).toEqual([true, true, true]);
     e.setSessionActive(true);
+    e.update(16); // 일어나는 순간 표시를 분신에게 넘긴다
+    expect([e.seatedInMeeting, speechRootOf(e).visible]).toEqual([false, false]);
     settle(e);
     expect({ x: e.root.x, y: e.root.y }).toEqual(seatPx);
   });

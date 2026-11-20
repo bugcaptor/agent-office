@@ -27,7 +27,7 @@
 // the instant the BottomBar mute toggle flips, instead of waiting for the
 // next notification event.
 import { isSideSessionId, type SessionState } from "@shared/types";
-import type { LabelAnchor, OfficeAwardee, OfficeBus, OfficeDiscussionStage } from "../office/bus";
+import type { LabelAnchor, OfficeAwardee, OfficeBus, OfficeDiscussionStage, ScreenRect } from "../office/bus";
 import { awardeeEquals, latestAwardee } from "../office/awardee";
 import { useAppStore } from "../store/appStore";
 import { useAwardsStore } from "../awards/awardsStore";
@@ -62,6 +62,8 @@ const deskClickCbs = new Set<DeskClickCb>();
 const vacationModeCbs = new Set<VacationModeCb>();
 const awardeeCbs = new Set<AwardeeCb>();
 const discussionStageCbs = new Set<(stage: OfficeDiscussionStage | null) => void>();
+const meetingRoomRectCbs = new Set<(rect: ScreenRect | null) => void>();
+let lastMeetingRoomRect: ScreenRect | null = null;
 const subagentCounts = new SubagentCountTracker();
 
 // vacationMode -> officeBus relay. 모듈 스코프라 부팅 순서(hydrate ↔ 씬 마운트
@@ -264,6 +266,15 @@ export const officeBus: OfficeBus = {
     discussionStageCbs.add(cb);
     cb(lastDiscussionStage);
     return () => discussionStageCbs.delete(cb);
+  },
+  emitMeetingRoomRectChanged(rect) {
+    lastMeetingRoomRect = rect;
+    meetingRoomRectCbs.forEach((cb) => cb(rect));
+  },
+  onMeetingRoomRectChanged(cb) {
+    meetingRoomRectCbs.add(cb);
+    cb(lastMeetingRoomRect);
+    return () => meetingRoomRectCbs.delete(cb);
   },
   emitBossDeskClicked() {
     useAppStore.getState().toggleVacationMode();

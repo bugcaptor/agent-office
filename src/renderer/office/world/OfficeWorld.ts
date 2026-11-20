@@ -33,6 +33,7 @@ import { getSpriteOverride } from "../gen/spriteOverrides";
 import { getMinimiOverride } from "../gen/minimiOverrides";
 import { createMinimiAssets } from "../gen/minimiFactory";
 import { CharacterEntity } from "../entities/CharacterEntity";
+import { MeetingAvatar } from "../entities/MeetingAvatar";
 import type { CharacterDiscussionRole } from "../entities/CharacterEntity";
 import { mulberry32, hashStringToSeed } from "../gen/prng";
 
@@ -105,6 +106,11 @@ export class OfficeWorld {
   private vacationMode = false;
   // 진행 중인 토의(없으면 null). 엔티티를 다시 만들 때(외형 변경·풍경 교체) 재주입한다.
   private discussionStage: OfficeDiscussionStage | null = null;
+  // 회의실 의자의 분신(agentId → 분신). 본체가 그 의자에 앉아 있지 않은 동안 보인다(update에서 판단).
+  // 본체 Map과 따로 둔다 — 분신은 라벨·알림 줄·탕비실 동선에 끼지 않는다.
+  private avatars = new Map<string, MeetingAvatar>();
+  // 분신을 다시 만들어야 하는지 가르는 키(외형 + 의자). 같으면 역할(말풍선·의사봉)만 고친다.
+  private avatarKeys = new Map<string, string>();
   private unsub: Array<() => void> = [];
 
   constructor(private o: OfficeWorldOptions) {
@@ -134,6 +140,7 @@ export class OfficeWorld {
       o.bus.onDiscussionStageChanged((stage) => {
         this.discussionStage = stage;
         for (const [id, e] of this.entities) e.setDiscussionRole(this.discussionRoleFor(id));
+        this.syncMeetingAvatars();
       }),
     );
     this.unsub.push(
@@ -169,6 +176,50 @@ export class OfficeWorld {
     if (i === -1) return null;
     const seat = this.o.map.meetingRoom?.seats[i] ?? null;
     return { seat, moderator: members[i].moderator, speaking: members[i].speaking };
+  }
+
+  /**
+   * 회의실 분신을 토의 참가자·의자·외형에 맞춘다. 회의실이 없는 풍경이면 분신이 없다(본체가 제자리에서 말풍선을
+   * 띄운다). 책상이 모자라 본체가 없는 참가자도 분신으로 회의실에 앉는다. 프로필이 없는(삭제된) 참가자는 건너뛴다.
+   */
+  private syncMeetingAvatars(): void {
+    const members = this.discussionStage?.members ?? [];
+    const seats = this.o.map.meetingRoom?.seats ?? [];
+    const wanted = new Map<string, { seatIndex: number; moderator: boolean; speaking: boolean }>();
+    members.forEach((m, i) => {
+      if (i < seats.length && this.profiles.has(m.agentId)) wanted.set(m.agentId, { seatIndex: i, moderator: m.moderator, speaking: m.speaking });
+    });
+    for (const [id, avatar] of this.avatars) {
+      if (wanted.has(id)) continue;
+      avatar.destroy();
+      this.avatars.delete(id);
+      this.avatarKeys.delete(id);
+    }
+    for (const [id, w] of wanted) {
+      const p = this.profiles.get(id)!;
+      const seat = seats[w.seatIndex];
+      const key = `${appearanceKey(p)}|${seat.tx},${seat.ty},${seat.facing}`;
+      let avatar = this.avatars.get(id);
+      if (avatar && this.avatarKeys.get(id) !== key) {
+        avatar.destroy();
+        avatar = undefined;
+      }
+      if (!avatar) {
+        avatar = new MeetingAvatar(id, createCharacterAssets(p, this.renderScale), seat);
+        avatar.onClicked((agentId) => this.o.bus.emitAgentClicked(agentId));
+        avatar.onHover((agentId, x, y) => this.o.bus.emitAgentHoverChanged(agentId, x, y));
+        this.o.characterLayer.addChild(avatar.root);
+        this.avatars.set(id, avatar);
+        this.avatarKeys.set(id, key);
+      }
+      avatar.setRole(w.moderator, w.speaking);
+    }
+    this.refreshAvatarVisibility();
+  }
+
+  /** 분신은 본체가 그 의자에 앉아 있지 않을 때만 보인다 — 의자가 비는 순간도, 둘이 겹치는 순간도 없다. */
+  private refreshAvatarVisibility(): void {
+    for (const [id, avatar] of this.avatars) avatar.setVisible(!this.entities.get(id)?.seatedInMeeting);
   }
 
   /** Diff the live entity set against `profiles`: destroy dropped agents, create new ones,
@@ -257,6 +308,8 @@ export class OfficeWorld {
 
     // 외형 재생성으로 새로 만들어진 엔티티(같은 id)에 큐 슬롯을 재주입한다.
     this.recomputeQueue();
+    // 분신도 외형·프로필 목록 변화를 따른다(키가 같으면 그대로 둔다).
+    this.syncMeetingAvatars();
   }
 
   /**
@@ -277,6 +330,7 @@ export class OfficeWorld {
     this.entities.clear();
     this.appearanceKeys.clear();
     this.breakReservations.clear();
+    this.destroyAvatars(); // 의자 좌표가 바뀌었다 — syncAgents 끝에서 새 맵의 회의실로 다시 만든다
     this.o.map = map;
     this.syncAgents(profiles);
   }
@@ -311,6 +365,21 @@ export class OfficeWorld {
         }
       }
     }
+    // 커스텀 시트 분신은 새 해상도로 다시 만든다(키를 지우면 syncMeetingAvatars가 다시 만든다). 절차 생성
+    // 스프라이트는 S와 무관해 그대로다.
+    for (const [id, avatar] of this.avatars) {
+      const override = getSpriteOverride(id);
+      if (!override) continue;
+      const n = (override as { height?: number }).height ?? CELL;
+      if (detailCellSize(n, s) !== avatar.cellSize) this.avatarKeys.delete(id);
+    }
+    this.syncMeetingAvatars();
+  }
+
+  private destroyAvatars(): void {
+    for (const avatar of this.avatars.values()) avatar.destroy();
+    this.avatars.clear();
+    this.avatarKeys.clear();
   }
 
   /** 라벨 앵커(머리 위, 월드좌표)를 out에 채운다. out은 호출자가 재사용(per-frame 할당 최소화). */
@@ -324,6 +393,8 @@ export class OfficeWorld {
   /** dt: ms, ticker-supplied. Forwarded verbatim to every live entity. */
   update(dt: number): void {
     for (const entity of this.entities.values()) entity.update(dt);
+    this.refreshAvatarVisibility();
+    for (const avatar of this.avatars.values()) avatar.update(dt);
   }
 
   destroy(): void {
@@ -331,6 +402,7 @@ export class OfficeWorld {
     this.unsub = [];
     for (const entity of this.entities.values()) entity.destroy();
     this.entities.clear();
+    this.destroyAvatars();
     this.appearanceKeys.clear();
     this.sessionActive.clear();
     this.subagentCounts.clear();

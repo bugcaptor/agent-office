@@ -17,6 +17,14 @@ export interface LabelAnchor {
   y: number;
 }
 
+/** 화면좌표 사각형(px). 회의록 보드가 회의실 옆에 붙을 때 쓴다. */
+export interface ScreenRect {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+}
+
 /**
  * "이 달의 우수사원" 확정 수상자를
  * 씬에 전달하는 최소 정보. 스냅샷 전체가 아니라 씬이 그리는 데 필요한 값만 —
@@ -85,6 +93,10 @@ export interface OfficeBus {
   /** B가 진행 중인 토의를 구독 — 회의실 이동·발언 말풍선·사회자 표시. 없으면 null.
    * 구독 즉시 현재값을 1회 재생(replay)한다 — 늦게 마운트된 씬도 초기값 수신. */
   onDiscussionStageChanged(cb: (stage: OfficeDiscussionStage | null) => void): () => void;
+  /** B가 회의실의 화면 사각형을 알림(카메라·풍경이 바뀔 때만). 회의실이 없는 풍경이면 null. */
+  emitMeetingRoomRectChanged(rect: ScreenRect | null): void;
+  /** C(회의록 보드)가 회의실 사각형을 구독. 구독 즉시 마지막 값을 1회 재생(replay)한다. */
+  onMeetingRoomRectChanged(cb: (rect: ScreenRect | null) => void): () => void;
 }
 
 type NotificationListener = (agentId: string, hasPending: boolean) => void;
@@ -124,6 +136,8 @@ export function createMockOfficeBus(): MockOfficeBus {
   const awardeeListeners = new Set<(a: OfficeAwardee | null) => void>();
   const stageListeners = new Set<(s: OfficeDiscussionStage | null) => void>();
   let stage: OfficeDiscussionStage | null = null;
+  const roomRectListeners = new Set<(r: ScreenRect | null) => void>();
+  let roomRect: ScreenRect | null = null;
   const clickedAgentIds: string[] = [];
   let bossDeskClickCount = 0;
   let repositoryServerClickCount = 0;
@@ -218,6 +232,15 @@ export function createMockOfficeBus(): MockOfficeBus {
     triggerDiscussionStageChanged(next) {
       stage = next;
       for (const cb of stageListeners) cb(next);
+    },
+    emitMeetingRoomRectChanged(rect) {
+      roomRect = rect;
+      for (const cb of roomRectListeners) cb(rect);
+    },
+    onMeetingRoomRectChanged(cb) {
+      roomRectListeners.add(cb);
+      cb(roomRect);
+      return () => roomRectListeners.delete(cb);
     },
   };
 }

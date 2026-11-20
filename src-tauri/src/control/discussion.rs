@@ -25,6 +25,8 @@ use super::{enum_str, with_rev, ControlContext};
 /// 방금 만든 토의를 앱이 수신함에서 가져갈 때까지 시작·답하기가 기다리는 시간.
 const IMPORT_WAIT: Duration = Duration::from_secs(10);
 const LAST_TEXT_CHARS: usize = 400;
+/// 참가자별 최근 발언은 중계용 한 줄이라 더 짧게 자른다(전문은 결정 메모·토의 탭에서).
+const PARTICIPANT_TEXT_CHARS: usize = 160;
 
 // ── 상태 조립(순수) ───────────────────────────────────────────────────
 
@@ -38,13 +40,22 @@ fn state_label(d: &Discussion) -> String {
     if usage_waiting(d) { "waiting-usage".into() } else { enum_str(&d.state) }
 }
 
-fn clip(text: &str) -> String {
+fn clip(text: &str, max: usize) -> String {
     let chars: Vec<char> = text.chars().collect();
-    if chars.len() > LAST_TEXT_CHARS {
-        format!("{}…", chars[..LAST_TEXT_CHARS].iter().collect::<String>())
+    if chars.len() > max {
+        format!("{}…", chars[..max].iter().collect::<String>())
     } else {
         text.to_string()
     }
+}
+
+/// 지금 차례를 받아 말하는 중인 참가자와 차례를 받은 시각. 진행·정리 중에 차례를 보냈고 발언을 아직 받지
+/// 않은 참가자다(렌더러 `officeStage.ts`의 `speakingSince`와 같은 규칙).
+fn speaking_since(d: &Discussion, agent_id: &str) -> Option<i64> {
+    if !matches!(d.state, DiscussionState::Running | DiscussionState::WrappingUp) {
+        return None;
+    }
+    d.run.as_ref()?.turns.iter().find(|t| t.agent_id == agent_id && t.text.is_none()).and_then(|t| t.sent_at)
 }
 
 /// 토의 하나의 상태. `name`은 팀원 이름을, `memo`는 결정 메모 경로(파일이 있을 때)를 준다.
@@ -109,6 +120,17 @@ pub fn build_status(
             if let Some(m) = &p.agent.model {
                 v["model"] = json!(m);
             }
+            // 중계용: 말하는 중인지와 최근 발언 한 줄. 시각은 절대값만 준다 — "몇 분 전"을 넣으면 내용이
+            // 그대로여도 rev가 바뀌어 `--since` 대기가 쓸모없어진다.
+            let since = speaking_since(d, &p.agent_id);
+            v["speaking"] = json!(since.is_some());
+            if let Some(at) = since {
+                v["speakingSince"] = json!(at);
+            }
+            // 기록에는 공개된 발언만 있다(동시 첫 라운드는 전원이 낸 뒤 한꺼번에 들어온다).
+            if let Some(u) = d.transcript.iter().rev().find(|u| u.agent_id.as_deref() == Some(p.agent_id.as_str())) {
+                v["last"] = json!({ "at": u.at, "round": u.round, "kind": enum_str(&u.kind), "text": clip(&u.text, PARTICIPANT_TEXT_CHARS) });
+            }
             v
         })
         .collect();
@@ -148,7 +170,7 @@ pub fn build_status(
         }
     }
     if let Some(last) = d.transcript.last() {
-        let mut v = json!({ "kind": enum_str(&last.kind), "round": last.round, "text": clip(&last.text) });
+        let mut v = json!({ "kind": enum_str(&last.kind), "round": last.round, "text": clip(&last.text, LAST_TEXT_CHARS) });
         if let Some(a) = &last.agent_id {
             v["agentId"] = json!(a);
         }
@@ -352,7 +374,10 @@ pub(super) async fn answer(State(ctx): State<Arc<ControlContext>>, Json(p): Json
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::types::{DiscussionLimits, DiscussionParticipant, DiscussionPhase, DiscussionRun, WorkAgent, WorkCli};
+    use crate::types::{
+        DiscussionLimits, DiscussionParticipant, DiscussionPhase, DiscussionRun, DiscussionTurn, DiscussionUtterance, DiscussionUtteranceKind,
+        WorkAgent, WorkCli,
+    };
 
     fn discussion(state: DiscussionState) -> Discussion {
         let p = |id: &str| DiscussionParticipant { agent_id: id.into(), role_id: None, agent: WorkAgent { cli: WorkCli::Codex, model: Some("m".into()), effort: None } };
@@ -415,7 +440,7 @@ mod tests {
         assert_eq!((s["memo"].clone(), s["memoPath"].clone()), (json!(true), json!("/m/disc-1.md")));
         let s = status(&[discussion(DiscussionState::Review)], &[], true).unwrap();
         assert_eq!(s["memo"], false);
-        assert_eq!(s["participants"][0], json!({ "agentId": "mod", "moderator": true, "cli": "codex", "model": "m", "name": "사회자" }));
+        assert_eq!(s["participants"][0], json!({ "agentId": "mod", "moderator": true, "cli": "codex", "model": "m", "name": "사회자", "speaking": false }));
         // 같은 내용이면 같은 rev, 바뀌면 다른 rev.
         let a = status(&[discussion(DiscussionState::Running)], &[], true).unwrap();
         let b = status(&[discussion(DiscussionState::Running)], &[], true).unwrap();
@@ -468,5 +493,42 @@ mod tests {
         assert_eq!(status(&[waiting], &[], true).unwrap()["state"], "waiting-usage");
         assert_eq!(state_label(&discussion(DiscussionState::WaitingUser)), "waiting_user");
         assert_eq!(state_label(&discussion(DiscussionState::Paused)), "paused");
+    }
+
+    #[test]
+    fn participants_carry_speaking_and_their_latest_published_utterance() {
+        let said = |at: i64, agent: Option<&str>, kind: DiscussionUtteranceKind, text: &str| DiscussionUtterance {
+            at, round: 1, kind, agent_id: agent.map(String::from), text: text.into(),
+        };
+        let turn = |agent: &str, sent_at: Option<i64>, text: Option<&str>| DiscussionTurn {
+            agent_id: agent.into(), question: None, session_id: None, sent_at, nudged: None, text: text.map(String::from),
+        };
+        let mut d = discussion(DiscussionState::Running);
+        d.transcript = vec![
+            said(10, Some("a1"), DiscussionUtteranceKind::Opening, "첫 의견"),
+            said(20, Some("mod"), DiscussionUtteranceKind::Moderator, "- a1: 예산은?"),
+            said(30, None, DiscussionUtteranceKind::Notice, "알림"),
+            said(40, Some("a1"), DiscussionUtteranceKind::Statement, &"가".repeat(PARTICIPANT_TEXT_CHARS + 5)),
+        ];
+        // 사회자 차례: a1의 이전 차례는 이미 받았고(text), 사회자는 아직 말하는 중이다.
+        d.run = Some(DiscussionRun { turns: vec![turn("mod", Some(50), None), turn("a1", Some(35), Some("받음"))], ..run(DiscussionPhase::Moderator) });
+        let s = status(&[d.clone()], &[], true).unwrap();
+        let (m, a) = (&s["participants"][0], &s["participants"][1]);
+        assert_eq!((m["speaking"].clone(), m["speakingSince"].clone()), (json!(true), json!(50)));
+        assert_eq!(m["last"], json!({ "at": 20, "round": 1, "kind": "moderator", "text": "- a1: 예산은?" }));
+        assert_eq!((a["speaking"].clone(), a.get("speakingSince")), (json!(false), None));
+        assert_eq!(a["last"]["at"], 40);
+        assert_eq!(a["last"]["text"].as_str().unwrap().chars().count(), PARTICIPANT_TEXT_CHARS + 1); // + "…"
+
+        // 멈춘 토의는 차례가 남아 있어도 말하는 중이 아니다.
+        let mut paused = d.clone();
+        paused.state = DiscussionState::Paused;
+        assert_eq!(status(&[paused], &[], true).unwrap()["participants"][0]["speaking"], false);
+
+        // 동시 첫 라운드에서 받았지만 공개 전인 발언(turn.text)은 내보내지 않는다.
+        let mut opening = discussion(DiscussionState::Running);
+        opening.run = Some(DiscussionRun { turns: vec![turn("a1", Some(5), Some("비공개"))], ..run(DiscussionPhase::Opening) });
+        let s = status(&[opening], &[], true).unwrap();
+        assert_eq!((s["participants"][1]["speaking"].clone(), s["participants"][1].get("last")), (json!(false), None));
     }
 }

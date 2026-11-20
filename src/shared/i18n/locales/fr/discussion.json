@@ -322,5 +322,19 @@
     "moderator": "animateur",
     "debater": "intervenant",
     "none": "Rien de noté"
+  },
+  "meetingBoard": {
+    "title": "Compte rendu",
+    "moderator": "Modération",
+    "round": "Tour {{round}}",
+    "speaking": "Parle",
+    "speakingFor": "Parle · {{minutes}} min",
+    "silent": "Pas encore de prise de parole",
+    "question": "Question : {{text}}",
+    "ageNow": "à l’instant",
+    "ageMinutes": "il y a {{count}} min",
+    "ageHours": "il y a {{count}} h",
+    "collapse": "Replier le compte rendu",
+    "expand": "Déplier le compte rendu"
   }
 }

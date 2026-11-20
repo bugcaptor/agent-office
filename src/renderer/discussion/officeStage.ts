@@ -15,15 +15,25 @@ import { isActiveDiscussion, participantsModeratorFirst } from "./discussionMode
 
 const SPEAKING: ReadonlySet<DiscussionState> = new Set<DiscussionState>(["running", "wrapping_up"]);
 
+/** 연출할 토의. 동시 토의는 하나뿐이지만, 깨진 데이터로 둘이 보이면 가장 최근에 바뀐 쪽을 쓴다. */
+export function stagedDiscussion(discussions: readonly Discussion[]): Discussion | null {
+  return discussions.filter(isActiveDiscussion).sort((a, b) => b.updatedAt - a.updatedAt)[0] ?? null;
+}
+
+/** 말하는 중인 참가자 → 차례를 받은 시각(epoch ms). Rust `ctl discuss status`의 speakingSince와 같은 규칙. */
+export function speakingSince(d: Discussion): Map<string, number> {
+  const out = new Map<string, number>();
+  if (!SPEAKING.has(d.state)) return out;
+  for (const t of d.run?.turns ?? []) {
+    if (t.sentAt !== undefined && t.text === undefined && !out.has(t.agentId)) out.set(t.agentId, t.sentAt);
+  }
+  return out;
+}
+
 export function officeDiscussionStage(discussions: readonly Discussion[]): OfficeDiscussionStage | null {
-  // 동시 토의는 하나뿐이지만, 깨진 데이터로 둘이 보이면 가장 최근에 바뀐 쪽을 쓴다.
-  const d = discussions.filter(isActiveDiscussion).sort((a, b) => b.updatedAt - a.updatedAt)[0];
+  const d = stagedDiscussion(discussions);
   if (!d) return null;
-  const speaking = new Set(
-    SPEAKING.has(d.state)
-      ? (d.run?.turns ?? []).filter((t) => t.sentAt !== undefined && t.text === undefined).map((t) => t.agentId)
-      : [],
-  );
+  const speaking = speakingSince(d);
   const ids = participantsModeratorFirst(d).map((p) => p.agentId);
   const members: OfficeDiscussionMember[] = [...new Set(ids)].map((agentId) => ({
     agentId,

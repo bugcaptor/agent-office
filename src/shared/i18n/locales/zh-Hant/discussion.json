@@ -322,5 +322,19 @@
     "moderator": "主持人",
     "debater": "討論者",
     "none": "未記錄"
+  },
+  "meetingBoard": {
+    "title": "會議記錄",
+    "moderator": "主持",
+    "round": "第{{round}}輪",
+    "speaking": "發言中",
+    "speakingFor": "發言中 · 第{{minutes}}分鐘",
+    "silent": "尚未發言",
+    "question": "提問：{{text}}",
+    "ageNow": "剛剛",
+    "ageMinutes": "{{count}}分鐘前",
+    "ageHours": "{{count}}小時前",
+    "collapse": "收合會議記錄",
+    "expand": "展開會議記錄"
   }
 }

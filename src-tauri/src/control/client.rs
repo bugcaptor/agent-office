@@ -280,7 +280,7 @@ fn build_request(p: &Parsed) -> Result<(&'static str, Value), String> {
             Ok((path, body))
         }
         "discuss" => {
-            let op = pos.get(1).map(String::as_str).ok_or("discuss: list|status|memo|start|answer 하위 명령이 필요합니다")?;
+            let op = pos.get(1).map(String::as_str).ok_or("discuss: list|status|watch|memo|start|answer 하위 명령이 필요합니다")?;
             if op == "list" {
                 return Ok(("/v1/discuss/list", json!({})));
             }
@@ -296,6 +296,11 @@ fn build_request(p: &Parsed) -> Result<(&'static str, Value), String> {
                         o.insert("waitSecs".into(), json!(timeout_secs(p, DEFAULT_WAIT_SECS)?.min(super::autorun::MAX_WAIT_SECS)));
                     }
                     Ok(("/v1/discuss/status", Value::Object(o)))
+                }
+                // 중계: 상태가 바뀔 때마다 한 줄 JSON. 루프는 `run_discuss_watch`가 돈다.
+                "watch" => {
+                    timeout_secs(p, DEFAULT_WAIT_SECS)?; // --timeout 형식만 먼저 검사한다
+                    Ok(("/v1/discuss/status", json!({ "id": id })))
                 }
                 "memo" => Ok(("/v1/discuss/memo", json!({ "id": id }))),
                 "start" => Ok(("/v1/discuss/start", json!({ "id": id }))),
@@ -401,6 +406,10 @@ agent-office ctl — 실행 중인 Agent Office를 조종하는 CLI (이슈 #55)
                                   --wait: 결론이 나거나(review·finished) 조치가 필요할 때까지
                                   (ready=사람이 시작해야 함, waiting_user=사회자 질문, paused) 기다린다.
                                   waiting-usage(사용량 대기)는 스스로 이어 가므로 계속 기다린다
+  discuss watch <id> [--timeout S]
+                                  상태가 바뀔 때마다 status와 같은 data를 한 줄 JSON으로 출력한다
+                                  (참가자별 speaking·speakingSince·last 포함). 결론이 나면(review·finished)
+                                  0으로 끝나고, --timeout을 넘기면 11로 끝난다(없으면 끝까지 본다)
   discuss start <id>              준비된 토의를 시작한다(카드의 시작과 같다)
   discuss answer <id> <답>        사회자가 사용자에게 한 질문에 답한다
   discuss memo <id>               결정 메모(Markdown)를 출력한다
@@ -486,6 +495,11 @@ pub fn run(args: Vec<String>) -> i32 {
         }
     };
 
+    if parsed.sub() == "discuss" && parsed.positionals.get(1).map(String::as_str) == Some("watch") {
+        let timeout = parsed.kv.get("timeout").and_then(|v| v.parse::<u64>().ok());
+        return run_discuss_watch(&runtime, port, &token, body, timeout);
+    }
+
     // `status --wait`는 서버가 한 번에 50초까지만 붙잡으므로 남은 시간만큼 다시 묻는다.
     let deadline = std::time::Instant::now() + Duration::from_secs(timeout_secs(&parsed, DEFAULT_WAIT_SECS).unwrap_or(DEFAULT_WAIT_SECS));
     let mut body = body;
@@ -523,6 +537,72 @@ pub fn run(args: Vec<String>) -> i32 {
             }
         }
     }
+}
+
+/// `discuss watch`: 상태가 바뀔 때마다(rev가 달라질 때마다) data를 한 줄 JSON으로 내보내고, 결론이 나면
+/// (review·finished) 0으로 끝난다. 멈춤·질문 대기도 지나가는 상태라 계속 본다. `--timeout`이 없으면 끝까지 본다.
+fn run_discuss_watch(runtime: &tokio::runtime::Runtime, port: u16, token: &str, mut body: Value, timeout: Option<u64>) -> i32 {
+    use std::io::Write;
+    let deadline = timeout.map(|s| std::time::Instant::now() + Duration::from_secs(s));
+    let mut last_rev: Option<String> = None;
+    loop {
+        let wait = match deadline {
+            Some(d) => match d.saturating_duration_since(std::time::Instant::now()).as_secs() {
+                0 => return EXIT_TIMEOUT,
+                left => left.min(super::autorun::MAX_WAIT_SECS),
+            },
+            None => super::autorun::MAX_WAIT_SECS,
+        };
+        if let Some(rev) = &last_rev {
+            body["since"] = json!(rev);
+            body["waitSecs"] = json!(wait);
+        }
+        let value = match runtime.block_on(send(port, token, "/v1/discuss/status", &body)) {
+            Err(e) => {
+                eprintln!("ctl: {e}");
+                return EXIT_CONNECT;
+            }
+            Ok((401, _)) => {
+                eprintln!("ctl: 인증 실패 — 토큰이 유효하지 않습니다(앱에서 재승인이 필요할 수 있습니다)");
+                return EXIT_UNAUTHORIZED;
+            }
+            Ok((_, value)) => value,
+        };
+        if value.get("ok").and_then(Value::as_bool) != Some(true) {
+            eprintln!("ctl: {}", value.get("error").and_then(Value::as_str).unwrap_or("알 수 없는 오류"));
+            return EXIT_CMD_ERROR;
+        }
+        let step = watch_step(value["data"].clone(), &last_rev);
+        if let Some(line) = step.line {
+            println!("{line}");
+            let _ = std::io::stdout().flush();
+            last_rev = step.rev;
+        }
+        if step.done {
+            return EXIT_OK;
+        }
+    }
+}
+
+/// 상태 응답 하나를 본 결과. `line`은 바뀌었을 때만(처음 포함) 내보낼 한 줄이다.
+#[derive(Debug, PartialEq)]
+struct WatchStep {
+    line: Option<String>,
+    rev: Option<String>,
+    done: bool,
+}
+
+fn watch_step(mut data: Value, last_rev: &Option<String>) -> WatchStep {
+    let done = matches!(data.get("state").and_then(Value::as_str), Some("review" | "finished"));
+    let rev = data.get("rev").and_then(Value::as_str).map(String::from);
+    if rev.is_some() && rev == *last_rev {
+        return WatchStep { line: None, rev, done };
+    }
+    // 대기 시간이 다 됐다는 표시는 중계 받는 쪽에 의미가 없다.
+    if let Some(o) = data.as_object_mut() {
+        o.remove("timedOut");
+    }
+    WatchStep { line: Some(data.to_string()), rev, done }
 }
 
 async fn send(
@@ -714,6 +794,9 @@ fn render_success(parsed: &Parsed, data: &Value) -> String {
     out
 }
 
+/// 사람이 읽는 `discuss status` 출력에서 참가자 한 줄에 보이는 최근 발언 글자 수.
+const PARTICIPANT_LINE_CHARS: usize = 60;
+
 fn render_discuss(out: &mut String, op: &str, data: &Value) {
     use std::fmt::Write as _;
     if op == "memo" {
@@ -755,6 +838,20 @@ fn render_discuss(out: &mut String, op: &str, data: &Value) {
     if let Some(a) = data.get("attention") {
         let actions: Vec<&str> = a["actions"].as_array().map(|v| v.iter().filter_map(Value::as_str).collect()).unwrap_or_default();
         let _ = writeln!(out, "  attention: {}{} → {}", a["reason"].as_str().unwrap_or("?"), a["detail"].as_str().map(|d| format!(" ({d})")).unwrap_or_default(), actions.join(", "));
+    }
+    // 참가자별 지금 상태 한 줄: 말하는 중이거나 최근 발언 앞부분.
+    for p in data["participants"].as_array().into_iter().flatten() {
+        let name = p["name"].as_str().or(p["agentId"].as_str()).unwrap_or("?");
+        let line = if p["speaking"].as_bool() == Some(true) {
+            "(말하는 중)".to_string()
+        } else if let Some(text) = p["last"]["text"].as_str() {
+            let flat = text.split_whitespace().collect::<Vec<_>>().join(" ");
+            let head: String = flat.chars().take(PARTICIPANT_LINE_CHARS).collect();
+            if head.chars().count() < flat.chars().count() { format!("{head}…") } else { head }
+        } else {
+            continue;
+        };
+        let _ = writeln!(out, "  - {name}: {line}");
     }
     if let Some(path) = data["memoPath"].as_str() {
         let _ = writeln!(out, "  memo: {path}");
@@ -1003,6 +1100,42 @@ mod tests {
             "attention": { "reason": "question", "detail": "예산은?", "actions": ["answer", "wait"] }, "rev": "abc",
         }));
         assert_eq!(text, "disc-1 [waiting_user] 주제\n  round 2/4 · 2분/30분 · $0.50/$5.0\n  attention: question (예산은?) → answer, wait\n  rev: abc\n");
+    }
+
+    #[test]
+    fn discuss_status_lists_who_is_speaking_and_latest_lines() {
+        let status = parse(&args(&["discuss", "status", "disc-1"])).unwrap();
+        let text = render_success(&status, &json!({
+            "id": "disc-1", "state": "running", "topic": "점심",
+            "participants": [
+                { "agentId": "m", "name": "사회", "speaking": true },
+                { "agentId": "a", "name": "가", "speaking": false, "last": { "text": format!("국밥\n좋다 {}", "x".repeat(80)) } },
+                { "agentId": "b", "speaking": false },
+            ],
+        }));
+        let lines: Vec<&str> = text.lines().skip(1).collect();
+        assert_eq!(lines[0], "  - 사회: (말하는 중)");
+        assert!(lines[1].starts_with("  - 가: 국밥 좋다 x") && lines[1].ends_with('…'), "{}", lines[1]);
+        assert_eq!(lines.len(), 2, "발언이 없는 참가자는 줄을 내지 않는다");
+    }
+
+    #[test]
+    fn discuss_watch_requests_status_and_emits_only_changes() {
+        let (path, body) = build_request(&parse(&args(&["discuss", "watch", "disc-1", "--timeout", "30"])).unwrap()).unwrap();
+        assert_eq!((path, body), ("/v1/discuss/status", json!({ "id": "disc-1" })));
+        assert!(build_request(&parse(&args(&["discuss", "watch", "disc-1", "--timeout", "0"])).unwrap()).is_err());
+        assert!(build_request(&parse(&args(&["discuss", "watch"])).unwrap()).is_err());
+
+        let first = watch_step(json!({ "state": "running", "rev": "r1" }), &None);
+        assert_eq!((first.line.as_deref(), first.rev.as_deref(), first.done), (Some(r#"{"rev":"r1","state":"running"}"#), Some("r1"), false));
+        // 서버 대기가 끝났는데 그대로면 아무것도 내보내지 않는다.
+        let same = watch_step(json!({ "state": "running", "rev": "r1", "timedOut": true }), &Some("r1".into()));
+        assert_eq!(same, WatchStep { line: None, rev: Some("r1".into()), done: false });
+        // 바뀐 상태는 timedOut 없이 한 줄로 내보내고, 멈춤·질문 대기는 계속 본다.
+        let paused = watch_step(json!({ "state": "paused", "rev": "r2", "timedOut": false }), &Some("r1".into()));
+        assert_eq!((paused.line.as_deref(), paused.done), (Some(r#"{"rev":"r2","state":"paused"}"#), false));
+        assert!(watch_step(json!({ "state": "review", "rev": "r3" }), &Some("r2".into())).done);
+        assert!(watch_step(json!({ "state": "finished", "rev": "r3" }), &Some("r3".into())).done);
     }
 
     #[test]
