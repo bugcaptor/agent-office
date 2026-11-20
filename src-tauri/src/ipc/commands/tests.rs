@@ -371,6 +371,12 @@
             wake_lock: std::sync::Arc::new(crate::power::WakeLock::new()),
             key_store: std::sync::Arc::new(crate::key_store::ApiKeyStore::in_app_data(&profile_dir)),
             run_recipes: std::sync::Arc::new(crate::run_recipes::RunRecipeRuntime::default()),
+            web_dash: Arc::new(crate::webdash::WebDashState::new(
+                profile_dir.clone(),
+                Arc::new(Vec::new),
+                Arc::new(crate::control::autorun::AutoRunBridge::new(|_: &serde_json::Value| Ok(()))),
+                Arc::new(crate::webdash::fake::RecordingDashEvents::default()),
+            )),
         };
         (state, ctl, observer_dir, profile_dir)
     }
@@ -1068,4 +1074,99 @@
         assert!(snap2.opencode.is_none());
         assert_eq!(snap2.openrouter_live.outcome, crate::usage::ApiKeyLiveOutcome::NoKey);
         assert_eq!(snap2.opencode_live.outcome, crate::usage::ApiKeyLiveOutcome::NoKey);
+    }
+
+    // ---- web dash ----
+
+    /// 실제 루프백 리스너로 띄워 인증·페이지·상태·명령 거절을 확인한다.
+    #[tokio::test]
+    async fn web_dash_serves_page_requires_token_and_reports_characters() {
+        let (state, ctl, dir, profile_dir) = build("web-dash");
+        let agent: AgentProfile = serde_json::from_value(serde_json::json!({
+            "id": "p1", "name": "Ada", "role": "backend", "seed": "seed", "createdAt": 1, "deskIndex": 0
+        }))
+        .unwrap();
+        state.store.save(&PersistedState { agents: vec![agent], version: 1, vacation_mode: None }).unwrap();
+
+        // 비어 있을 가능성이 높은 높은 포트를 고른다.
+        let port = {
+            let probe = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+            probe.local_addr().unwrap().port()
+        };
+        let dash = state.web_dash.clone();
+        let status = dash
+            .configure(
+                crate::webdash::WebDashConfig { enabled: true, bind: crate::webdash::WebDashBind::Tailnet, port },
+                state.control_ctx.clone(),
+                dash.clone(),
+            )
+            .await
+            .unwrap();
+        assert!(status.running);
+        let local = status.urls.iter().find(|u| u.contains("127.0.0.1")).expect("loopback url").clone();
+        let token = local.split("#t=").nth(1).unwrap().to_string();
+        let base = format!("http://127.0.0.1:{port}");
+        let client = reqwest::Client::new();
+
+        let page = client.get(format!("{base}/")).send().await.unwrap();
+        assert_eq!(page.status(), reqwest::StatusCode::OK);
+        assert!(page.text().await.unwrap().contains("<html"));
+
+        let denied = client.get(format!("{base}/api/state")).send().await.unwrap();
+        assert_eq!(denied.status(), reqwest::StatusCode::UNAUTHORIZED);
+        let wrong = client.get(format!("{base}/api/state")).bearer_auth("nope").send().await.unwrap();
+        assert_eq!(wrong.status(), reqwest::StatusCode::UNAUTHORIZED);
+
+        let body: serde_json::Value = client
+            .get(format!("{base}/api/state"))
+            .bearer_auth(&token)
+            .send()
+            .await
+            .unwrap()
+            .json()
+            .await
+            .unwrap();
+        assert_eq!(body["ok"], true);
+        assert_eq!(body["data"]["characters"][0]["name"], "Ada");
+        assert!(body["data"]["characters"][0]["session"].is_null());
+        assert_eq!(dash.status().clients, 1);
+
+        // 꺼진 터미널에는 간접 명령이 거절된다.
+        let cmd: serde_json::Value = client
+            .post(format!("{base}/api/agents/p1/interrupt"))
+            .bearer_auth(&token)
+            .send()
+            .await
+            .unwrap()
+            .json()
+            .await
+            .unwrap();
+        assert_eq!(cmd, serde_json::json!({ "ok": false, "error": "not-running" }));
+        let unknown: serde_json::Value = client
+            .post(format!("{base}/api/agents/nobody/restart"))
+            .bearer_auth(&token)
+            .send()
+            .await
+            .unwrap()
+            .json()
+            .await
+            .unwrap();
+        assert_eq!(unknown["error"], "unknown-agent");
+
+        // 토큰을 새로 만들면 이전 토큰은 끊긴다.
+        dash.rotate_token().unwrap();
+        let old = client.get(format!("{base}/api/state")).bearer_auth(&token).send().await.unwrap();
+        assert_eq!(old.status(), reqwest::StatusCode::UNAUTHORIZED);
+
+        // 끄면 내려간다.
+        let off = dash
+            .configure(
+                crate::webdash::WebDashConfig { enabled: false, bind: crate::webdash::WebDashBind::Tailnet, port },
+                state.control_ctx.clone(),
+                dash.clone(),
+            )
+            .await
+            .unwrap();
+        assert!(!off.running);
+        cleanup(&ctl, &dir, &profile_dir);
     }

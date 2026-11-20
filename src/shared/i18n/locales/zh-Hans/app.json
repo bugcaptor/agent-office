@@ -68,5 +68,23 @@
   },
   "shell": {
     "lightsOff": "大家都下班了"
+  },
+  "webDash": {
+    "clients": "🌐 网页连接 {{count}}",
+    "op": {
+      "restart": "🌐 网页:重启了 {{name}} 的终端",
+      "terminate": "🌐 网页:关闭了 {{name}} 的终端",
+      "resume": "🌐 网页:继续 {{name}} 的会话",
+      "interrupt": "🌐 网页:中断 {{name}} 的任务(Esc)",
+      "ctrl-c": "🌐 网页:向 {{name}} 发送 Ctrl-C",
+      "launch": "🌐 网页:在 {{name}} 中启动 {{detail}}",
+      "work-create": "🌐 网页:创建任务 — {{detail}}",
+      "work-create-send": "🌐 网页:创建任务并发送给 {{name}} — {{detail}}",
+      "work-send": "🌐 网页:向 {{name}} 发送任务 — {{detail}}",
+      "autorun-start": "🌐 网页:开始自动推进 — {{detail}}",
+      "discuss-start": "🌐 网页:开始讨论",
+      "discuss-answer": "🌐 网页:回答了主持人",
+      "other": "🌐 网页:{{op}}"
+    }
   }
 }

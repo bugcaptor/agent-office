@@ -19,6 +19,11 @@ export const Commands = {
   autoRunReport: "auto_run_report",
   autoRunControlReply: "autorun_control_reply",
   discussionControlReply: "discussion_control_reply",
+  webDashStatus: "web_dash_status",
+  webDashConfigure: "web_dash_configure",
+  webDashRotateToken: "web_dash_rotate_token",
+  webDashPublishLabels: "web_dash_publish_labels",
+  webDashControlReply: "web_dash_control_reply",
   scanDiscussionInbox: "scan_discussion_inbox",
   autoRunJudge: "auto_run_judge",
   scanWorkInbox: "scan_work_inbox",
@@ -218,4 +223,10 @@ export const Events = {
   autoRunControl: "autorun-control",
   // CLI(`ctl discuss start|answer`)의 토의 쓰기 요청. 렌더러가 처리하고 discussionControlReply로 답한다.
   discussionControl: "discussion-control",
+  // 웹 상태판의 쓰기 요청(재시작·업무·토의). 렌더러가 처리하고 webDashControlReply로 답한다.
+  webDashControl: "web-dash-control",
+  // 웹 상태판 상태(접속 수·주소)가 바뀌었다.
+  webDashStatus: "web-dash-status",
+  // 웹에서 명령이 들어왔다(앱 화면 알림).
+  webDashActivity: "web-dash-activity",
 } as const;

@@ -179,5 +179,28 @@
       "reserved": "The app or the OS already uses this key.",
       "taken": "Already assigned to “{{name}}”."
     }
+  },
+  "webDash": {
+    "title": "Web dashboard (tailnet / LAN browser)",
+    "help": "While the app runs, serve a small web page so a phone or another computer can see character status and agent conversation logs. Conversations are read-only; you can only send indirect commands such as restarting a terminal, interrupting, running Claude/Codex, sending tasks and discussions. The address carries an access token.",
+    "bind": "Network",
+    "binds": {
+      "tailnet": "Tailscale (tailnet) only",
+      "lan": "LAN (private addresses) only",
+      "both": "Tailscale + LAN"
+    },
+    "port": "Port",
+    "running": "Running · {{count}} browser(s) watching",
+    "stopped": "Off",
+    "urlsIntro": "Addresses (copying includes the token):",
+    "copy": "Copy address",
+    "copied": "Copied",
+    "rotate": "New token",
+    "rotateHelp": "If an address leaked, make a new token. Connected devices are dropped and must open the new address.",
+    "errors": {
+      "web-dash-no-network": "No address found on the chosen network, so it is open on this computer (127.0.0.1) only. Check that Tailscale is on or that you are on a LAN. It attaches automatically when an address appears.",
+      "web-dash-bind-failed": "Could not open the port. If another program uses it, pick another port.",
+      "web-dash-port-invalid": "Port must be between 1024 and 65535."
+    }
   }
 }

@@ -179,5 +179,28 @@
       "reserved": "应用或系统已在使用此键。",
       "taken": "已分配给“{{name}}”。"
     }
+  },
+  "webDash": {
+    "title": "网页状态板(tailnet・局域网浏览器)",
+    "help": "应用运行期间开启一个小型网页服务器,可在手机或其他电脑的浏览器中查看角色状态和代理对话记录。对话只读,只能发送间接命令:重启终端、中断任务、启动 Claude/Codex、发送任务、讨论等。访问地址中带有访问令牌。",
+    "bind": "网络",
+    "binds": {
+      "tailnet": "仅 Tailscale(tailnet)",
+      "lan": "仅局域网(私有地址)",
+      "both": "Tailscale + 局域网"
+    },
+    "port": "端口",
+    "running": "运行中 · 正在查看的浏览器 {{count}} 个",
+    "stopped": "已关闭",
+    "urlsIntro": "访问地址(复制时包含令牌):",
+    "copy": "复制地址",
+    "copied": "已复制",
+    "rotate": "重新生成令牌",
+    "rotateHelp": "如果地址泄露,请重新生成令牌。已连接的设备都会断开,需要用新地址重新打开。",
+    "errors": {
+      "web-dash-no-network": "在所选网络上找不到地址,因此只在本机(127.0.0.1)开放。请确认 Tailscale 已开启或已连接局域网。出现地址后会自动连接。",
+      "web-dash-bind-failed": "无法打开端口。如果被其他程序占用,请更换端口。",
+      "web-dash-port-invalid": "端口必须在 1024 到 65535 之间。"
+    }
   }
 }

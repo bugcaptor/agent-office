@@ -252,7 +252,7 @@ fn snapshot(ctx: &ControlContext, store: &DiscussionStore) -> Result<(Vec<String
     read_both(|| pending(ctx), || store.load())
 }
 
-fn current_status(ctx: &ControlContext, id: &str) -> Result<Value, String> {
+pub(crate) fn current_status(ctx: &ControlContext, id: &str) -> Result<Value, String> {
     let store = store(ctx);
     let (pending, discussions) = snapshot(ctx, &store)?;
     let profiles = ctx.store.load();
@@ -267,17 +267,27 @@ fn current_status(ctx: &ControlContext, id: &str) -> Result<Value, String> {
 }
 
 pub(super) async fn list(State(ctx): State<Arc<ControlContext>>) -> Json<Value> {
-    let (pending, discussions) = match snapshot(&ctx, &store(&ctx)) {
-        Ok(both) => both,
-        Err(e) => return fail(e),
-    };
+    match list_rows(&ctx) {
+        Ok(rows) => ok(rows),
+        Err(e) => fail(e),
+    }
+}
+
+/// 목록 행(수신함에서 아직 안 가져간 것 먼저). `ctl discuss list`와 웹 상태판이 같이 쓴다.
+pub(crate) fn list_rows(ctx: &ControlContext) -> Result<Vec<Value>, String> {
+    let (pending, discussions) = snapshot(ctx, &store(ctx))?;
     let mut rows: Vec<Value> = pending
         .into_iter()
         .filter(|id| !discussions.iter().any(|d| &d.id == id))
         .map(|id| json!({ "id": id, "state": "pending" }))
         .collect();
     rows.extend(discussions.iter().map(|d| json!({ "id": d.id, "topic": d.topic, "state": state_label(d), "updatedAt": d.updated_at })));
-    ok(rows)
+    Ok(rows)
+}
+
+/// 공개된 발언(속기록). 없는 토의면 None.
+pub(crate) fn transcript(ctx: &ControlContext, id: &str) -> Option<Vec<crate::types::DiscussionUtterance>> {
+    store(ctx).load().ok()?.into_iter().find(|d| d.id == id).map(|d| d.transcript)
 }
 
 pub(super) async fn status(State(ctx): State<Arc<ControlContext>>, Json(p): Json<StatusParams>) -> Json<Value> {

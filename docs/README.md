@@ -44,6 +44,7 @@
 | 팀 토의(저장·탭 세션·CLI) | 아래 [팀 토의](#팀-토의) 절 |
 | 작업 폴더·Git·파일 색인 | `workdir/`, `file_index/`, `file_manager.rs` |
 | 실행 레시피 | `run_recipes/` |
+| 웹 상태판(tailnet·LAN HTTP 서버, 토큰, 전사 tail, 간접 명령) | `webdash/` (`mod.rs` 수명·설정 `web-dash.json`·토큰 `web-dash-token`, `net.rs` 바인드 주소, `routes.rs` API, `log.rs` 대화 로그 버퍼), 페이지 `src-tauri/web/dash.html`, 커맨드 `ipc/commands/web_dash.rs` |
 
 ### 렌더러 (`src/renderer/`)
 
@@ -58,6 +59,7 @@
 | 예약(규칙 계산·실행기·팝업 영역) | `workpanels/workSchedule.ts`, `scheduleRunner.ts`, `WorkScheduleSection.tsx` |
 | 팀 토의 | `discussion/` — 아래 [팀 토의](#팀-토의) 절 |
 | 마스코트 창·신호등 | `mascot/`, `store/mascotLights.ts`, `ipc/mascotBridge.ts` |
+| 웹 상태판 | `webdash/` — 쓰기 요청 처리 `webDashControl.ts`(`web-dash-control` 이벤트), 접속 표시·알림·라벨 넘기기 `webDashStore.ts`·`WebDashIndicator.tsx`, 설정 `settings/WebDashSection.tsx` |
 | 그 밖의 기능 | 기능 이름의 폴더(`usage/`, `analytics/`, `sessionlog/`, `awards/`, `workdir/`, `markdown/`, `diary/`, `settings/` …) |
 | 다국어 | 카탈로그 `src/shared/i18n/locales/`, 하드코딩 검사 `__tests__/noHardcodedHangul.test.ts` |
 

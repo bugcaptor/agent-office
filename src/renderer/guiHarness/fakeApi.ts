@@ -24,9 +24,11 @@ import type {
   TaskChatRequest,
   DiscussionSessionRequest,
   UsageSnapshot,
+  WebDashStatus,
   WorkItem,
 } from "@shared/types";
 import memoFixture from "@shared/contract-fixtures/memo-sheet.current.json";
+import webDashStatusFixture from "@shared/contract-fixtures/web-dash-status.json";
 import { emitTauriEvent } from "./tauriStub";
 import { loadScenario } from "./scenarios";
 import { sameWorkValue } from "../workpanels/workItemSync";
@@ -313,6 +315,11 @@ const impl: Partial<AgentOfficeApi> = {
   async controlStatus() {
     return { enabled: false, running: false, approved: false, port: null, appDataDir: "/tmp/gui-harness" };
   },
+  async webDashStatus() {
+    const { error: _error, ...status } = webDashStatusFixture as WebDashStatus;
+    return status;
+  },
+  async webDashPublishLabels() {},
   async codexImageStatus() { return { available: false }; },
   async listProviderModels() { return []; },
   async workAgentModels() { return []; },

@@ -29,6 +29,9 @@ import type {
   GetAppSettingsResult,
   AppSettings,
   ControlStatus,
+  WebDashConfig,
+  WebDashLabel,
+  WebDashStatus,
 } from './settings';
 import type { ApiKeyStatus } from './apiKeys';
 import type { AwardRecord, AwardSpeech, AwardsFile } from './awards';
@@ -222,6 +225,16 @@ export interface AgentOfficeApi {
   controlApprove(): Promise<void>;
   /** CLI 제어 승인 취소(토큰 폐기). 이후 모든 CLI 요청 401. */
   controlRevoke(): Promise<void>;
+  /** 웹 상태판 상태(설정·접속 주소·접속 수). */
+  webDashStatus(): Promise<WebDashStatus>;
+  /** 웹 상태판 설정을 저장하고 서버를 그에 맞춘다. */
+  webDashConfigure(config: WebDashConfig): Promise<WebDashStatus>;
+  /** 웹 상태판 토큰을 새로 만든다(기존 기기는 끊긴다). */
+  webDashRotateToken(): Promise<WebDashStatus>;
+  /** 렌더러에만 있는 캐릭터 라벨을 웹 상태판에 넘긴다(통째로 교체). */
+  webDashPublishLabels(labels: Record<string, WebDashLabel>): Promise<void>;
+  /** 웹 명령(`web-dash-control` 이벤트)에 답한다. `error`가 있으면 거절이다. */
+  webDashControlReply(requestId: string, error?: string, data?: unknown): Promise<boolean>;
   /** 사용 가능한 셸 목록. Windows 외 플랫폼은 빈 배열. */
   listAvailableShells(): Promise<AvailableShell[]>;
   /** 디렉터리를 Visual Studio Code로 연다. VS Code 미설치/경로 부재 시 reject. */

@@ -41,6 +41,8 @@ import { installDiscussionRunner } from "./discussion/discussionRun";
 import { installAutoRun } from "./workpanels/autoRun";
 import { installAutoRunControl } from "./workpanels/autoRunControl";
 import { installDiscussionControl } from "./discussion/discussionControl";
+import { installWebDashControl } from "./webdash/webDashControl";
+import { installWebDash } from "./webdash/webDashStore";
 import { installScheduleRunner } from "./workpanels/scheduleRunner";
 import { installUsageForecast } from "./usage/usageForecastStore";
 import { installWorkInboxLifecycle } from "./workpanels/lifecycle";
@@ -174,6 +176,9 @@ export async function bootApp(): Promise<() => void> {
   const offAutoRunControl = installAutoRunControl();
   // CLI의 토의 요청(시작·사회자 질문에 답하기). 카드 버튼과 같은 함수를 부른다.
   const offDiscussionControl = installDiscussionControl();
+  // 웹 상태판: 브라우저의 쓰기 요청(재시작·업무·토의)과 접속 표시·라벨 넘기기.
+  const offWebDashControl = installWebDashControl();
+  const offWebDash = installWebDash();
   // 예약 실행기. 자동 진행·보내기를 부르므로 그 뒤에 건다. 메인 창에서만 돈다.
   const offScheduleRunner = installScheduleRunner();
   const offWorkInbox = installWorkInboxLifecycle();
@@ -231,6 +236,8 @@ export async function bootApp(): Promise<() => void> {
     offAutoRun();
     offAutoRunControl();
     offDiscussionControl();
+    offWebDashControl();
+    offWebDash();
     offScheduleRunner();
     offUsageForecast();
     offWorkInbox();

@@ -18,6 +18,7 @@ import { GeneralTab } from "./GeneralTab";
 import { SoundTab } from "./SoundTab";
 import { SystemTab } from "./SystemTab";
 import { ControlSection } from "./ControlSection";
+import { WebDashSection } from "./WebDashSection";
 import { ShortcutsTab } from "./ShortcutsTab";
 
 type SettingsTabId = "general" | "sound" | "shortcuts" | "system" | "control";
@@ -86,6 +87,7 @@ function SettingsDialogBody() {
           {tab === "control" && (
             <>
               <ControlSection enabled={cliEnabled} />
+              <WebDashSection />
             </>
           )}
         </div>

@@ -20,6 +20,7 @@ import { SessionTimePanel } from "../timeline/SessionTimePanel";
 import { BottomBar } from "./BottomBar";
 import { ProfileLoadBanner } from "./ProfileLoadBanner";
 import { TopBar } from "./TopBar";
+import { WebDashIndicator } from "../webdash/WebDashIndicator";
 
 export function UIChrome() {
   const enabled = useAppStore((s) => s.appSettings.workPanelsEnabled);
@@ -32,6 +33,7 @@ export function UIChrome() {
         <SessionTimePanel />
         <NotificationTicker />
       </div>
+      <WebDashIndicator />
       <BottomBar />
     </div>
   );

@@ -64,6 +64,7 @@ pub mod types;
 // 한다. 로직 변경 없음 — 가시성만 승격.
 pub mod usage;
 mod vscode;
+pub mod webdash;
 // pub: contract 테스트가 `agent_office_lib::workdir::{GitStatusResult, ...}`에
 // 닿아야 한다(model.rs가 이미 `pub use model::*`로 재수출). 로직 변경 없음 —
 // 가시성만 승격.
@@ -760,6 +761,24 @@ pub fn run() {
                 let _ = tauri::async_runtime::block_on(control_server.ensure(control_ctx.clone()));
             }
 
+            // 웹 상태판: 설정(`web-dash.json`)에서 켜 두었으면 지금 띄운다. 주소 변화
+            // (Tailscale 켜짐·DHCP)는 감시 태스크가 따라간다.
+            let web_dash = Arc::new(crate::webdash::WebDashState::new(
+                data_dir.clone(),
+                crate::webdash::log::production_sources(claude_resume_store.clone()),
+                {
+                    let handle = handle.clone();
+                    Arc::new(crate::control::autorun::AutoRunBridge::new(move |request: &serde_json::Value| {
+                        handle.emit_to("main", "web-dash-control", request).map_err(|e| e.to_string())
+                    }))
+                },
+                Arc::new(crate::webdash::TauriDashEvents(handle.clone())),
+            ));
+            if web_dash.config().enabled {
+                tauri::async_runtime::block_on(web_dash.reconcile(control_ctx.clone(), web_dash.clone()));
+            }
+            crate::webdash::WebDashState::spawn_watch(web_dash.clone(), control_ctx.clone());
+
             // 작업 중 잠자기 방지(#68): 웨이크락 소유자 + lease 만료 감시 태스크.
             // 렌더러가 set_keep_awake로 lease(180s)를 갱신하고, 이 태스크가 30초
             // 간격으로 tick해 렌더러가 크래시/행으로 통지를 멈추면 강제 해제한다.
@@ -809,6 +828,7 @@ pub fn run() {
                 wake_lock,
                 key_store,
                 run_recipes,
+                web_dash,
             });
             Ok(())
         })
@@ -892,6 +912,11 @@ pub fn run() {
             ipc::commands::auto_run_report,
             ipc::commands::autorun_control_reply,
             ipc::commands::discussion_control_reply,
+            ipc::commands::web_dash_status,
+            ipc::commands::web_dash_configure,
+            ipc::commands::web_dash_rotate_token,
+            ipc::commands::web_dash_publish_labels,
+            ipc::commands::web_dash_control_reply,
             ipc::commands::scan_discussion_inbox,
             ipc::commands::auto_run_judge,
             ipc::commands::load_work_items,
@@ -987,6 +1012,7 @@ pub fn run() {
                 state.manager.dispose_all(); // kill + settings cleanup(동기)
                 state.observer_server.shutdown();
                 state.control_server.shutdown(); // CLI 제어 서버 정지 + control-port 정리(#55)
+                state.web_dash.stop(); // 웹 상태판 정지
                 state.wake_lock.deactivate(); // 잠자기 방지 해제(#68) — OS가 자동 회수도 하지만 이중 안전장치.
                 // wait 스레드가 Disposed 확정 후 OS가 자식 reap. 프로세스 종료는 정상 진행.
             }

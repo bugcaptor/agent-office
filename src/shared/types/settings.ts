@@ -192,6 +192,58 @@ export interface GetAppSettingsResult {
   firstRun: boolean;
 }
 
+/** 웹 상태판이 귀를 열 네트워크. Rust `webdash::WebDashBind` 미러. */
+export type WebDashBind = "tailnet" | "lan" | "both";
+
+/** 웹 상태판 설정(`web-dash.json`). Rust `webdash::WebDashConfig` 미러. */
+export interface WebDashConfig {
+  enabled: boolean;
+  bind: WebDashBind;
+  port: number;
+}
+
+/** `web_dash_status` 응답·`web-dash-status` 이벤트. Rust `webdash::WebDashStatus` 미러. */
+export interface WebDashStatus {
+  config: WebDashConfig;
+  running: boolean;
+  /** 접속 주소(토큰 포함). 루프백은 맨 뒤. */
+  urls: string[];
+  /** 주소를 못 찾았거나 포트를 못 열었을 때의 이유 코드. */
+  error?: string;
+  /** 최근 30초 안에 요청한 브라우저 수. */
+  clients: number;
+}
+
+/** 웹에서 들어온 명령(`web-dash-activity` 이벤트). 앱 화면 알림용. */
+export interface WebDashActivity {
+  op: string;
+  agentId?: string | null;
+  name?: string | null;
+  detail?: string | null;
+}
+
+/** 웹 명령(`web-dash-control` 이벤트). 렌더러가 처리하고 webDashControlReply로 답한다. */
+export interface WebDashControlRequest {
+  requestId: string;
+  op: "restart" | "terminate" | "resume" | "work-create" | "work-send" | "autorun-start" | "discuss-start" | "discuss-answer";
+  agentId?: string;
+  itemId?: string;
+  discussionId?: string;
+  title?: string;
+  body?: string;
+  assigneeAgentId?: string | null;
+  cli?: "claude" | "codex" | null;
+  send?: boolean;
+  text?: string;
+}
+
+/** 웹 상태판에 넘기는 캐릭터 라벨(렌더러에만 있는 값). */
+export interface WebDashLabel {
+  goal?: string;
+  cwd?: string;
+  branch?: string;
+}
+
 /** `control_status` 응답(이슈 #55) — CLI 제어의 2단계 승인 상태. */
 export interface ControlStatus {
   /** 설정 cliEnabled(서버 기동 대상 여부). */

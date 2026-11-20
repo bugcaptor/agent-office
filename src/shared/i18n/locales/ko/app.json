@@ -85,5 +85,23 @@
   },
   "shell": {
     "lightsOff": "모두 퇴근했습니다"
+  },
+  "webDash": {
+    "clients": "🌐 웹 접속 {{count}}",
+    "op": {
+      "restart": "🌐 웹: {{name}} 터미널 재시작",
+      "terminate": "🌐 웹: {{name}} 터미널 종료",
+      "resume": "🌐 웹: {{name}} 이어하기",
+      "interrupt": "🌐 웹: {{name}} 작업 중단(Esc)",
+      "ctrl-c": "🌐 웹: {{name}}에 Ctrl-C",
+      "launch": "🌐 웹: {{name}}에서 {{detail}} 실행",
+      "work-create": "🌐 웹: 업무 만듦 — {{detail}}",
+      "work-create-send": "🌐 웹: 업무 만들어 {{name}}에게 보냄 — {{detail}}",
+      "work-send": "🌐 웹: {{name}}에게 업무 보냄 — {{detail}}",
+      "autorun-start": "🌐 웹: 자동 진행 시작 — {{detail}}",
+      "discuss-start": "🌐 웹: 토의 시작",
+      "discuss-answer": "🌐 웹: 토의 사회자에게 답함",
+      "other": "🌐 웹: {{op}}"
+    }
   }
 }

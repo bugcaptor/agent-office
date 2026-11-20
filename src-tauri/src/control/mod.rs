@@ -16,7 +16,7 @@
 /// 플랜 위임(자동 진행 제어·상태)과 단발 질의.
 pub mod autorun;
 pub mod client;
-mod discussion;
+pub(crate) mod discussion;
 /// VS Code 연결 확장이 캐릭터·외형·사용량을 읽는 제한된 표시 API.
 mod display;
 pub mod protocol;

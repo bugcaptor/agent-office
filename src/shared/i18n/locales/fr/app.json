@@ -68,5 +68,23 @@
   },
   "shell": {
     "lightsOff": "Tout le monde est parti"
+  },
+  "webDash": {
+    "clients": "🌐 Web : {{count}} connecté(s)",
+    "op": {
+      "restart": "🌐 Web : terminal de {{name}} redémarré",
+      "terminate": "🌐 Web : terminal de {{name}} fermé",
+      "resume": "🌐 Web : reprise de {{name}}",
+      "interrupt": "🌐 Web : {{name}} interrompu (Échap)",
+      "ctrl-c": "🌐 Web : Ctrl-C vers {{name}}",
+      "launch": "🌐 Web : {{detail}} lancé dans {{name}}",
+      "work-create": "🌐 Web : tâche créée — {{detail}}",
+      "work-create-send": "🌐 Web : tâche créée et envoyée à {{name}} — {{detail}}",
+      "work-send": "🌐 Web : tâche envoyée à {{name}} — {{detail}}",
+      "autorun-start": "🌐 Web : exécution auto lancée — {{detail}}",
+      "discuss-start": "🌐 Web : discussion lancée",
+      "discuss-answer": "🌐 Web : réponse au modérateur",
+      "other": "🌐 Web : {{op}}"
+    }
   }
 }

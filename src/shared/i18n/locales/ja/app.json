@@ -68,5 +68,23 @@
   },
   "shell": {
     "lightsOff": "全員退勤しました"
+  },
+  "webDash": {
+    "clients": "🌐 Web 接続 {{count}}",
+    "op": {
+      "restart": "🌐 Web: {{name}} のターミナルを再起動",
+      "terminate": "🌐 Web: {{name}} のターミナルを終了",
+      "resume": "🌐 Web: {{name}} を再開",
+      "interrupt": "🌐 Web: {{name}} の作業を中断(Esc)",
+      "ctrl-c": "🌐 Web: {{name}} に Ctrl-C",
+      "launch": "🌐 Web: {{name}} で {{detail}} を起動",
+      "work-create": "🌐 Web: タスクを作成 — {{detail}}",
+      "work-create-send": "🌐 Web: タスクを作成して {{name}} に送信 — {{detail}}",
+      "work-send": "🌐 Web: {{name}} にタスクを送信 — {{detail}}",
+      "autorun-start": "🌐 Web: 自動進行を開始 — {{detail}}",
+      "discuss-start": "🌐 Web: 議論を開始",
+      "discuss-answer": "🌐 Web: 司会に回答",
+      "other": "🌐 Web: {{op}}"
+    }
   }
 }

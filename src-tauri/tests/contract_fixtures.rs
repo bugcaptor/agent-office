@@ -633,3 +633,20 @@ fn awards_record_keeps_null_winner_and_omits_absent_archetype() {
     let stripped = serde_json::to_value(&stripped).unwrap();
     assert!(stripped.get("archetype").is_none());
 }
+
+#[test]
+fn web_dash_status_serializes_to_fixture() {
+    use agent_office_lib::webdash::{WebDashBind, WebDashConfig, WebDashStatus};
+    let fixture = include_str!("../../src/shared/contract-fixtures/web-dash-status.json");
+    let status = WebDashStatus {
+        config: WebDashConfig { enabled: true, bind: WebDashBind::Both, port: 7788 },
+        running: true,
+        urls: vec!["http://100.101.2.3:7788/#t=0123abcd".into(), "http://127.0.0.1:7788/#t=0123abcd".into()],
+        error: Some("web-dash-no-network".into()),
+        clients: 2,
+    };
+    assert_value_eq(fixture, serde_json::to_value(&status).unwrap());
+    // 설정은 렌더러 -> 백엔드로도 오간다(web_dash_configure).
+    let config: WebDashConfig = serde_json::from_value(serde_json::from_str::<Value>(fixture).unwrap()["config"].clone()).unwrap();
+    assert_eq!(config, status.config);
+}

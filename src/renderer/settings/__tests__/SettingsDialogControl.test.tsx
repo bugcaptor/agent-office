@@ -20,6 +20,7 @@ vi.mock("../../ipc/tauriApi", () => ({
     controlApprove: () => controlApprove(),
     controlRevoke: () => controlRevoke(),
     setAppSettings: (s: unknown) => setAppSettings(s),
+    webDashStatus: () => Promise.resolve({ config: { enabled: false, bind: "tailnet", port: 7788 }, running: false, urls: [], clients: 0 }),
   },
 }));
 

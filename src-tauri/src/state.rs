@@ -228,6 +228,8 @@ pub struct AppState {
     pub key_store: Arc<crate::key_store::ApiKeyStore>,
     /// 레시피 실행은 에이전트 PTY와 격리된 전용 프로세스다.
     pub run_recipes: Arc<crate::run_recipes::RunRecipeRuntime>,
+    /// 웹 상태판(tailnet·LAN 브라우저용 HTTP 서버).
+    pub web_dash: Arc<crate::webdash::WebDashState>,
 }
 
 // ── 테스트용 페이크 ────────────────────────────────────────────────────

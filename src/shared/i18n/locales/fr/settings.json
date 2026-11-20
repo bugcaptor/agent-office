@@ -179,5 +179,28 @@
       "reserved": "L'app ou le système utilise déjà cette touche.",
       "taken": "Déjà attribué à « {{name}} »."
     }
+  },
+  "webDash": {
+    "title": "Tableau de bord web (navigateur tailnet / LAN)",
+    "help": "Tant que l'app tourne, sert une petite page web pour voir l'état des personnages et les journaux de conversation depuis un téléphone ou un autre ordinateur. Les conversations sont en lecture seule ; seules des commandes indirectes sont possibles (redémarrer un terminal, interrompre, lancer Claude/Codex, envoyer des tâches, discussions). L'adresse contient un jeton d'accès.",
+    "bind": "Réseau",
+    "binds": {
+      "tailnet": "Tailscale (tailnet) seulement",
+      "lan": "LAN (adresses privées) seulement",
+      "both": "Tailscale + LAN"
+    },
+    "port": "Port",
+    "running": "En marche · {{count}} navigateur(s) connecté(s)",
+    "stopped": "Arrêté",
+    "urlsIntro": "Adresses (la copie inclut le jeton) :",
+    "copy": "Copier l'adresse",
+    "copied": "Copié",
+    "rotate": "Nouveau jeton",
+    "rotateHelp": "Si une adresse a fuité, créez un nouveau jeton. Les appareils connectés sont déconnectés et doivent ouvrir la nouvelle adresse.",
+    "errors": {
+      "web-dash-no-network": "Aucune adresse trouvée sur le réseau choisi : ouvert sur cet ordinateur (127.0.0.1) seulement. Vérifiez que Tailscale est actif ou que vous êtes sur un LAN. Il s'attache automatiquement dès qu'une adresse apparaît.",
+      "web-dash-bind-failed": "Impossible d'ouvrir le port. S'il est utilisé par un autre programme, choisissez-en un autre.",
+      "web-dash-port-invalid": "Le port doit être compris entre 1024 et 65535."
+    }
   }
 }

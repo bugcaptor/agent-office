@@ -68,5 +68,23 @@
   },
   "shell": {
     "lightsOff": "大家都下班了"
+  },
+  "webDash": {
+    "clients": "🌐 網頁連線 {{count}}",
+    "op": {
+      "restart": "🌐 網頁:重新啟動了 {{name}} 的終端機",
+      "terminate": "🌐 網頁:關閉了 {{name}} 的終端機",
+      "resume": "🌐 網頁:接續 {{name}} 的工作階段",
+      "interrupt": "🌐 網頁:中斷 {{name}} 的工作(Esc)",
+      "ctrl-c": "🌐 網頁:向 {{name}} 送出 Ctrl-C",
+      "launch": "🌐 網頁:在 {{name}} 中啟動 {{detail}}",
+      "work-create": "🌐 網頁:建立任務 — {{detail}}",
+      "work-create-send": "🌐 網頁:建立任務並送給 {{name}} — {{detail}}",
+      "work-send": "🌐 網頁:向 {{name}} 送出任務 — {{detail}}",
+      "autorun-start": "🌐 網頁:開始自動推進 — {{detail}}",
+      "discuss-start": "🌐 網頁:開始討論",
+      "discuss-answer": "🌐 網頁:回答了主持人",
+      "other": "🌐 網頁:{{op}}"
+    }
   }
 }
