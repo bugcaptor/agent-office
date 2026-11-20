@@ -65,6 +65,8 @@ export type ModalState =
   | { kind: "confirm-quit" }
   /** 태스크 대화 탭 닫기(CLI가 살아 있을 때). agentId는 `task-chat-…`. */
   | { kind: "confirm-close-task-chat"; agentId: string }
+  /** 토의 참가자 탭 닫기(CLI가 살아 있을 때). agentId는 `discuss-…`. */
+  | { kind: "confirm-close-discussion-session"; agentId: string }
   | { kind: "settings" }
   | { kind: "analytics" }
   | { kind: "usage" }

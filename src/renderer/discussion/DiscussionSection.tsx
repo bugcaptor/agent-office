@@ -12,7 +12,8 @@ import { WorkDialog } from "../workpanels/WorkDialog";
 import { AgentFace } from "../workpanels/AgentFace";
 import { useRoleStore } from "./roleStore";
 import { sortDiscussions, useDiscussionStore } from "./discussionStore";
-import { discussionDeletable, discussionEditable } from "./discussionModel";
+import { discussionDeletable, discussionEditable, discussionReadOnlySummary } from "./discussionModel";
+import { discussionReadOnlyMode } from "@shared/types";
 import { DiscussionEditor } from "./DiscussionEditor";
 import "./discussion.css";
 
@@ -65,8 +66,16 @@ function DiscussionCard({ discussion: d, selected, onOpen }: { discussion: Discu
         {debaters.map((p) => <span key={p.agentId} title={agents[p.agentId]?.name ?? t("board.missingAgent")}><AgentFace agentId={p.agentId} /></span>)}
       </span>
       <small>{d.state === "ready" ? limitsText(t, d) : t("board.progress", { round: d.round, max: d.limits.maxRounds })}</small>
+      <ReadOnlyBadge discussion={d} />
     </button>
   </article>;
+}
+
+/** 읽기 전용을 CLI가 강제하는지, 프롬프트로만 제한하는지. 참가자 중 가장 약한 쪽을 보인다. */
+function ReadOnlyBadge({ discussion }: { discussion: Discussion }) {
+  const { t } = useTranslation("discussion");
+  const mode = discussionReadOnlySummary(discussion);
+  return <small className={`discussion-readonly readonly-${mode}`} title={t(`readOnly.hint.${mode}`)}>🔒 {t(`readOnly.summary.${mode}`)}</small>;
 }
 
 function DiscussionDetail({ discussion: d, onClose }: { discussion: Discussion; onClose(): void }) {
@@ -91,6 +100,7 @@ function DiscussionDetail({ discussion: d, onClose }: { discussion: Discussion; 
       <dt>{t("detail.limits")}</dt><dd>{limitsText(t, d)}{d.limits.usageGuard ? ` · ${t("detail.usageGuard")}` : ""}</dd>
       <dt>{t("detail.cost")}</dt><dd>{t("detail.costValue", { cost: d.costUsd.toFixed(2) })}</dd>
       <dt>{t("detail.memo")}</dt><dd>{d.decisionMemoPath ?? t("detail.memoNone")}</dd>
+      <dt>{t("detail.readOnly")}</dt><dd><ReadOnlyBadge discussion={d} /></dd>
     </dl>
     <h3 className="discussion-subtitle">{t("detail.participants")}</h3>
     <ul className="discussion-people">
@@ -98,7 +108,8 @@ function DiscussionDetail({ discussion: d, onClose }: { discussion: Discussion; 
         <AgentFace agentId={p.agentId} />
         <span><strong>{agents[p.agentId]?.name ?? t("board.missingAgent")}</strong>
           {p.agentId === d.moderatorAgentId && <small className="discussion-moderator-badge">{t("detail.moderator")}</small>}
-          <small>{roleName(p.roleId)} · {[p.agent.cli, p.agent.model, p.agent.effort].filter(Boolean).join(" · ")}</small></span>
+          <small>{roleName(p.roleId)} · {[p.agent.cli, p.agent.model, p.agent.effort].filter(Boolean).join(" · ")}
+            {" · "}<span className={`discussion-readonly readonly-${discussionReadOnlyMode(p.agent.cli)}`}>{t(`readOnly.mode.${discussionReadOnlyMode(p.agent.cli)}`)}</span></small></span>
       </li>)}
     </ul>
     <div className="work-dialog-actions work-dialog-run">

@@ -11,7 +11,8 @@
     "viewModeWindowed": "ウィンドウ表示に戻す",
     "chatTooltip": "タスク {{id}}\n作業フォルダ: {{cwd}}",
     "chatHome": "ホームフォルダ",
-    "chatClose": "チャットを終了"
+    "chatClose": "チャットを終了",
+    "discussionClose": "議論タブを閉じる"
   },
   "menu": {
     "restart": "ターミナルを再起動",
@@ -33,7 +34,8 @@
   "host": {
     "exited": "プロセスが終了しました。",
     "relaunch": "もう一度起動",
-    "chatEnded": "チャットは終了しました。タブを閉じて、タスクからもう一度開けます。"
+    "chatEnded": "チャットは終了しました。タブを閉じて、タスクからもう一度開けます。",
+    "discussionEnded": "議論セッションが終わりました。タブを閉じてください。"
   },
   "palette": {
     "latte": "Catppuccin Latte",

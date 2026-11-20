@@ -26,7 +26,8 @@ use agent_office_lib::persistence::settings_store::{
 use agent_office_lib::session_events::types::SessionEventRecord;
 use agent_office_lib::types::{
     ActivityEvent, ActivityKind, AdoptedSessionInfo, AwardsFile,
-    CreateSessionRequest, CreateSessionResult, MemoSheet, MemoSheetMeta,
+    CollectedUtterance, CreateSessionRequest, CreateSessionResult, DiscussionCollectRequest, DiscussionCollection,
+    DiscussionReadOnly, DiscussionSessionRequest, DiscussionSessionResult, DiscussionUtteranceSource, MemoSheet, MemoSheetMeta,
     DiscussionStance, DiscussionState, DiscussionUtteranceKind, DiscussionsFile, NotificationEvent, NotificationSource, OutputChunk, PersistedState, RolesFile, SessionEventTokens,
     SessionExitInfo, SessionState, SessionStateEvent, TaskChatRequest, TaskChatResult, TurnUsageEvent,
     WorkCli, WorkStatus,
@@ -459,6 +460,41 @@ fn open_task_chat_request_deserializes_from_fixture() {
 fn open_task_chat_result_serializes_to_fixture() {
     let value = TaskChatResult { agent_id: "task-chat-t-5b198451".into(), session_id: "0f0e0d0c-0000".into() };
     assert_value_eq(fixture!("open-task-chat-result.json"), serde_json::to_value(&value).unwrap());
+}
+
+#[test]
+fn open_discussion_session_request_deserializes_from_fixture() {
+    let value: DiscussionSessionRequest = serde_json::from_str(fixture!("open-discussion-session-request.json")).unwrap();
+    assert_eq!(value.discussion_id, "Xk3pQ9aB");
+    assert_eq!(value.agent_id, "V1StGXR8_Z5jdHi6B-myT");
+    assert_eq!((value.cols, value.rows), (Some(120), Some(32)));
+    assert!(value.turn.unwrap().starts_with("첫 라운드"));
+}
+
+#[test]
+fn open_discussion_session_result_serializes_to_fixture() {
+    let value = DiscussionSessionResult {
+        agent_id: "discuss-Xk3pQ9aB.V1StGXR8_Z5jdHi6B-myT".into(),
+        session_id: "0f0e0d0c-0000".into(),
+        read_only: DiscussionReadOnly::Partial,
+        collection: DiscussionCollection::LastReply,
+        observed: true,
+    };
+    assert_value_eq(fixture!("open-discussion-session-result.json"), serde_json::to_value(&value).unwrap());
+}
+
+#[test]
+fn collect_discussion_utterance_request_deserializes_from_fixture() {
+    let value: DiscussionCollectRequest = serde_json::from_str(fixture!("collect-discussion-utterance-request.json")).unwrap();
+    assert_eq!(value.agent_id, "discuss-Xk3pQ9aB.V1StGXR8_Z5jdHi6B-myT");
+    assert_eq!(value.cli, WorkCli::Codex);
+    assert_eq!(value.since, 1_798_000_000_000);
+}
+
+#[test]
+fn collected_utterance_serializes_to_fixture() {
+    let value = CollectedUtterance { text: "JSON을 유지하되 스키마 버전을 둡니다.".into(), source: DiscussionUtteranceSource::LastReply };
+    assert_value_eq(fixture!("collected-utterance.json"), serde_json::to_value(&value).unwrap());
 }
 
 // ---------------------------------------------------------------------

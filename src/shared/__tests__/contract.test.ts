@@ -36,6 +36,10 @@ describe("Commands / Events name constants", () => {
     expect(Commands.listSessionLogs).toBe("list_session_logs");
     // 태스크 대화
     expect(Commands.openTaskChat).toBe("open_task_chat");
+    // 토의 참가자 세션
+    expect(Commands.openDiscussionSession).toBe("open_discussion_session");
+    expect(Commands.sendDiscussionTurn).toBe("send_discussion_turn");
+    expect(Commands.collectDiscussionUtterance).toBe("collect_discussion_utterance");
     expect(Commands.openSessionLog).toBe("open_session_log");
     expect(Commands.generateStudyMaterial).toBe("generate_study_material");
 

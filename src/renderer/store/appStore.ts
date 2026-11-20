@@ -7,7 +7,7 @@
 import { create } from "zustand";
 import { subscribeWithSelector } from "zustand/middleware";
 import { notificationType } from "./types";
-import { isTaskChatId } from "@shared/types";
+import { isSideSessionId } from "@shared/types";
 import type {
   AgentProfile,
   AgentTaskLabel,
@@ -684,9 +684,9 @@ export const useAppStore = create<AppState>()(
 
     openTerminal: (agentId) =>
       set((s) => {
-        // 태스크 대화 탭은 캐릭터가 아니다 — 활성만 바꾸고
-        // 캐릭터 탭 순서(recentAgentIds)에는 넣지 않는다. 탭 목록은 taskChatStore가 쥔다.
-        if (isTaskChatId(agentId)) {
+        // 태스크 대화·토의 탭은 캐릭터가 아니다 — 활성만 바꾸고
+        // 캐릭터 탭 순서(recentAgentIds)에는 넣지 않는다. 탭 목록은 taskChatStore·discussionSessionStore가 쥔다.
+        if (isSideSessionId(agentId)) {
           return s.activeTerminalAgentId === agentId ? s : { activeTerminalAgentId: agentId };
         }
         if (!s.agents[agentId]) return s;

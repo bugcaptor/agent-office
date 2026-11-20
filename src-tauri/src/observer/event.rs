@@ -774,6 +774,13 @@ pub fn truncate_stop_message(raw: &str) -> Option<String> {
 
 /// Codex Stop 훅 body의 `last_assistant_message`를 완료 메시지로 추출·절단한다.
 /// 부재/비문자열/공백뿐이면 None(이슈 #39: 예전엔 의도적으로 버렸으나 이제 노출).
+/// Codex Stop 훅 body의 `last_assistant_message` 원문(자르지 않음). 비었으면 None.
+pub fn codex_last_assistant_message(body: &[u8]) -> Option<String> {
+    let value: serde_json::Value = serde_json::from_slice(body).ok()?;
+    let message = value.get("last_assistant_message")?.as_str()?;
+    (!message.trim().is_empty()).then(|| message.to_string())
+}
+
 pub fn codex_stop_message(body: &[u8]) -> Option<String> {
     let value: serde_json::Value = serde_json::from_slice(body).ok()?;
     let message = value.get("last_assistant_message")?.as_str()?;

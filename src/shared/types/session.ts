@@ -76,6 +76,13 @@ export interface CreateSessionOptions {
 export const TASK_CHAT_PREFIX = "task-chat-";
 /** 태스크 대화 세션인가. 캐릭터 중심 스토어는 이런 세션의 이벤트를 무시한다. */
 export function isTaskChatId(agentId: string): boolean { return agentId.startsWith(TASK_CHAT_PREFIX); }
+/** 토의 참가자 세션의 agentId 접두사(`discuss-<토의 id>.<참가자>`). Rust `DISCUSSION_SESSION_PREFIX`와 같다. */
+export const DISCUSSION_SESSION_PREFIX = "discuss-";
+/** 토의 참가자 세션인가. */
+export function isDiscussionSessionId(agentId: string): boolean { return agentId.startsWith(DISCUSSION_SESSION_PREFIX); }
+/** 캐릭터가 아닌 전용 탭 세션(태스크 대화·토의)인가. 캐릭터 중심 스토어는 이런 세션의 이벤트를 무시한다.
+ * Rust `is_side_session_id`와 같다. */
+export function isSideSessionId(agentId: string): boolean { return isTaskChatId(agentId) || isDiscussionSessionId(agentId); }
 
 /**
  * Wire payload for the `create_session` command (camelCase args).

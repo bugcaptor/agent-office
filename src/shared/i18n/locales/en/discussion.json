@@ -158,6 +158,47 @@
     "delete": "Delete",
     "confirmDelete": "Really delete",
     "deleteError": "Could not delete.",
-    "edit": "Edit"
+    "edit": "Edit",
+    "readOnly": "Read only"
+  },
+  "readOnly": {
+    "summary": {
+      "flags": "Read only · enforced by the CLI",
+      "partial": "Read only · partly by prompt only",
+      "prompt": "Read only · partly by prompt only"
+    },
+    "hint": {
+      "flags": "Every participant's CLI settings block file-editing tools and commands.",
+      "partial": "For some participants the CLI blocks only the editing tools; shell commands are limited by the prompt only.",
+      "prompt": "Some participants' CLIs cannot be locked down, so editing is forbidden by the prompt only."
+    },
+    "mode": {
+      "flags": "read only enforced by the CLI",
+      "partial": "CLI blocks editing tools only",
+      "prompt": "limited by prompt only"
+    }
+  },
+  "session": {
+    "errors": {
+      "busy": "This participant's discussion tab is opening.",
+      "running": "This participant's discussion tab is already open.",
+      "limit": "Up to {{max}} discussion tabs can be open at once.",
+      "other": "Tabs from another discussion are open. Only one discussion can run at a time.",
+      "invalidId": "The discussion or participant id is not valid.",
+      "missing": "The discussion was not found.",
+      "finished": "This discussion has finished.",
+      "notParticipant": "Not a participant in this discussion.",
+      "invalidCwd": "The discussion's working folder is not an absolute path."
+    },
+    "close": {
+      "title": "Close discussion tab",
+      "body": "Close the \"{{title}}\" discussion tab? The CLI in the terminal ends too, and this participant leaves the discussion.",
+      "confirm": "Close"
+    },
+    "quitNotice_one": "{{count}} open discussion tab will end too.",
+    "quitNotice_other": "{{count}} open discussion tabs will end too.",
+    "tooltip": "Discussion: {{topic}}",
+    "tooltipModerator": "Discussion moderator: {{topic}}",
+    "unknownTopic": "(deleted discussion)"
   }
 }

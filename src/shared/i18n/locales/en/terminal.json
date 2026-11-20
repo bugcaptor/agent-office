@@ -11,7 +11,8 @@
     "viewModeWindowed": "Back to windowed",
     "chatTooltip": "Task {{id}}\nWorking folder: {{cwd}}",
     "chatHome": "Home folder",
-    "chatClose": "End chat"
+    "chatClose": "End chat",
+    "discussionClose": "Close discussion tab"
   },
   "menu": {
     "restart": "Restart terminal",
@@ -33,7 +34,8 @@
   "host": {
     "exited": "The process exited.",
     "relaunch": "Relaunch",
-    "chatEnded": "The chat has ended. Close the tab and open it again from the task."
+    "chatEnded": "The chat has ended. Close the tab and open it again from the task.",
+    "discussionEnded": "The discussion session has ended. Close the tab."
   },
   "palette": {
     "latte": "Catppuccin Latte",

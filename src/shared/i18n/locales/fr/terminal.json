@@ -11,7 +11,8 @@
     "viewModeWindowed": "Retour en fenêtre",
     "chatTooltip": "Tâche {{id}}\nDossier de travail : {{cwd}}",
     "chatHome": "Dossier personnel",
-    "chatClose": "Terminer la discussion"
+    "chatClose": "Terminer la discussion",
+    "discussionClose": "Fermer l'onglet de discussion"
   },
   "menu": {
     "restart": "Redémarrer le terminal",
@@ -33,7 +34,8 @@
   "host": {
     "exited": "Le processus s’est terminé.",
     "relaunch": "Relancer",
-    "chatEnded": "La discussion est terminée. Fermez l’onglet et rouvrez-la depuis la tâche."
+    "chatEnded": "La discussion est terminée. Fermez l’onglet et rouvrez-la depuis la tâche.",
+    "discussionEnded": "La session de discussion est terminée. Fermez l'onglet."
   },
   "palette": {
     "latte": "Catppuccin Latte",

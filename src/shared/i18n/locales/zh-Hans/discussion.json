@@ -158,6 +158,47 @@
     "delete": "删除",
     "confirmDelete": "确认删除",
     "deleteError": "无法删除。",
-    "edit": "编辑"
+    "edit": "编辑",
+    "readOnly": "只读"
+  },
+  "readOnly": {
+    "summary": {
+      "flags": "只读 · 由 CLI 强制",
+      "partial": "只读 · 部分仅靠提示限制",
+      "prompt": "只读 · 部分仅靠提示限制"
+    },
+    "hint": {
+      "flags": "所有参与者的 CLI 设置都会阻止修改文件的工具和命令。",
+      "partial": "部分参与者的 CLI 只阻止编辑工具，Shell 命令仅靠提示限制。",
+      "prompt": "部分参与者的 CLI 无法锁定，只能靠提示禁止修改。"
+    },
+    "mode": {
+      "flags": "CLI 强制只读",
+      "partial": "CLI 只阻止编辑工具",
+      "prompt": "仅靠提示限制"
+    }
+  },
+  "session": {
+    "errors": {
+      "busy": "正在打开这位参与者的讨论标签页。",
+      "running": "这位参与者的讨论标签页已经打开。",
+      "limit": "最多可同时打开 {{max}} 个讨论标签页。",
+      "other": "另一个讨论的标签页仍在打开。一次只能进行一个讨论。",
+      "invalidId": "讨论或参与者 id 无效。",
+      "missing": "找不到该讨论。",
+      "finished": "该讨论已结束。",
+      "notParticipant": "不是该讨论的参与者。",
+      "invalidCwd": "讨论的工作文件夹不是绝对路径。"
+    },
+    "close": {
+      "title": "关闭讨论标签页",
+      "body": "关闭“{{title}}”讨论标签页？终端中的 CLI 也会结束，这位参与者将退出讨论。",
+      "confirm": "关闭"
+    },
+    "quitNotice_one": "打开的 {{count}} 个讨论标签页也会一起结束。",
+    "quitNotice_other": "打开的 {{count}} 个讨论标签页也会一起结束。",
+    "tooltip": "讨论：{{topic}}",
+    "tooltipModerator": "讨论主持：{{topic}}",
+    "unknownTopic": "（已删除的讨论）"
   }
 }

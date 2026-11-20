@@ -11,7 +11,8 @@
     "viewModeWindowed": "回到視窗模式",
     "chatTooltip": "任務 {{id}}\n工作資料夾：{{cwd}}",
     "chatHome": "主資料夾",
-    "chatClose": "結束對話"
+    "chatClose": "結束對話",
+    "discussionClose": "關閉討論分頁"
   },
   "menu": {
     "restart": "重新啟動終端機",
@@ -33,7 +34,8 @@
   "host": {
     "exited": "處理程序已結束。",
     "relaunch": "重新啟動",
-    "chatEnded": "對話已結束。關閉此分頁後可從任務重新開啟。"
+    "chatEnded": "對話已結束。關閉此分頁後可從任務重新開啟。",
+    "discussionEnded": "討論工作階段已結束。請關閉分頁。"
   },
   "palette": {
     "latte": "Catppuccin Latte",

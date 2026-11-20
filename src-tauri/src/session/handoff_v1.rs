@@ -17,8 +17,8 @@ impl SessionManager {
     /// 반환값은 성공 개수 -- 프론트는 이 수와 무관하게 종료를 진행한다.
     /// `app_data_dir`이 없으면(테스트 등) 0.
     ///
-    /// 태스크 대화 세션(`task-chat-` 접두사)은 넘기지 않고 버린다
-    /// -- 대화는 일회성이고 입양 경로가 캐릭터 없는 세션을 받지 않는다.
+    /// 태스크 대화·토의 세션(`task-chat-`·`discuss-` 접두사)은 넘기지 않고 버린다
+    /// -- 둘 다 일회성이고 입양 경로가 캐릭터 없는 세션을 받지 않는다.
     #[cfg(unix)]
     pub fn handoff_all(
         &self,
@@ -31,7 +31,7 @@ impl SessionManager {
         let ids: Vec<AgentId> = {
             let map = self.sessions.lock();
             map.iter()
-                .filter(|(a, s)| !is_task_chat_id(a) && *s.state.lock() == SessionState::Running)
+                .filter(|(a, s)| !is_side_session_id(a) && *s.state.lock() == SessionState::Running)
                 .map(|(a, _)| a.clone())
                 .collect()
         };
@@ -71,10 +71,10 @@ impl SessionManager {
         0
     }
 
-    /// 살아 있는 태스크 대화 세션을 모두 버린다(핸드오프 직전).
+    /// 살아 있는 태스크 대화·토의 세션을 모두 버린다(핸드오프 직전).
     fn discard_task_chats(&self) {
         let ids: Vec<AgentId> =
-            self.sessions.lock().keys().filter(|a| is_task_chat_id(a)).cloned().collect();
+            self.sessions.lock().keys().filter(|a| is_side_session_id(a)).cloned().collect();
         for agent_id in ids {
             self.dispose(&agent_id);
         }

@@ -5,6 +5,10 @@
 
 import type { WorkAgent } from './workPanels';
 
+/** 토의 참가자 CLI 종류. */
+type WorkCli = WorkAgent['cli'];
+import { DISCUSSION_SESSION_PREFIX } from './session';
+
 /** 이 빌드가 읽는 최대 스키마 버전. Rust `DISCUSSIONS_SCHEMA_VERSION` 미러. */
 export const DISCUSSIONS_SCHEMA_VERSION = 1;
 /** 사회자를 뺀 토론자 수 상한(사회자 포함 최대 5명). Rust 미러. */
@@ -106,3 +110,64 @@ export function discussionProblem(d: Discussion): DiscussionProblem | null {
   if (!discussionLimitsValid(d.limits)) return "limits";
   return null;
 }
+
+// ── 토의 참가자 세션(전용 탭). Rust `discussion_session.rs` 미러. ──
+
+/** 동시에 살아 있는 토의 세션 상한(사회자 포함 5명 × 동시 토의 1개). Rust `MAX_DISCUSSION_SESSIONS`. */
+export const DISCUSSION_MAX_SESSIONS = 5;
+
+/** 토의 세션 agentId. 두 id가 `[A-Za-z0-9_-]{1,64}`가 아니면 null(Rust `session_agent_id`). */
+export function discussionSessionAgentId(discussionId: string, participantAgentId: string): string | null {
+  const ok = (id: string) => /^[A-Za-z0-9_-]{1,64}$/.test(id);
+  return ok(discussionId) && ok(participantAgentId) ? `${DISCUSSION_SESSION_PREFIX}${discussionId}.${participantAgentId}` : null;
+}
+/** 토의 세션 agentId → 토의 id·참가자 id. 형식이 아니면 null. */
+export function parseDiscussionSessionAgentId(agentId: string): { discussionId: string; participantAgentId: string } | null {
+  const match = /^discuss-([A-Za-z0-9_-]{1,64})\.([A-Za-z0-9_-]{1,64})$/.exec(agentId);
+  return match ? { discussionId: match[1], participantAgentId: match[2] } : null;
+}
+
+/** 읽기 전용을 어떻게 지키는가. flags = CLI 플래그가 막음, partial = 편집 도구만 막음, prompt = 프롬프트 제한뿐. */
+export type DiscussionReadOnly = "flags" | "partial" | "prompt";
+/** 발언을 받는 길. submit = `office-discuss say`, last-reply = 턴의 마지막 응답. */
+export type DiscussionCollection = "submit" | "last-reply";
+
+/** Rust `read_only_mode` 미러. 근거는 그쪽 주석(CLI `--help` 실측). */
+export function discussionReadOnlyMode(cli: WorkCli): DiscussionReadOnly {
+  if (cli === "claude" || cli === "codex") return "flags";
+  if (cli === "pi") return "partial";
+  return "prompt";
+}
+/** Rust `collection_mode` 미러. Codex 읽기 전용 샌드박스는 제출 명령의 쓰기도 막는다. */
+export function discussionCollectionMode(cli: WorkCli): DiscussionCollection {
+  return cli === "codex" ? "last-reply" : "submit";
+}
+
+export interface DiscussionSessionRequest {
+  discussionId: string;
+  /** 참가자(캐릭터) agentId. */
+  agentId: string;
+  cols?: number;
+  rows?: number;
+  /** 첫 프롬프트 끝에 붙일 이번 차례 지시. 없으면 대기 지시로 끝난다. */
+  turn?: string;
+}
+export interface DiscussionSessionResult {
+  /** 토의 세션 agentId. */
+  agentId: string;
+  sessionId: string;
+  readOnly: DiscussionReadOnly;
+  collection: DiscussionCollection;
+  /** 관찰 훅이 붙었는가. 거짓이면 턴 종료 신호가 오지 않는다. */
+  observed: boolean;
+}
+export interface DiscussionCollectRequest {
+  /** 토의 세션 agentId. */
+  agentId: string;
+  sessionId: string;
+  cli: WorkCli;
+  /** 그 차례를 보낸 시각(epoch ms, `sendDiscussionTurn`의 submittedAt). */
+  since: number;
+}
+export type DiscussionUtteranceSource = "submitted" | "last-reply";
+export interface CollectedUtterance { text: string; source: DiscussionUtteranceSource }

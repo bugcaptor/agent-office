@@ -20,6 +20,7 @@ import { MIN_CHUNK_LETTERS, TypingScheduler, meaningfulCount } from "./typing";
 import { createWebAudioBackend } from "./backend";
 import type { SoundBackend } from "./backend";
 import type { AgentOfficeApi } from "@shared/types";
+import { isSideSessionId } from "@shared/types";
 
 const TICK_MS = 100;
 
@@ -99,7 +100,9 @@ export function installSoundManager(deps: SoundManagerDeps = {}): () => void {
     fireImmediately: true,
   });
 
-  const offNotif = api.onNotification(() => {
+  const offNotif = api.onNotification((e) => {
+    // 토의 세션은 차례마다 Stop을 낸다. 캐릭터 알림이 아니므로 울리지 않는다.
+    if (isSideSessionId(e.agentId)) return;
     if (notifyEnabled && !useAppStore.getState().muted) backend.playDing();
   });
 

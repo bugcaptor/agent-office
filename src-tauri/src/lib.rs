@@ -10,6 +10,8 @@ pub mod agent_paths;
 pub mod api_keys;
 mod work_send;
 mod task_chat;
+mod discussion_session;
+mod discussion_cli;
 mod auto_run;
 // codex CLI 내장 이미지 생성으로 캐릭터 초상/스프라이트 원본을 만든다(kbm #2fa).
 pub mod codex_imagegen;
@@ -203,6 +205,7 @@ where
     let run: fn(Vec<String>) -> i32 = match mode.to_str() {
         Some("task") => work_inbox_cli::run,
         Some("md") => doc_view_cli::run,
+        Some("discuss") => discussion_cli::run,
         Some("ctl") => control::client::run,
         _ => return None,
     };
@@ -450,7 +453,11 @@ pub fn run() {
             // `office-task`·`office-md` shim은 세션 준비 때만 쓰므로, 떠 있는 세션이 OS temp
             // 청소로 경로를 잃지 않게 5초마다 확인해 되살린다(없거나 내용이 다를 때만 쓴다).
             work_inbox_cli::spawn_shim_keeper(
-                vec![(work_inbox_cli::shim_path(), "task"), (doc_view_cli::shim_path(), "md")],
+                vec![
+                    (work_inbox_cli::shim_path(), "task"),
+                    (doc_view_cli::shim_path(), "md"),
+                    (discussion_cli::shim_path(), "discuss"),
+                ],
                 forwarder_executable_path(),
                 Duration::from_secs(5),
             );
@@ -521,6 +528,8 @@ pub fn run() {
             // Claude 리줌 캡처: 스토어 →
             // 레코더(sink) → observer runtime 순으로 배선. sink는 builder로 주입해
             // production() 시그니처를 건드리지 않는다.
+            // 토의 세션의 Codex 마지막 응답(Stop 훅). 발언 수집이 세션 id로 읽는다.
+            let discussion_replies = Arc::new(crate::discussion_session::DiscussionReplies::new(registry.clone()));
             let claude_resume_store = Arc::new(
                 crate::persistence::claude_resume_store::ClaudeResumeStore::new(
                     data_dir.join("claude-resume.json"),
@@ -610,7 +619,8 @@ pub fn run() {
                     Some(office_fragment),
                 )
                 .with_claude_session_sink(claude_resume_recorder)
-                .with_agy_session_sink(agy_resume_recorder),
+                .with_agy_session_sink(agy_resume_recorder)
+                .with_stop_reply_sink(discussion_replies.clone()),
             );
 
             if settings_cache.read().unwrap().observer_enabled {
@@ -777,6 +787,7 @@ pub fn run() {
                 awards_store,
                 memo_store,
                 claude_resume_store,
+                discussion_replies,
                 settings_store,
                 settings: settings_cache,
                 settings_first_run: std::sync::atomic::AtomicBool::new(settings_first_run),
@@ -866,6 +877,9 @@ pub fn run() {
             ipc::commands::inspect_work_send_target,
             ipc::commands::send_work_item,
             ipc::commands::open_task_chat,
+            ipc::commands::open_discussion_session,
+            ipc::commands::send_discussion_turn,
+            ipc::commands::collect_discussion_utterance,
             ipc::commands::send_work_follow_up,
             ipc::commands::work_last_reply,
             ipc::commands::auto_run_report,

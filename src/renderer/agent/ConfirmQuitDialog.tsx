@@ -22,6 +22,7 @@ import { tauriApi } from "../ipc/tauriApi";
 import { isHandoffSupported } from "../quitGuard";
 import { terminalRegistry } from "../terminal/TerminalRegistry";
 import { useTaskChatStore } from "../workpanels/taskChatStore";
+import { useDiscussionSessionStore } from "../discussion/discussionSessionStore";
 import {
   pendingDiaryAgents,
   runQuitDiaryFlush,
@@ -45,8 +46,19 @@ export function ConfirmQuitDialog() {
   const liveChats = useTaskChatStore((s) =>
     s.order.filter((id) => ["starting", "running"].includes(s.chats[id]?.status ?? "")).length
   );
-  const chatNotice = liveChats > 0 && (
-    <p className="confirm-quit-task-chats">{t("workpanels:taskChat.quitNotice", { count: liveChats })}</p>
+  // 토의 세션도 핸드오프하지 않는다.
+  const liveDiscussionSessions = useDiscussionSessionStore((s) =>
+    s.order.filter((id) => ["starting", "running"].includes(s.sessions[id]?.status ?? "")).length
+  );
+  const chatNotice = (liveChats > 0 || liveDiscussionSessions > 0) && (
+    <>
+      {liveChats > 0 && (
+        <p className="confirm-quit-task-chats">{t("workpanels:taskChat.quitNotice", { count: liveChats })}</p>
+      )}
+      {liveDiscussionSessions > 0 && (
+        <p className="confirm-quit-task-chats">{t("discussion:session.quitNotice", { count: liveDiscussionSessions })}</p>
+      )}
+    </>
   );
 
   const [phase, setPhase] = useState<Phase>("confirm");

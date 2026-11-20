@@ -9,6 +9,8 @@
 import { nanoid } from "nanoid";
 import {
   DISCUSSION_LIMIT_RANGES,
+  discussionReadOnlyMode,
+  type DiscussionReadOnly,
   type AgentProfile,
   type Discussion,
   type DiscussionLimits,
@@ -128,3 +130,11 @@ export function discussionFromDraft(draft: DiscussionDraft, now: number, base?: 
 export const discussionEditable = (d: Discussion) => d.state === "ready";
 /** 지울 수 있는 상태. 진행·대기·정리·멈춤 중에는 실행기가 붙잡고 있을 수 있어 막는다. */
 export const discussionDeletable = (d: Discussion) => d.state === "ready" || d.state === "finished";
+
+const READ_ONLY_RANK: Record<DiscussionReadOnly, number> = { flags: 0, partial: 1, prompt: 2 };
+/** 토의 전체의 읽기 전용 수준: 참가자 중 가장 약한 것. 카드에 보인다. */
+export function discussionReadOnlySummary(d: Pick<Discussion, "participants">): DiscussionReadOnly {
+  return d.participants
+    .map((p) => discussionReadOnlyMode(p.agent.cli))
+    .reduce<DiscussionReadOnly>((worst, mode) => (READ_ONLY_RANK[mode] > READ_ONLY_RANK[worst] ? mode : worst), "flags");
+}

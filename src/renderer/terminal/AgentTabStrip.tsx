@@ -33,6 +33,14 @@ import { useRunStore } from "../run/runStore";
 import { IS_MAC } from "../shared/platform";
 import { terminalRegistry } from "./TerminalRegistry";
 import { requestCloseTaskChat, taskChatTitle, useTaskChatStore } from "../workpanels/taskChatStore";
+import {
+  discussionSessionTitle,
+  discussionSessionTooltip,
+  requestCloseDiscussionSession,
+  useDiscussionSessionStore,
+} from "../discussion/discussionSessionStore";
+import { useDiscussionStore } from "../discussion/discussionStore";
+import { useRoleStore } from "../discussion/roleStore";
 import { useWorkItemStore } from "../workpanels/workItemStore";
 import type { TerminalViewMode } from "./terminalViewMode";
 import type { ClaudeResumeEntry } from "@shared/types";
@@ -137,7 +145,34 @@ export function AgentTabStrip() {
     // workItems: taskChatTitle이 읽는 업무 목록이 바뀌면 다시 계산한다.
     [chatIds, chats, workItems, t],
   );
+  // 토의 참가자 탭. 대화 탭 뒤에 붙는다. 이름은 캐릭터 이름 · 역할 이름.
+  const discussionIds = useDiscussionSessionStore(useShallow((s) => s.order));
+  const discussionSessions = useDiscussionSessionStore((s) => s.sessions);
+  const discussions = useDiscussionStore((s) => s.discussions);
+  const roles = useRoleStore((s) => s.roles);
+  const sideTabs = useMemo(
+    () => [
+      ...chatTabs.map((tab) => ({ ...tab, kind: "chat" as const })),
+      ...discussionIds
+        .map((id) => discussionSessions[id])
+        .filter(Boolean)
+        .map((session) => ({
+          id: session.agentId,
+          name: discussionSessionTitle(session),
+          title: discussionSessionTooltip(session),
+          kind: "discussion" as const,
+        })),
+    ],
+    // agents·discussions·roles: 제목이 읽는 이름·역할이 바뀌면 다시 계산한다.
+    [chatTabs, discussionIds, discussionSessions, agents, discussions, roles],
+  );
+  const closeSideTab = (id: string) =>
+    discussionSessions[id] ? requestCloseDiscussionSession(id) : requestCloseTaskChat(id);
   const activeChat = activeId ? chats[activeId] : undefined;
+  const activeDiscussion = activeId ? discussionSessions[activeId] : undefined;
+  const activeDiscussionCwd = activeDiscussion
+    ? discussions.find((d) => d.id === activeDiscussion.discussionId)?.cwd
+    : undefined;
   const openTerminal = useAppStore((s) => s.openTerminal);
   const closeTerminal = useAppStore((s) => s.closeTerminal);
   const openModal = useAppStore((s) => s.openModal);
@@ -161,7 +196,9 @@ export function AgentTabStrip() {
   // 활성 에이전트의 cwd(문서 버튼 활성 조건). 없으면 버튼 비활성. 대화 탭은 대화의 작업 폴더.
   const activeCwd = activeChat
     ? activeChat.cwd
-    : activeId
+    : activeDiscussion
+      ? activeDiscussionCwd
+      : activeId
       ? agents[activeId]?.cwd
       : undefined;
   // 이름 없는 프로필로 오버레이(일기·메모·세션 로그)를 열 때 쓸 표시명 폴백.
@@ -256,16 +293,21 @@ export function AgentTabStrip() {
       const text = terminalRegistry.getPlainText(agentId);
       if (text === undefined) return;
       const chat = chats[agentId];
+      const discussion = discussionSessions[agentId];
       void tauriApi
         .exportTerminalOutput(
-          chat ? taskChatTitle(chat) : (agents[agentId]?.name ?? agentId),
+          chat
+            ? taskChatTitle(chat)
+            : discussion
+              ? discussionSessionTitle(discussion)
+              : (agents[agentId]?.name ?? agentId),
           text,
         )
         .catch((err) =>
           console.warn("AgentTabStrip: shell output export failed", err),
         );
     },
-    [agents, chats],
+    [agents, chats, discussionSessions],
   );
 
   useEffect(() => {
@@ -301,8 +343,8 @@ export function AgentTabStrip() {
       }
 
       if (/^[1-9]$/.test(e.key)) {
-        // 번호는 캐릭터 탭 다음에 대화 탭으로 이어진다.
-        const tab = [...tabs, ...chatTabs][Number(e.key) - 1];
+        // 번호는 캐릭터 탭 다음에 대화·토의 탭으로 이어진다.
+        const tab = [...tabs, ...sideTabs][Number(e.key) - 1];
         if (tab) {
           e.preventDefault();
           openTerminal(tab.id);
@@ -316,7 +358,7 @@ export function AgentTabStrip() {
   }, [
     isOpen,
     tabs,
-    chatTabs,
+    sideTabs,
     activeId,
     openTerminal,
     closeTerminal,
@@ -388,7 +430,7 @@ export function AgentTabStrip() {
               {tab.name}
             </button>
           ))}
-          {chatTabs.map((tab) => (
+          {sideTabs.map((tab) => (
             <div
               key={tab.id}
               className={
@@ -410,16 +452,16 @@ export function AgentTabStrip() {
                 onClick={() => openTerminal(tab.id)}
               >
                 <span className="agent-tab-chat-icon" aria-hidden="true">
-                  💬
+                  {tab.kind === "discussion" ? "🗣" : "💬"}
                 </span>
                 <span className="agent-tab-chat-name">{tab.name}</span>
               </button>
               <button
                 type="button"
                 className="agent-tab-chat-close"
-                aria-label={t("tab.chatClose")}
-                title={t("tab.chatClose")}
-                onClick={() => requestCloseTaskChat(tab.id)}
+                aria-label={t(tab.kind === "discussion" ? "tab.discussionClose" : "tab.chatClose")}
+                title={t(tab.kind === "discussion" ? "tab.discussionClose" : "tab.chatClose")}
+                onClick={() => closeSideTab(tab.id)}
               >
                 ×
               </button>
@@ -455,8 +497,8 @@ export function AgentTabStrip() {
         >
           {t("tab.docs")}
         </button>
-        {/* 포스트잇은 캐릭터의 메모라 대화 탭에서는 숨긴다. */}
-        {!activeChat && (
+        {/* 포스트잇은 캐릭터의 메모라 대화·토의 탭에서는 숨긴다. */}
+        {!activeChat && !activeDiscussion && (
         <button
           type="button"
           className={
@@ -507,9 +549,9 @@ export function AgentTabStrip() {
             },
             { separator: true as const },
             {
-              label: t("tab.chatClose"),
+              label: t(discussionSessions[chatMenu.agentId] ? "tab.discussionClose" : "tab.chatClose"),
               icon: "⏹️",
-              onSelect: () => requestCloseTaskChat(chatMenu.agentId),
+              onSelect: () => closeSideTab(chatMenu.agentId),
             },
           ]}
         />

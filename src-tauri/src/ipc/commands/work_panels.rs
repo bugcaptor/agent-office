@@ -168,3 +168,29 @@ pub async fn open_task_chat(
 ) -> Result<crate::types::TaskChatResult, String> {
     crate::task_chat::open(&app_state, request).await
 }
+
+/// 토의 참가자 세션 열기. `discuss-<토의 id>.<참가자>` 세션을 만들고 역할 카드·토의 규칙·주제를
+/// 첫 프롬프트로 넣는다. 캐릭터 본 터미널과 업무 상태는 건드리지 않는다.
+#[tauri::command(rename_all = "camelCase")]
+pub async fn open_discussion_session(
+    request: crate::types::DiscussionSessionRequest,
+    app_state: State<'_, AppState>,
+) -> Result<crate::types::DiscussionSessionResult, String> {
+    crate::discussion_session::open(&app_state, request).await
+}
+/// 토의 세션에 차례 지시 하나를 넣는다. `submittedAt`이 발언 수집의 기준 시각이다.
+#[tauri::command(rename_all = "camelCase")]
+pub async fn send_discussion_turn(
+    request: WorkFollowUpRequest,
+    app_state: State<'_, AppState>,
+) -> Result<WorkSendResult, String> {
+    crate::discussion_session::send_turn(&app_state, request).await
+}
+/// 한 차례의 발언(제출 → 마지막 응답 순). 아직 없으면 null.
+#[tauri::command(rename_all = "camelCase")]
+pub async fn collect_discussion_utterance(
+    request: crate::types::DiscussionCollectRequest,
+    app_state: State<'_, AppState>,
+) -> Result<Option<crate::types::CollectedUtterance>, String> {
+    crate::discussion_session::collect_utterance(&app_state, request).await
+}

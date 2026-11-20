@@ -158,6 +158,47 @@
     "delete": "삭제",
     "confirmDelete": "정말 삭제",
     "deleteError": "삭제하지 못했습니다.",
-    "edit": "고치기"
+    "edit": "고치기",
+    "readOnly": "읽기 전용"
+  },
+  "readOnly": {
+    "summary": {
+      "flags": "읽기 전용 · CLI가 강제",
+      "partial": "읽기 전용 · 일부는 프롬프트 제한",
+      "prompt": "읽기 전용 · 일부는 프롬프트 제한"
+    },
+    "hint": {
+      "flags": "모든 참가자의 CLI 설정이 파일 수정 도구·명령을 막습니다.",
+      "partial": "일부 참가자는 CLI가 편집 도구만 막고, 셸 명령은 프롬프트로만 제한합니다.",
+      "prompt": "일부 참가자는 CLI로 막을 수 없어 프롬프트로만 수정을 금지합니다."
+    },
+    "mode": {
+      "flags": "CLI가 읽기 전용 강제",
+      "partial": "편집 도구만 CLI가 막음",
+      "prompt": "프롬프트로만 제한"
+    }
+  },
+  "session": {
+    "errors": {
+      "busy": "이 참가자의 토의 탭을 여는 중입니다.",
+      "running": "이 참가자의 토의 탭이 이미 열려 있습니다.",
+      "limit": "토의 탭은 동시에 {{max}}개까지 열 수 있습니다.",
+      "other": "다른 토의의 탭이 열려 있습니다. 토의는 한 번에 하나만 진행할 수 있습니다.",
+      "invalidId": "토의나 참가자 id가 올바르지 않습니다.",
+      "missing": "토의를 찾지 못했습니다.",
+      "finished": "끝난 토의입니다.",
+      "notParticipant": "이 토의의 참가자가 아닙니다.",
+      "invalidCwd": "토의 작업 폴더가 절대 경로가 아닙니다."
+    },
+    "close": {
+      "title": "토의 탭 닫기",
+      "body": "\"{{title}}\" 토의 탭을 닫습니다. 터미널의 CLI도 함께 종료되고, 이 참가자는 토의에서 빠집니다.",
+      "confirm": "닫기"
+    },
+    "quitNotice_one": "열린 토의 탭 {{count}}개도 함께 끝납니다.",
+    "quitNotice_other": "열린 토의 탭 {{count}}개도 함께 끝납니다.",
+    "tooltip": "토의: {{topic}}",
+    "tooltipModerator": "토의 사회자: {{topic}}",
+    "unknownTopic": "(지워진 토의)"
   }
 }

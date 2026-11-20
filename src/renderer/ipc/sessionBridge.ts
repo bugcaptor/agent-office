@@ -26,7 +26,7 @@
 // Badge/mute addition: a second subscription on `s.muted` resyncs the badge
 // the instant the BottomBar mute toggle flips, instead of waiting for the
 // next notification event.
-import { isTaskChatId, type SessionState } from "@shared/types";
+import { isSideSessionId, type SessionState } from "@shared/types";
 import type { LabelAnchor, OfficeAwardee, OfficeBus } from "../office/bus";
 import { awardeeEquals, latestAwardee } from "../office/awardee";
 import { useAppStore } from "../store/appStore";
@@ -270,10 +270,10 @@ export const officeBus: OfficeBus = {
  * test teardown (the app itself never tears this down during its lifetime).
  */
 export function installSessionBridge(): () => void {
-  // 태스크 대화 세션(task-chat-…)은 캐릭터가 아니다. 상태는 taskChatStore가 따로 받고,
+  // 태스크 대화·토의 세션(task-chat-…·discuss-…)은 캐릭터가 아니다. 상태는 taskChatStore가 따로 받고,
   // 여기서는 턴 시간·알림·사용량·라벨·오피스 씬 어디에도 넣지 않는다.
   const offState = tauriApi.onSessionState((e) => {
-    if (isTaskChatId(e.agentId)) return;
+    if (isSideSessionId(e.agentId)) return;
     // 스토어에는 disposed를 exited로 흡수한다(runGuardedCreateSession과 동일).
     // disposed가 스토어에 남으면 ensureSession(idle/exited만 재시작)과
     // TerminalHost의 exited 배너가 막혀 재소환이 안 된다. 시간 정산과
@@ -293,7 +293,7 @@ export function installSessionBridge(): () => void {
   });
 
   const offNotif = tauriApi.onNotification((e) => {
-    if (isTaskChatId(e.agentId)) return;
+    if (isSideSessionId(e.agentId)) return;
     const store = useAppStore.getState();
     // "전체 자리로" 소환 직후의 짧은 억제 창(summonSuppress.ts): 사용자가 방금
     // 스스로 부른 것이라 알릴 내용이 아닌데도, 셸이 뜨자마자 직전 턴의 잔여
@@ -322,7 +322,7 @@ export function installSessionBridge(): () => void {
   });
 
   const offCleared = tauriApi.onNotificationCleared(({ agentId, ids }) => {
-    if (isTaskChatId(agentId)) return;
+    if (isSideSessionId(agentId)) return;
     useAppStore.getState().clearNotificationByIds(agentId, ids);
   });
 
@@ -331,12 +331,12 @@ export function installSessionBridge(): () => void {
   const offUsage = tauriApi.onTurnUsage((e) => {
     // 사용량 예측 장부는 태스크 대화도 센다. 같은 구독 한도를 쓴다.
     recordTurnUsage(e);
-    if (isTaskChatId(e.agentId)) return;
+    if (isSideSessionId(e.agentId)) return;
     useAppStore.getState().applyTurnUsage(e);
   });
 
   const offActivity = tauriApi.onActivity((e) => {
-    if (isTaskChatId(e.agentId)) return;
+    if (isSideSessionId(e.agentId)) return;
     if (e.kind === "sub-start") {
       subagentCounts.bump(e.agentId, +1, e.at);
       return;

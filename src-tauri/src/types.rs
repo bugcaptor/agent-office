@@ -577,6 +577,21 @@ pub fn is_task_chat_id(agent_id: &str) -> bool {
     agent_id.starts_with(TASK_CHAT_PREFIX)
 }
 
+/// 토의 세션의 agentId 접두사. 전체 id는 `discuss-<토의 id>.<참가자 agentId>`다.
+/// 두 id는 `[A-Za-z0-9_-]`만 쓰므로 `.`이 경계다(`discussion_session::session_agent_id`).
+pub const DISCUSSION_SESSION_PREFIX: &str = "discuss-";
+
+/// 토의 참가자 세션의 agentId인가.
+pub fn is_discussion_session_id(agent_id: &str) -> bool {
+    agent_id.starts_with(DISCUSSION_SESSION_PREFIX)
+}
+
+/// 캐릭터가 아닌 전용 탭 세션(태스크 대화·토의)인가. 핸드오프·셸 작업중 감시·
+/// 리줌 기록·캐릭터 상태에서 뺀다.
+pub fn is_side_session_id(agent_id: &str) -> bool {
+    is_task_chat_id(agent_id) || is_discussion_session_id(agent_id)
+}
+
 /// createSession 응답.
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -1666,6 +1681,68 @@ pub struct TaskChatNote {
 #[derive(Debug, Clone, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TaskChatResult { pub agent_id: String, pub session_id: String }
+/// 토의 참가자 세션 열기. 토의·역할·프로필은 네이티브가 저장소에서 읽는다.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct DiscussionSessionRequest {
+    pub discussion_id: String,
+    /// 참가자(캐릭터) agentId.
+    pub agent_id: String,
+    #[serde(default)] pub cols: Option<u16>,
+    #[serde(default)] pub rows: Option<u16>,
+    /// 첫 프롬프트 끝에 붙일 이번 차례 지시(실행기가 만든다). 없으면 대기 지시로 끝난다.
+    #[serde(default)] pub turn: Option<String>,
+}
+/// 읽기 전용을 어떻게 지키는가. CLI에서 정해진다(`discussion_session::read_only_mode`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum DiscussionReadOnly {
+    /// CLI 플래그가 파일 수정 도구·명령을 막는다.
+    Flags,
+    /// 플래그가 일부(편집 도구)만 막고 나머지는 프롬프트로 제한한다.
+    Partial,
+    /// 강제할 플래그가 없어 프롬프트로만 제한한다.
+    Prompt,
+}
+/// 발언을 어떻게 받는가. CLI에서 정해진다(`discussion_session::collection_mode`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum DiscussionCollection {
+    /// `office-discuss say`로 제출한다.
+    Submit,
+    /// 턴의 마지막 응답이 발언이다(제출 명령을 쓸 수 없는 샌드박스).
+    LastReply,
+}
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DiscussionSessionResult {
+    /// 토의 세션 agentId(`discuss-<토의 id>.<참가자>`).
+    pub agent_id: String,
+    pub session_id: String,
+    pub read_only: DiscussionReadOnly,
+    pub collection: DiscussionCollection,
+    /// 관찰 훅이 붙었는가. 거짓이면 턴 종료 신호가 오지 않는다.
+    pub observed: bool,
+}
+/// 한 차례의 발언 수집. `since`(그 차례를 보낸 시각, epoch ms) 전 것은 지난 차례다.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct DiscussionCollectRequest {
+    /// 토의 세션 agentId.
+    pub agent_id: String,
+    pub session_id: String,
+    pub cli: WorkCli,
+    pub since: u64,
+}
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum DiscussionUtteranceSource { Submitted, LastReply }
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CollectedUtterance {
+    pub text: String,
+    pub source: DiscussionUtteranceSource,
+}
 /// 자동 진행 판단자 호출 1회. `resume`이 거짓이면 `session_id`로 새 세션을 만든다.
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]

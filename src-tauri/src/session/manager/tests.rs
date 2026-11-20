@@ -398,6 +398,7 @@
             .with_work_panels_flag(Arc::new(move || panels));
         manager.task_cli = Some((scratch.join("bin").join("office-task"), PathBuf::from("/opt/ao")));
         manager.md_cli = Some((scratch.join("bin").join("office-md"), PathBuf::from("/opt/ao")));
+        manager.discuss_cli = Some((scratch.join("bin").join("office-discuss"), PathBuf::from("/opt/ao")));
         manager.codex_user_config =
             Arc::new(|| Some("[sandbox_workspace_write]\nwritable_roots = [\"/mine\"]\n".into()));
         Arc::new(manager)
@@ -635,6 +636,62 @@
             "Pi 확장(-e) 없이 안내문만"
         );
         drop(wrappers);
+        cleanup_observer_fixture(&control, &scratch);
+    }
+
+    #[tokio::test]
+    async fn discussion_session_keeps_hooks_and_adds_read_only_flags_and_the_submit_command() {
+        let (manager, control, recorded_wrappers, scratch) = task_chat_manager();
+        manager.create(req_with_persona("discuss-d1.a1", Some("해적처럼 말한다.".into()))).unwrap();
+
+        // 턴 종료를 받아야 하므로 관찰 훅은 그대로다.
+        assert!(env_value(&control, "AGENT_OFFICE_HOOK_URL").is_some());
+        assert!(env_value(&control, "AGENT_OFFICE_CODEX_HOOK_STOP").is_some());
+        let env = control.spawned_env();
+        let keys: Vec<&str> = env.iter().map(|(key, _)| key.as_str()).collect();
+        for absent in ["AGENT_OFFICE_AGENT_ID", "AGENT_OFFICE_PERSONA", "AGENT_OFFICE_OFFICE_PROMPT", "AGENT_OFFICE_CODEX_WRITABLE_ROOTS", "AGENT_OFFICE_CODEX_PERSONA"] {
+            assert!(!keys.contains(&absent), "{absent} must be absent: {keys:?}");
+        }
+        assert_eq!(env_value(&control, crate::discussion_session::SESSION_ENV).as_deref(), Some("discuss-d1.a1"));
+        let shim = scratch.join("bin").join("office-discuss");
+        assert_eq!(env_value(&control, crate::discussion_session::SHIM_ENV).map(PathBuf::from), Some(shim.clone()));
+        assert!(shim.exists(), "제출 명령 shim을 쓴다");
+        assert_ne!(env_value(&control, "AGENT_OFFICE_SETTINGS").as_deref(), Some("/tmp/chat.settings.json"));
+
+        let wrappers = recorded_wrappers.lock();
+        let literals = |command: &str| -> Vec<String> {
+            let wrapper = wrappers.iter().find(|w| w.command == command).unwrap_or_else(|| panic!("{command} wrapper"));
+            wrapper.prefix_args.iter().filter_map(|a| match a { WrapperArg::Literal(s) => Some(s.clone()), _ => None }).collect()
+        };
+        let claude = literals("claude");
+        assert!(claude.windows(2).any(|w| w == ["--permission-mode", "dontAsk"]), "{claude:?}");
+        assert!(claude.contains(&format!("Read Grep Glob WebFetch WebSearch Bash({}:*)", shim.display())), "{claude:?}");
+        assert!(claude.windows(2).any(|w| w == ["--disallowed-tools", "Edit Write NotebookEdit"]));
+        assert!(!claude.contains(&"--append-system-prompt".to_string()), "persona 없음");
+        let claude_wrapper = wrappers.iter().find(|w| w.command == "claude").unwrap();
+        assert_eq!(claude_wrapper.skip_prefix_if_env_file_missing, None, "읽기 전용 인자를 조용히 버리지 않는다");
+        let codex = literals("codex");
+        assert_eq!(codex, ["--sandbox", "read-only", "--ask-for-approval", "never", "--search"]);
+        assert!(literals("pi").windows(2).any(|w| w == ["--exclude-tools", "edit,write"]));
+        // Kilo·agy 관찰 배선은 그대로(읽기 전용 플래그는 없다).
+        assert!(wrappers.iter().any(|w| w.command == "kilo"));
+        drop(wrappers);
+        assert_eq!(manager.live_discussion_session_ids(), vec!["discuss-d1.a1".to_string()]);
+        assert_eq!(manager.live_task_chat_count(), 0);
+        cleanup_observer_fixture(&control, &scratch);
+    }
+
+    #[tokio::test]
+    async fn ordinary_session_has_no_discussion_env_or_read_only_flags() {
+        let (manager, control, recorded_wrappers, scratch) = task_chat_manager();
+        manager.create(req_with_persona("a1", None)).unwrap();
+        assert!(env_value(&control, crate::discussion_session::SESSION_ENV).is_none());
+        assert!(env_value(&control, crate::discussion_session::SHIM_ENV).is_none());
+        let wrappers = recorded_wrappers.lock();
+        assert!(wrappers.iter().flat_map(|w| &w.prefix_args).all(|a| *a != WrapperArg::Literal("dontAsk".into())));
+        assert!(wrappers.iter().flat_map(|w| &w.prefix_args).all(|a| *a != WrapperArg::Literal("read-only".into())));
+        drop(wrappers);
+        assert!(manager.live_discussion_session_ids().is_empty());
         cleanup_observer_fixture(&control, &scratch);
     }
 
@@ -1532,14 +1589,17 @@
         ));
         mgr.create(req("a1", Some(false))).unwrap();
         mgr.create(CreateSessionRequest { task_chat: true, ..req("task-chat-t1", Some(false)) }).unwrap();
+        mgr.create(req("discuss-d1.a1", Some(false))).unwrap();
         let controls = factory.controls();
 
-        // app_data_dir이 없어 캐릭터 세션은 넘기지 못하지만(0), 대화 세션은 그래도 버린다.
+        // app_data_dir이 없어 캐릭터 세션은 넘기지 못하지만(0), 대화·토의 세션은 그래도 버린다.
         assert_eq!(mgr.handoff_all(&std::collections::HashMap::new()), 0);
         assert_eq!(controls[0].kill_count(), 0, "캐릭터 세션은 건드리지 않는다");
         assert_eq!(controls[1].kill_count(), 1, "대화 세션은 버린다");
+        assert_eq!(controls[2].kill_count(), 1, "토의 세션은 버린다");
         controls[1].fire_exit(0);
-        wait_for(|| mgr.find("task-chat-t1").is_none()).await;
+        controls[2].fire_exit(0);
+        wait_for(|| mgr.find("task-chat-t1").is_none() && mgr.find("discuss-d1.a1").is_none()).await;
         assert!(mgr.find("a1").is_some());
 
         for control in &controls {

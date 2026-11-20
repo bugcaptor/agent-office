@@ -103,3 +103,8 @@
 .discussion-people li > span { min-width: 0; display: flex; flex-direction: column; }
 .discussion-people small { color: var(--text-dim); }
 .discussion-people small.discussion-moderator-badge { color: var(--accent); }
+
+/* 읽기 전용 표시: CLI가 막지 못하는 참가자가 있으면 경고색. */
+.discussion-card .discussion-readonly { display: block; color: var(--text-dim); }
+.discussion-readonly.readonly-partial,
+.discussion-readonly.readonly-prompt { color: var(--accent-warn); }

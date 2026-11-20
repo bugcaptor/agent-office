@@ -10,6 +10,7 @@
 // `@tauri-apps/api/event`를 직접 구독하는 모듈이 같은 경로로 받는다.
 import { listen } from "@tauri-apps/api/event";
 import { Events } from "@shared/ipc";
+import { discussionCollectionMode, discussionReadOnlyMode, discussionSessionAgentId } from "@shared/types";
 import type {
   AgentOfficeApi,
   AppSettings,
@@ -21,6 +22,7 @@ import type {
   SessionState,
   SessionStateEvent,
   TaskChatRequest,
+  DiscussionSessionRequest,
   UsageSnapshot,
   WorkItem,
 } from "@shared/types";
@@ -75,6 +77,8 @@ const markdownSample = "# Doc viewer\n\n- [x] GFM table\n- [ ] Mermaid\n\n```mer
 const docViewOpened: string[] = [];
 /** `openTaskChat`이 받은 요청(스크립트가 읽어 확인한다). */
 const taskChatRequests: TaskChatRequest[] = [];
+/** `openDiscussionSession`이 받은 요청. */
+const discussionSessionRequests: DiscussionSessionRequest[] = [];
 
 const byteLength = (data: string) => new TextEncoder().encode(data).length;
 
@@ -207,6 +211,24 @@ const impl: Partial<AgentOfficeApi> = {
     pushOutput(agentId, `\x1b[1;36m> ${request.context.task.title}\x1b[0m\r\n${request.cwd ?? "~"} · ${request.agent.cli}\r\n`);
     return { agentId, sessionId };
   },
+  // 토의 참가자 세션: 세션을 띄우고 첫 프롬프트를 넣은 것처럼 주제를 찍는다.
+  async openDiscussionSession(request) {
+    const agentId = discussionSessionAgentId(request.discussionId, request.agentId);
+    if (!agentId) throw new Error("discussion-session-invalid-id");
+    const discussion = discussions.find((d) => d.id === request.discussionId);
+    const cli = discussion?.participants.find((p) => p.agentId === request.agentId)?.agent.cli ?? "claude";
+    const sessionId = `s${sessionSeq++}`;
+    sessions.set(agentId, sessionId);
+    discussionSessionRequests.push(request);
+    emitSessionState(agentId, "running");
+    pushOutput(agentId, `\x1b[1;35m# ${discussion?.topic ?? request.discussionId}\x1b[0m\r\n${discussion?.cwd ?? "~"} · ${cli}\r\n`);
+    return { agentId, sessionId, readOnly: discussionReadOnlyMode(cli), collection: discussionCollectionMode(cli), observed: true };
+  },
+  async sendDiscussionTurn(request) {
+    pushOutput(request.agentId, `\r\n> ${request.text}\r\n`);
+    return { sessionId: request.sessionId, submittedAt: Date.now() };
+  },
+  async collectDiscussionUtterance() { return null; },
   async disposeSession(agentId) {
     emitSessionState(agentId, "exited");
     sessions.delete(agentId);
@@ -284,6 +306,9 @@ Object.assign(harness, {
   /** 태스크 대화 스토어(예: `openTaskChat`). */
   taskChatStore: async () => await import("../workpanels/taskChatStore"),
   taskChatRequests,
+  /** 토의 참가자 세션 스토어(예: `openDiscussionSession`). */
+  discussionSessionStore: async () => await import("../discussion/discussionSessionStore"),
+  discussionSessionRequests,
   /** 외부 파일 쓰기처럼 백엔드 스냅샷만 교체한다. 렌더러가 poll로 받아야 한다. */
   replaceWorkItems: (items: WorkItem[]) => { workItems = structuredClone(items); },
 });

@@ -23,6 +23,7 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 import { useAppStore } from "./store/appStore";
 import { tauriApi } from "./ipc/tauriApi";
 import { liveTaskChatCount } from "./workpanels/taskChatStore";
+import { liveDiscussionSessionCount } from "./discussion/discussionSessionStore";
 
 let handoffSupportedCache = false;
 
@@ -45,8 +46,8 @@ export function installQuitGuard(): () => void {
   const unlistenP = getCurrentWindow().onCloseRequested((event) => {
     const { agents, agentOrder, openModal } = useAppStore.getState();
     const anyOnDuty = agentOrder.some((id) => agents[id] && !agents[id].clockedOut);
-    // 살아 있는 태스크 대화는 넘기지 않고 끝난다(handoff_all이 버린다) — 그것도 알린다.
-    if (!anyOnDuty && liveTaskChatCount() === 0) {
+    // 살아 있는 태스크 대화·토의 세션은 넘기지 않고 끝난다(handoff_all이 버린다) — 그것도 알린다.
+    if (!anyOnDuty && liveTaskChatCount() === 0 && liveDiscussionSessionCount() === 0) {
       if (hasPendingWorkPanelWrites()) {
         event.preventDefault();
         void flushWorkPanelWrites().then((saved) => {

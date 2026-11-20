@@ -12,7 +12,7 @@
 import { useAppStore } from "../store/appStore";
 import { officeBus } from "../ipc/sessionBridge";
 import { IS_MAC } from "../shared/platform";
-import { isTaskChatId } from "@shared/types";
+import { isSideSessionId } from "@shared/types";
 import { matchesAccelerator } from "./accelerator";
 import type { AgentProfile } from "@shared/types";
 import type { Notification } from "../store/types";
@@ -42,7 +42,7 @@ export function resolveShortcut(
     // 에이전트, 퇴근)은 건너뛴다 — 안 그러면 그 알림에 막혀 영영 못 넘어간다.
     for (let i = ctx.notifications.length - 1; i >= 0; i--) {
       const id = ctx.notifications[i].agentId;
-      if (isTaskChatId(id)) return { agentId: id };
+      if (isSideSessionId(id)) return { agentId: id };
       const agent = ctx.agents[id];
       if (agent && !agent.clockedOut) return { agentId: id };
     }

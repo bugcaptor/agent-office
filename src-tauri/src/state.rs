@@ -179,6 +179,8 @@ pub struct AppState {
     /// Claude native 세션 ID(리줌) 스냅샷 스토어(`claude-resume.json`). observer
     /// ingest가 ClaudeResumeRecorder를 통해 쓰고, list_claude_resume_sessions가 읽는다.
     pub claude_resume_store: Arc<ClaudeResumeStore>,
+    /// 토의 세션의 Codex 마지막 응답(Stop 훅에서). 발언 수집이 읽는다.
+    pub discussion_replies: Arc<crate::discussion_session::DiscussionReplies>,
     /// 앱 전역 opt-in 설정 — 디스크 원본은 settings_store, 커맨드가 읽는
     /// 캐시는 settings(RwLock). set_app_settings가 저장+캐시 갱신을 함께 한다.
     /// `Arc`인 이유: lib.rs의 observer URL getter가 SessionManager

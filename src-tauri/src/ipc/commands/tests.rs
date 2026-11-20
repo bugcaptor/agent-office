@@ -355,6 +355,7 @@
             awards_store,
             memo_store,
             claude_resume_store,
+            discussion_replies: Arc::new(crate::discussion_session::DiscussionReplies::new(registry.clone())),
             settings_store,
             settings,
             settings_first_run: std::sync::atomic::AtomicBool::new(true),

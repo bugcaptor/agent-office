@@ -158,6 +158,47 @@
     "delete": "刪除",
     "confirmDelete": "確認刪除",
     "deleteError": "無法刪除。",
-    "edit": "編輯"
+    "edit": "編輯",
+    "readOnly": "唯讀"
+  },
+  "readOnly": {
+    "summary": {
+      "flags": "唯讀 · 由 CLI 強制",
+      "partial": "唯讀 · 部分僅靠提示限制",
+      "prompt": "唯讀 · 部分僅靠提示限制"
+    },
+    "hint": {
+      "flags": "所有參與者的 CLI 設定都會阻止修改檔案的工具與指令。",
+      "partial": "部分參與者的 CLI 只阻止編輯工具，Shell 指令僅靠提示限制。",
+      "prompt": "部分參與者的 CLI 無法鎖定，只能靠提示禁止修改。"
+    },
+    "mode": {
+      "flags": "CLI 強制唯讀",
+      "partial": "CLI 只阻止編輯工具",
+      "prompt": "僅靠提示限制"
+    }
+  },
+  "session": {
+    "errors": {
+      "busy": "正在開啟這位參與者的討論分頁。",
+      "running": "這位參與者的討論分頁已經開啟。",
+      "limit": "最多可同時開啟 {{max}} 個討論分頁。",
+      "other": "另一個討論的分頁仍開著。一次只能進行一個討論。",
+      "invalidId": "討論或參與者 id 無效。",
+      "missing": "找不到該討論。",
+      "finished": "該討論已結束。",
+      "notParticipant": "不是該討論的參與者。",
+      "invalidCwd": "討論的工作資料夾不是絕對路徑。"
+    },
+    "close": {
+      "title": "關閉討論分頁",
+      "body": "關閉「{{title}}」討論分頁？終端機中的 CLI 也會結束，這位參與者將退出討論。",
+      "confirm": "關閉"
+    },
+    "quitNotice_one": "開啟的 {{count}} 個討論分頁也會一起結束。",
+    "quitNotice_other": "開啟的 {{count}} 個討論分頁也會一起結束。",
+    "tooltip": "討論：{{topic}}",
+    "tooltipModerator": "討論主持：{{topic}}",
+    "unknownTopic": "（已刪除的討論）"
   }
 }

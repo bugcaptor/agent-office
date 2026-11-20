@@ -127,6 +127,9 @@ pub struct SessionManager {
     /// `office-md` shim 경로와 실행할 앱 바이너리.
     /// None이면 shim·PATH·`AGENT_OFFICE_MD`·문서 뷰어 안내문을 생략한다 -- 테스트 기본값이다.
     md_cli: Option<(std::path::PathBuf, std::path::PathBuf)>,
+    /// `office-discuss` shim 경로와 실행할 앱 바이너리(토의 세션만 쓴다).
+    /// None이면 shim·`AGENT_OFFICE_DISCUSS`를 생략한다 -- 테스트 기본값이다.
+    discuss_cli: Option<(std::path::PathBuf, std::path::PathBuf)>,
     /// 업무 패널 설정(`workPanelsEnabled`) 조회. 켜졌을 때만 공통 안내문과 Codex
     /// 수신함 쓰기 허용을 싣는다. 세션을 띄울 때 고정된다.
     work_panels_enabled: Arc<dyn Fn() -> bool + Send + Sync>,
@@ -169,6 +172,7 @@ impl SessionManager {
             app_data_dir: None,
             task_cli: None,
             md_cli: None,
+            discuss_cli: None,
             work_panels_enabled: Arc::new(|| false),
             codex_user_config: Arc::new(|| {
                 let path = crate::agent_paths::codex_home_from_env()?.join("config.toml");
@@ -233,7 +237,8 @@ impl SessionManager {
     /// 세션 준비마다 `office-task`·`office-md` shim을 이 바이너리로 (재)작성하고 경로를 env로 싣는다.
     pub fn with_office_cli(mut self, exe: std::path::PathBuf) -> Self {
         self.task_cli = Some((crate::work_inbox_cli::shim_path(), exe.clone()));
-        self.md_cli = Some((crate::doc_view_cli::shim_path(), exe));
+        self.md_cli = Some((crate::doc_view_cli::shim_path(), exe.clone()));
+        self.discuss_cli = Some((crate::discussion_cli::shim_path(), exe));
         self
     }
 
@@ -289,6 +294,10 @@ impl SessionManager {
     /// `task_chat`: 관찰 훅·Pi/Kilo/agy 배선·
     /// `AGENT_OFFICE_HOOK_URL`·`AGENT_OFFICE_AGENT_ID`·persona를 빼고, 사무실 권한 설정 대신
     /// 대화용 설정을 붙인다. shim·PATH·공통 안내문은 그대로다.
+    ///
+    /// 토의 세션(agentId `discuss-…`): 턴 종료를 받아야 하므로 관찰 훅은 그대로 두고,
+    /// persona·사무실 안내문·`AGENT_OFFICE_AGENT_ID`·Codex 쓰기 허용 경로를 뺀다. 대신 제출
+    /// 명령(`office-discuss`)과 참가자 env를 싣고 CLI별 읽기 전용 인자를 래퍼에 붙인다.
     pub(super) fn prepare_session_plan(
         &self,
         session_id: &str,
@@ -298,7 +307,8 @@ impl SessionManager {
     ) -> PreparedPlan {
         // 대화 세션은 관찰이 꺼진 세션처럼 준비한다 -- 훅 URL이 없으면 forwarder도 아무것도 보내지 않는다.
         let observer_url = if task_chat { None } else { (self.get_observer_url)() };
-        let personality_prompt = personality_prompt.filter(|_| !task_chat);
+        let discussion = !task_chat && crate::types::is_discussion_session_id(agent_id);
+        let personality_prompt = personality_prompt.filter(|_| !task_chat && !discussion);
         let mut plan = observer_url
             .as_deref()
             .map(|url| {
@@ -442,15 +452,20 @@ impl SessionManager {
         };
         let task_shim = ensure(&self.task_cli, "task");
         let md_shim = ensure(&self.md_cli, "md");
+        let discuss_shim = if discussion { ensure(&self.discuss_cli, "discuss") } else { None };
         let work_inbox = self.app_data_dir.as_ref().map(|dir| dir.join("work-inbox"));
         let doc_view_cache = self.app_data_dir.as_ref().map(|dir| crate::doc_view::cache_dir(dir));
-        let office_enabled = task_shim.is_some() && (self.work_panels_enabled)();
+        // 토의 세션은 업무 보드·문서 뷰어 안내를 싣지 않는다(읽기 전용 토의에 필요 없다).
+        let office_enabled = task_shim.is_some() && (self.work_panels_enabled)() && !discussion;
         let office_instructions = task_shim
             .as_deref()
             .filter(|_| office_enabled)
             .map(crate::office_instructions::task_instructions);
         // 문서 뷰어 안내문은 업무 패널 설정과 무관하게 항상 싣는다.
-        let doc_view_instructions = md_shim.as_deref().map(crate::office_instructions::doc_view_instructions);
+        let doc_view_instructions = md_shim
+            .as_deref()
+            .filter(|_| !discussion)
+            .map(crate::office_instructions::doc_view_instructions);
 
         // 덧붙일 지시문 = persona + 사무실 안내문 + 문서 뷰어 안내문(있는 것만, 빈 줄로). env 이름
         // `AGENT_OFFICE_PERSONA`는 래퍼 함수 호환과 IDE 페르소나 경로 때문에 유지한다.
@@ -520,7 +535,7 @@ impl SessionManager {
         ]
         .into_iter()
         .flatten()
-        .filter(|_| !task_chat)
+        .filter(|_| !task_chat && !discussion)
         .collect();
         if !writable_roots.is_empty() {
             plan.env.push((
@@ -556,8 +571,24 @@ impl SessionManager {
         // 업무 수신함: 업무 패널 설정과 무관하게 싣는다.
         // 수신함 규약은 패널이 꺼져 있어도 유효하다. 대화 세션은 `office-task`로 만든 업무가
         // 가짜 담당으로 들어가지 않게 agentId를 싣지 않는다(미배정).
-        if !task_chat {
+        if !task_chat && !discussion {
             env.push(("AGENT_OFFICE_AGENT_ID".into(), agent_id.to_string()));
+        }
+        // 토의 세션: 제출 명령이 어느 참가자인지 알게 하고, Claude 허용 목록과 안내문에 박을
+        // 제출 명령 경로를 싣는다. 읽기 전용 인자는 CLI별 래퍼에 붙인다.
+        if discussion {
+            env.push((crate::discussion_session::SESSION_ENV.into(), agent_id.to_string()));
+            if let Some(shim) = &discuss_shim {
+                env.push((crate::discussion_session::SHIM_ENV.into(), shim.to_string_lossy().into_owned()));
+            }
+            for (command, args) in crate::discussion_session::read_only_args(discuss_shim.as_deref()) {
+                merge_wrapper_args(&mut plan.wrappers, command, args);
+            }
+            // 설정 파일이 사라졌다고 prefix를 통째로 버리면 읽기 전용 인자도 같이 빠진다.
+            // 토의 세션은 조용히 쓰기 가능해지기보다 실행 실패가 낫다.
+            for wrapper in plan.wrappers.iter_mut().filter(|w| w.command == "claude") {
+                wrapper.skip_prefix_if_env_file_missing = None;
+            }
         }
         if let Some(inbox) = &work_inbox {
             env.push((
@@ -894,7 +925,7 @@ impl SessionManager {
         // 아예 띄우지 않는다 -- 감시가 없으면 기존 동작 그대로다. 태스크 대화 세션도
         // 캐릭터 상태에 섞이지 않게 띄우지 않는다.
         #[cfg(unix)]
-        if !is_task_chat_id(&agent_id) && watch_control.foreground_sample().is_some() {
+        if !crate::types::is_side_session_id(&agent_id) && watch_control.foreground_sample().is_some() {
             let weak = Arc::downgrade(&session);
             crate::session::shell_activity::spawn_watcher(
                 session_id.clone(),
@@ -975,6 +1006,20 @@ impl SessionManager {
                     && !s.kill_requested.load(Ordering::SeqCst)
             })
             .count()
+    }
+
+    /// 살아 있는(폐기 요청 전) 토의 세션 agentId들. 토의 세션 상한·동시 토의 1개 검사에 쓴다.
+    pub fn live_discussion_session_ids(&self) -> Vec<String> {
+        self.sessions
+            .lock()
+            .iter()
+            .filter(|(a, s)| {
+                crate::types::is_discussion_session_id(a)
+                    && matches!(*s.state.lock(), SessionState::Running | SessionState::Starting)
+                    && !s.kill_requested.load(Ordering::SeqCst)
+            })
+            .map(|(a, _)| a.clone())
+            .collect()
     }
 
     /// 세션이 살아서 입력을 받을 수 있는 상태(Running)인지.

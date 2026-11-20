@@ -358,7 +358,7 @@ fn format_time(ms: u64) -> String {
 }
 
 /// 붙여넣기에 실을 수 없는 제어 문자를 뺀다(`work_prompt`가 거절하는 것). 줄바꿈·탭은 둔다.
-fn sanitize(text: &str) -> String {
+pub(crate) fn sanitize(text: &str) -> String {
     text.replace("\r\n", "\n")
         .chars()
         .filter(|c| !c.is_control() || matches!(c, '\n' | '\t'))

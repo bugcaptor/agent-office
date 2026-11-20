@@ -74,11 +74,19 @@ pub trait AgySessionSink: Send + Sync {
     );
 }
 
+/// Codex Stop 훅의 `last_assistant_message`(자르지 않은 원문)를 받는 주입점. 토의 발언
+/// 수집이 쓴다(`discussion_session::DiscussionReplies`) — Codex 전사 찾기는 cwd의 최신
+/// 스레드를 고르므로 같은 폴더의 다른 Codex 세션과 섞이지만, 훅은 세션별로 온다.
+pub trait StopReplySink: Send + Sync {
+    fn record(&self, ao_session_id: &str, text: &str);
+}
+
 pub struct ObserverRuntime {
     hub: Arc<NotificationHub>,
     adapters: Vec<Arc<dyn ObserverAdapter>>,
     claude_session_sink: Option<Arc<dyn ClaudeSessionSink>>,
     agy_session_sink: Option<Arc<dyn AgySessionSink>>,
+    stop_reply_sink: Option<Arc<dyn StopReplySink>>,
     /// agy 세션(ao_session_id)별 사용량 워터마크 — 대화 db `steps.idx` 기준.
     /// `ClaudeAdapter::transcript_usage_watermark`와 같은 자리: 세션이
     /// 끝나도 지워지지 않는 누수가 있지만 세션당 정수 하나 규모라 무시할 만하다.
@@ -121,6 +129,7 @@ impl ObserverRuntime {
             adapters,
             claude_session_sink: None,
             agy_session_sink: None,
+            stop_reply_sink: None,
             agy_usage_watermark: Mutex::new(HashMap::new()),
         }
     }
@@ -135,6 +144,12 @@ impl ObserverRuntime {
     /// agy 리줌 캡처 sink를 배선한다(위와 같은 builder 스타일).
     pub fn with_agy_session_sink(mut self, sink: Arc<dyn AgySessionSink>) -> Self {
         self.agy_session_sink = Some(sink);
+        self
+    }
+
+    /// Codex 마지막 응답 sink를 배선한다(위와 같은 builder 스타일).
+    pub fn with_stop_reply_sink(mut self, sink: Arc<dyn StopReplySink>) -> Self {
+        self.stop_reply_sink = Some(sink);
         self
     }
 
@@ -212,6 +227,11 @@ impl ObserverRuntime {
         let Some(event) = adapter.map_hook(&raw) else {
             return;
         };
+        if provider == ObserverProvider::Codex && matches!(event, ObserverEvent::Stop { .. }) {
+            if let (Some(sink), Some(text)) = (&self.stop_reply_sink, event::codex_last_assistant_message(raw.body)) {
+                sink.record(session_id, &text);
+            }
+        }
         self.hub.ingest_observer(session_id, event);
     }
 
@@ -858,6 +878,35 @@ mod tests {
             sink.calls(),
             vec![("s1".into(), "native-2".into(), None, None)]
         );
+    }
+
+    #[derive(Default)]
+    struct FakeReplies(std::sync::Mutex<Vec<(String, String)>>);
+    impl StopReplySink for FakeReplies {
+        fn record(&self, ao_session_id: &str, text: &str) {
+            self.0.lock().unwrap().push((ao_session_id.into(), text.into()));
+        }
+    }
+
+    #[test]
+    fn codex_stop_passes_the_untruncated_last_message_to_the_reply_sink() {
+        let replies = Arc::new(FakeReplies::default());
+        let runtime_for = |provider, mapped| {
+            ObserverRuntime::new(
+                test_hub(),
+                vec![Arc::new(FakeAdapter { provider, plan: Ok(AdapterSessionPlan::default()), mapped })],
+            )
+            .with_stop_reply_sink(replies.clone())
+        };
+        let stop = || Some(ObserverEvent::Stop { message: None, running: None, tokens: None });
+        let long = "x".repeat(10_000);
+        let body = serde_json::json!({ "last_assistant_message": long }).to_string();
+        runtime_for(ObserverProvider::Codex, stop()).ingest(ObserverProvider::Codex, "s1", RawObserverHook { event_name: "Stop", body: body.as_bytes() });
+        // Stop이 아닌 이벤트·Claude Stop·빈 응답은 넘기지 않는다.
+        runtime_for(ObserverProvider::Codex, Some(ObserverEvent::SubStart)).ingest(ObserverProvider::Codex, "s2", RawObserverHook { event_name: "SubagentStart", body: body.as_bytes() });
+        runtime_for(ObserverProvider::Claude, stop()).ingest(ObserverProvider::Claude, "s3", RawObserverHook { event_name: "Stop", body: body.as_bytes() });
+        runtime_for(ObserverProvider::Codex, stop()).ingest(ObserverProvider::Codex, "s4", RawObserverHook { event_name: "Stop", body: br#"{"last_assistant_message":"  "}"# });
+        assert_eq!(*replies.0.lock().unwrap(), vec![("s1".to_string(), long)]);
     }
 
     #[test]

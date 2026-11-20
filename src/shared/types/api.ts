@@ -6,7 +6,7 @@
 import type { InboxEntry, InboxRejection, InboxWarning, WorkItem, SessionSummary, WorkSendTarget, WorkSendRequest, WorkSendResult, WorkFollowUpRequest, AutoRunJudgeRequest, AutoRunJudgeResult, TaskChatRequest, TaskChatResult } from './workPanels';
 import type { AgentId } from './common';
 import type { RolesFile } from './role';
-import type { Discussion } from './discussion';
+import type { Discussion, DiscussionSessionRequest, DiscussionSessionResult, DiscussionCollectRequest, CollectedUtterance } from './discussion';
 import type {
   CreateSessionOptions,
   CreateSessionResult,
@@ -77,6 +77,12 @@ export interface AgentOfficeApi {
   sendWorkFollowUp(request: WorkFollowUpRequest): Promise<WorkSendResult>;
   /** 태스크 대화 세션(`task-chat-<taskId>`)을 만들고 맥락 묶음을 첫 프롬프트로 넣는다. 업무 상태는 바꾸지 않는다. */
   openTaskChat(request: TaskChatRequest): Promise<TaskChatResult>;
+  /** 토의 참가자 세션(`discuss-<토의 id>.<참가자>`)을 만들고 역할 카드·규칙·주제를 첫 프롬프트로 넣는다. */
+  openDiscussionSession(request: DiscussionSessionRequest): Promise<DiscussionSessionResult>;
+  /** 토의 세션에 차례 지시 하나를 넣는다. submittedAt이 발언 수집의 since다. */
+  sendDiscussionTurn(request: WorkFollowUpRequest): Promise<WorkSendResult>;
+  /** 한 차례의 발언(제출 → 마지막 응답 순). 아직 없으면 null. */
+  collectDiscussionUtterance(request: DiscussionCollectRequest): Promise<CollectedUtterance | null>;
   /** 그 캐릭터 세션의 마지막 에이전트 응답(claude·codex 전사). 못 찾으면 null. */
   workLastReply(agentId: string, cli: string, cwd: string): Promise<string | null>;
   /** 작업자가 `office-task --report`로 남긴 그 태스크의 보고. `since`(epoch ms) 전에 쓰였거나 없으면 null. */
