@@ -1,0 +1,58 @@
+/* 토의 역할 목록 편집. 폼 컨트롤 모양은 .profile-dialog 규칙을 그대로 쓴다. */
+.profile-dialog.roles-dialog {
+  width: 820px;
+  max-height: calc(100vh - var(--unit) * 10);
+  overflow-y: auto;
+}
+.roles-body {
+  display: grid;
+  grid-template-columns: 240px 1fr;
+  gap: calc(var(--unit) * 4);
+  min-height: 0;
+}
+.roles-list-col {
+  display: flex;
+  flex-direction: column;
+  gap: calc(var(--unit) * 2);
+  min-width: 0;
+}
+.roles-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-height: 420px;
+  overflow-y: auto;
+  border: 2px solid var(--border-dark);
+  background: var(--bg-base);
+}
+.roles-list-item {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  width: 100%;
+  padding: 6px 8px;
+  border: 0;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.roles-list-item small { color: var(--text-dim); }
+.roles-list-item:hover { background: var(--bg-panel-hi); }
+.roles-list-item.selected { background: var(--bg-panel-hi); outline: 2px solid var(--accent, var(--border-dark)); outline-offset: -2px; }
+.roles-list-name { overflow-wrap: anywhere; }
+.roles-list-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--unit);
+}
+.roles-list-actions select { flex: 1 1 100%; }
+.roles-form { min-width: 0; }
+.roles-warn { color: var(--accent-warn); }
+@media (max-width: 720px) {
+  .roles-body { grid-template-columns: 1fr; }
+}

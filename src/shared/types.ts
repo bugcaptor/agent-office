@@ -33,3 +33,4 @@ export * from './types/repositoryAudit';
 export * from './types/api';
 
 export * from './types/workPanels';
+export * from './types/role';

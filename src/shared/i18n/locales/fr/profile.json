@@ -15,6 +15,9 @@
     "awardBadge": "🏆 {{n}} distinctions au total",
     "personality": "Prompt de personnalité",
     "personalityHint": "Décrivez qui est ce personnage. Le texte est ajouté au prompt système de Claude Code et alimente aussi le prompt du portrait et le ton des journaux et discours de remise de prix. Le multiligne est conservé tel quel.",
+    "discussionRole": "Rôle de discussion par défaut",
+    "discussionRoleNone": "Aucun",
+    "discussionRoleHint": "Prérempli quand ce membre rejoint une discussion d'équipe ; modifiable à chaque discussion. Modifiez la liste des rôles via le bouton 🎭 du panneau des tâches.",
     "archetype": "Archétype",
     "archetypeHint": "Définit la morphologie et la famille de tenue du sprite. Avec « Auto (graine) », c'est la graine qui décide. Saisir une espèce absente de la liste (un dragon, par exemple) se reporte tel quel dans les prompts de portrait et de pixel art, tandis que le personnage en pixels est dessiné avec un corps humain."
   },

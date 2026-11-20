@@ -5,6 +5,7 @@
 
 import type { InboxEntry, InboxRejection, InboxWarning, WorkItem, SessionSummary, WorkSendTarget, WorkSendRequest, WorkSendResult, WorkFollowUpRequest, AutoRunJudgeRequest, AutoRunJudgeResult, TaskChatRequest, TaskChatResult } from './workPanels';
 import type { AgentId } from './common';
+import type { RolesFile } from './role';
 import type {
   CreateSessionOptions,
   CreateSessionResult,
@@ -86,6 +87,10 @@ export interface AgentOfficeApi {
   ackWorkInbox(fileNames: string[]): Promise<void>;
   rejectWorkInbox(rejections: InboxRejection[]): Promise<void>;
   warnWorkInbox(warnings: InboxWarning[]): Promise<void>;
+  /** 토의 역할 목록. 파일이 없으면 null(이때만 프리셋을 시드한다). 손상 파일은 reject. */
+  loadRoles(): Promise<RolesFile | null>;
+  /** 목록 전체를 바꾼다. id 중복·빈 이름은 invalid-roles. */
+  saveRoles(file: RolesFile): Promise<void>;
   loadWorkItems(): Promise<WorkItem[]>;
   /** expectedItems가 있으면 디스크가 그 스냅샷일 때만 저장한다. 충돌은 work-items-changed. */
   saveWorkItems(items: WorkItem[], expectedItems?: WorkItem[]): Promise<void>;

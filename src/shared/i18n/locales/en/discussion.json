@@ -1,0 +1,85 @@
+{
+  "roles": {
+    "open": "Discussion roles",
+    "title": "Discussion roles",
+    "sub": "Role cards team members take in a team discussion. Used as a profile's default role and as choices when opening a discussion.",
+    "loadError": "Could not read the role list. If the file is damaged it is left untouched; try again.",
+    "retry": "Retry",
+    "loading": "Loading…",
+    "listLabel": "Role list",
+    "unnamed": "(unnamed)",
+    "empty": "No roles. Add one or insert a preset.",
+    "add": "Add",
+    "duplicate": "Duplicate",
+    "delete": "Delete",
+    "addPreset": "Add preset…",
+    "name": "Name",
+    "nameRequired": "A name is required to save.",
+    "stance": "Discussion stance",
+    "perspective": "Perspective & responsibility",
+    "perspectivePlaceholder": "From which standpoint, and what this role is responsible for",
+    "criteria": "Criteria & don'ts",
+    "criteriaPlaceholder": "What it judges by, and what it must not do",
+    "agent": "Default CLI",
+    "agentFromProfile": "Participant's profile default",
+    "agentHint": "When opening a discussion, the participant in this role starts with this CLI and model.",
+    "usedBy": "Default role of: {{names}}",
+    "unused": "No team member uses this as their default role yet.",
+    "noSelection": "Pick a role on the left.",
+    "saveError": "Could not save.",
+    "save": "Save",
+    "cancel": "Cancel",
+    "newName": "New role",
+    "copyName": "{{name}} copy"
+  },
+  "stances": {
+    "moderator": "Moderator (neutral)",
+    "free": "Open opinion",
+    "supportive": "Supportive",
+    "critical": "Critical",
+    "devils_advocate": "Devil's advocate",
+    "divergent": "Idea generation",
+    "synthesizer": "Synthesizer"
+  },
+  "stanceHints": {
+    "moderator": "Gives no opinion; only picks speakers, judges convergence and writes the decision memo.",
+    "free": "No fixed attitude; speaks from its own perspective.",
+    "supportive": "Builds on good proposals and makes them concrete.",
+    "critical": "Points out weaknesses, risks and missing evidence.",
+    "devils_advocate": "Deliberately argues against the emerging consensus to test it.",
+    "divergent": "Holds off judgment and puts many different options on the table.",
+    "synthesizer": "Combines the views into a compromise and lists the open issues."
+  },
+  "presets": {
+    "moderator": {
+      "name": "Moderator",
+      "perspective": "Keeps the discussion on its goal. Picks speakers, judges whether views have converged and writes the decision memo.",
+      "criteria": "Gives no opinion of its own and takes no side. Unresolved issues are recorded as open issues, never hidden."
+    },
+    "critic": {
+      "name": "Critic",
+      "perspective": "Looks for weaknesses, risks and hidden costs in proposals.",
+      "criteria": "Never agrees without reasons. Every criticism comes with a reason and, when possible, an alternative. Criticizes proposals, not people."
+    },
+    "devil": {
+      "name": "Devil's advocate",
+      "perspective": "Takes the side opposite to where the majority leans, to test whether the decision really holds.",
+      "criteria": "Even when arguing for the sake of it, builds the case honestly. When persuaded, says what was persuasive."
+    },
+    "user": {
+      "name": "User perspective",
+      "perspective": "Asks, as the person who will actually use it, whether it is easy, confusing, or really needed.",
+      "criteria": "Puts user experience ahead of implementation convenience. Marks guesses about user behavior as guesses."
+    },
+    "maintainer": {
+      "name": "Maintainer perspective",
+      "perspective": "Looks at complexity, coupling and testability as the person who will change this code months later.",
+      "criteria": "Prefers structures that are easy to change over short-term speed. Asks for reasons when a proposal breaks existing conventions."
+    },
+    "ideation": {
+      "name": "Idea generation",
+      "perspective": "Holds off judgment and puts a wide range of options on the table.",
+      "criteria": "Does not filter by feasibility up front. Avoids repeating similar ideas; offers genuinely different directions."
+    }
+  }
+}

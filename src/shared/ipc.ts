@@ -20,6 +20,8 @@ export const Commands = {
   ackWorkInbox: "ack_work_inbox",
   rejectWorkInbox: "reject_work_inbox",
   warnWorkInbox: "warn_work_inbox",
+  loadRoles: "load_roles",
+  saveRoles: "save_roles",
   loadWorkItems: "load_work_items",
   saveWorkItems: "save_work_items",
   loadSessionSummaries: "load_session_summaries",

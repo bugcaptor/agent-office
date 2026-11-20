@@ -8,7 +8,8 @@
       "createdAt": 1720000000003,
       "deskIndex": 0,
       "cwd": "/tmp/proj",
-      "startupCommand": "source ./init.sh"
+      "startupCommand": "source ./init.sh",
+      "defaultRoleId": "preset-critic"
     }
   ],
   "version": 1,

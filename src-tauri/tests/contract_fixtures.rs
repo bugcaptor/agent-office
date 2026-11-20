@@ -27,7 +27,7 @@ use agent_office_lib::session_events::types::SessionEventRecord;
 use agent_office_lib::types::{
     ActivityEvent, ActivityKind, AdoptedSessionInfo, AwardsFile,
     CreateSessionRequest, CreateSessionResult, MemoSheet, MemoSheetMeta,
-    NotificationEvent, NotificationSource, OutputChunk, PersistedState, SessionEventTokens,
+    DiscussionStance, NotificationEvent, NotificationSource, OutputChunk, PersistedState, RolesFile, SessionEventTokens,
     SessionExitInfo, SessionState, SessionStateEvent, TaskChatRequest, TaskChatResult, TurnUsageEvent,
     WorkCli, WorkStatus,
 };
@@ -468,6 +468,21 @@ fn open_task_chat_result_serializes_to_fixture() {
 #[test]
 fn persisted_state_full_roundtrips() {
     assert_roundtrip::<PersistedState>(fixture!("persisted-state.full.json"));
+}
+
+#[test]
+fn persisted_state_full_keeps_default_role_id() {
+    let parsed: PersistedState = serde_json::from_str(fixture!("persisted-state.full.json")).unwrap();
+    assert_eq!(parsed.agents[0].default_role_id.as_deref(), Some("preset-critic"));
+}
+
+#[test]
+fn roles_file_roundtrips() {
+    assert_roundtrip::<RolesFile>(fixture!("roles-file.json"));
+    let parsed: RolesFile = serde_json::from_str(fixture!("roles-file.json")).unwrap();
+    assert_eq!(parsed.roles[0].stance, DiscussionStance::Moderator);
+    assert_eq!(parsed.roles[1].stance, DiscussionStance::DevilsAdvocate);
+    assert!(parsed.roles[0].agent.is_none());
 }
 
 #[test]

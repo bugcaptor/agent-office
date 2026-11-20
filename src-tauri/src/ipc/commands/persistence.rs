@@ -363,6 +363,15 @@ pub async fn load_award_portrait(
         .map_err(|e| e.to_string())
 }
 
+/// 토의 역할 목록. 파일이 없으면 null — 렌더러는 이때만 프리셋을 시드한다.
+#[tauri::command(rename_all = "camelCase")]
+pub async fn load_roles(app_state: State<'_, AppState>) -> Result<Option<RolesFile>, String> {
+    app_state.role_store.load()
+}
+#[tauri::command(rename_all = "camelCase")]
+pub async fn save_roles(app_state: State<'_, AppState>, file: RolesFile) -> Result<(), String> {
+    app_state.role_store.save(&file)
+}
 #[tauri::command(rename_all = "camelCase")]
 pub async fn load_work_items(app_state: State<'_, AppState>) -> Result<Vec<WorkItem>, String> {
     app_state.work_panels_store.load_work_items()

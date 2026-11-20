@@ -9,8 +9,10 @@ const EFFORTS: Record<WorkAgent["cli"], string[]> = {
   agy: ["low", "medium", "high"], kilo: [], pi: ["off", "minimal", "low", "medium", "high", "xhigh", "max"],
 };
 /** 저장만 하는 편집기. 모델 후보 조회는 실행하지 않으며 수동 입력을 보존한다. */
-export function WorkAgentFields({ value, onChange, profile = false, inherited }: {
+export function WorkAgentFields({ value, onChange, profile = false, inherited, labels }: {
   value?: WorkAgent; onChange(value: WorkAgent | undefined): void; profile?: boolean; inherited?: WorkAgent;
+  /** 칸 이름과 "미지정" 항목 문구를 바꾼다(번역된 문자열). 주면 실효값 안내를 숨긴다. */
+  labels?: { field: string; empty: string };
 }) {
   const { t } = useTranslation("workpanels");
   const id = useId();
@@ -30,11 +32,11 @@ export function WorkAgentFields({ value, onChange, profile = false, inherited }:
   }, [cli, retry]);
   const effective = inherited ?? { cli: "claude" };
   return <div className="work-agent-fields">
-    <label><span className="form-label-text">{t(profile ? "defaultAgent" : "agentOverride")}</span><select value={cli ?? ""} onChange={(e) => onChange(e.target.value ? { cli: e.target.value as WorkAgent["cli"] } : undefined)}>
-      <option value="">{t(profile ? "claudeDefault" : "useProfileDefault")}</option>
+    <label><span className="form-label-text">{labels?.field ?? t(profile ? "defaultAgent" : "agentOverride")}</span><select value={cli ?? ""} onChange={(e) => onChange(e.target.value ? { cli: e.target.value as WorkAgent["cli"] } : undefined)}>
+      <option value="">{labels?.empty ?? t(profile ? "claudeDefault" : "useProfileDefault")}</option>
       {CLIS.map((cli) => <option value={cli} key={cli}>{cli}</option>)}
     </select></label>
-    {!value && !profile && <small>{t("effectiveAgent", { agent: [effective.cli, effective.model, effective.effort].filter(Boolean).join(" · ") })}</small>}
+    {!value && !profile && !labels && <small>{t("effectiveAgent", { agent: [effective.cli, effective.model, effective.effort].filter(Boolean).join(" · ") })}</small>}
     {value && <>
       <label><span className="form-label-text">{t("model")}</span><input list={id} value={value.model ?? ""} placeholder={t("cliDefault")} onChange={(e) => onChange({ ...value, model: e.target.value || undefined })} /></label>
       <datalist id={id}>{models.map((model) => <option value={model} key={model} />)}</datalist>

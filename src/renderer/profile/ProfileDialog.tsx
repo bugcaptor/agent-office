@@ -125,6 +125,7 @@ export function ProfileDialog() {
         minimiRequest: trimmedMinimiRequest || undefined,
         keyboardSound: trimmedKeyboardSound || undefined,
         defaultAgent: draft.defaultAgent ? normalizeWorkAgent(draft.defaultAgent) : undefined,
+        defaultRoleId: draft.defaultRoleId || undefined,
       });
     } else {
       const profile = draftToProfile(draft, agentOrder.length);

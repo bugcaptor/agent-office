@@ -1,0 +1,85 @@
+{
+  "roles": {
+    "open": "Rôles de discussion",
+    "title": "Rôles de discussion",
+    "sub": "Les fiches de rôle que les membres prennent dans une discussion d'équipe. Servent de rôle par défaut du profil et de choix à l'ouverture d'une discussion.",
+    "loadError": "Impossible de lire la liste des rôles. Si le fichier est endommagé, il reste intact ; réessayez.",
+    "retry": "Réessayer",
+    "loading": "Chargement…",
+    "listLabel": "Liste des rôles",
+    "unnamed": "(sans nom)",
+    "empty": "Aucun rôle. Ajoutez-en un ou insérez un préréglage.",
+    "add": "Ajouter",
+    "duplicate": "Dupliquer",
+    "delete": "Supprimer",
+    "addPreset": "Ajouter un préréglage…",
+    "name": "Nom",
+    "nameRequired": "Un nom est requis pour enregistrer.",
+    "stance": "Posture de discussion",
+    "perspective": "Point de vue et responsabilité",
+    "perspectivePlaceholder": "De quel point de vue, et de quoi ce rôle est responsable",
+    "criteria": "Critères et interdits",
+    "criteriaPlaceholder": "Sur quoi il juge, et ce qu'il ne doit pas faire",
+    "agent": "CLI par défaut",
+    "agentFromProfile": "Valeur par défaut du profil du participant",
+    "agentHint": "À l'ouverture d'une discussion, le participant qui tient ce rôle démarre avec ce CLI et ce modèle.",
+    "usedBy": "Rôle par défaut de : {{names}}",
+    "unused": "Aucun membre n'utilise encore ce rôle par défaut.",
+    "noSelection": "Choisissez un rôle à gauche.",
+    "saveError": "Échec de l'enregistrement.",
+    "save": "Enregistrer",
+    "cancel": "Annuler",
+    "newName": "Nouveau rôle",
+    "copyName": "Copie de {{name}}"
+  },
+  "stances": {
+    "moderator": "Modérateur (neutre)",
+    "free": "Avis libre",
+    "supportive": "Soutien",
+    "critical": "Critique",
+    "devils_advocate": "Avocat du diable",
+    "divergent": "Génération d'idées",
+    "synthesizer": "Synthèse"
+  },
+  "stanceHints": {
+    "moderator": "Ne donne pas d'avis ; désigne les intervenants, juge la convergence et rédige le mémo de décision.",
+    "free": "Sans attitude imposée ; parle depuis son propre point de vue.",
+    "supportive": "Reprend les bonnes propositions et les rend concrètes.",
+    "critical": "Relève faiblesses, risques et preuves manquantes.",
+    "devils_advocate": "Défend volontairement l'inverse du consensus naissant pour l'éprouver.",
+    "divergent": "Suspend le jugement et propose des options très variées.",
+    "synthesizer": "Rassemble les avis en un compromis et liste les points ouverts."
+  },
+  "presets": {
+    "moderator": {
+      "name": "Modérateur",
+      "perspective": "Garde la discussion sur son objectif. Désigne les intervenants, juge si les avis ont convergé et rédige le mémo de décision.",
+      "criteria": "Ne donne pas son propre avis et ne prend pas parti. Les points non résolus sont notés comme points ouverts, jamais cachés."
+    },
+    "critic": {
+      "name": "Critique",
+      "perspective": "Cherche les faiblesses, les risques et les coûts cachés des propositions.",
+      "criteria": "N'approuve jamais sans raison. Chaque critique s'accompagne d'une raison et, si possible, d'une alternative. Critique les propositions, pas les personnes."
+    },
+    "devil": {
+      "name": "Avocat du diable",
+      "perspective": "Prend le parti opposé à la majorité pour vérifier que la décision tient vraiment.",
+      "criteria": "Même en contestant par principe, argumente honnêtement. S'il est convaincu, dit ce qui l'a convaincu."
+    },
+    "user": {
+      "name": "Point de vue utilisateur",
+      "perspective": "Se demande, en tant qu'utilisateur réel, si c'est simple, déroutant ou vraiment nécessaire.",
+      "criteria": "Place l'expérience d'usage avant la commodité d'implémentation. Signale comme suppositions les hypothèses sur le comportement des utilisateurs."
+    },
+    "maintainer": {
+      "name": "Point de vue maintenance",
+      "perspective": "Examine complexité, couplage et testabilité du point de vue de qui modifiera ce code dans quelques mois.",
+      "criteria": "Préfère une structure facile à modifier à la vitesse immédiate. Demande des raisons quand une proposition rompt les conventions existantes."
+    },
+    "ideation": {
+      "name": "Génération d'idées",
+      "perspective": "Suspend le jugement et met un large éventail d'options sur la table.",
+      "criteria": "Ne filtre pas d'emblée par faisabilité. Évite de répéter des idées proches ; propose des directions vraiment différentes."
+    }
+  }
+}

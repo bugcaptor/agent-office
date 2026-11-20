@@ -1,0 +1,20 @@
+{
+  "version": 1,
+  "roles": [
+    {
+      "id": "preset-moderator",
+      "name": "Moderator",
+      "perspective": "Keeps the discussion on track.",
+      "stance": "moderator",
+      "criteria": "Never argues for a side."
+    },
+    {
+      "id": "r2",
+      "name": "Devil's advocate",
+      "perspective": "",
+      "stance": "devils_advocate",
+      "criteria": "",
+      "agent": { "cli": "codex", "model": "gpt-5", "effort": "high" }
+    }
+  ]
+}

@@ -37,6 +37,8 @@ export interface DraftProfile {
   /** 키보드 사운드 팩 id(선택). 빈 문자열 = 기본 팩. */
   keyboardSound?: string;
   defaultAgent?: WorkAgent;
+  /** 토의 기본 역할 id. 빈 문자열 = 없음. */
+  defaultRoleId?: string;
 }
 
 /**
@@ -126,6 +128,7 @@ export function draftToProfile(d: DraftProfile, deskIndex: number): AgentProfile
     ...(minimiRequest ? { minimiRequest } : {}),
     ...(keyboardSound ? { keyboardSound } : {}),
     ...(d.defaultAgent ? { defaultAgent: normalizeWorkAgent(d.defaultAgent) } : {}),
+    ...(d.defaultRoleId ? { defaultRoleId: d.defaultRoleId } : {}),
   };
 }
 

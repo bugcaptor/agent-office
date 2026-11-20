@@ -70,6 +70,8 @@ export interface AgentProfile {
   clockedOut?: boolean;
   /** 키보드 사운드 팩 id (sound/packs.ts). 부재/무효 = 기본 팩. */
   keyboardSound?: string;
+  /** 토의 기본 역할(`DiscussionRole.id`). 없는 id면 역할 없음으로 본다. 자유 텍스트 `role`과 별개. */
+  defaultRoleId?: string;
 }
 
 /**

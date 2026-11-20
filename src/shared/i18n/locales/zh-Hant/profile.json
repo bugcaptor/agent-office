@@ -15,6 +15,9 @@
     "awardBadge": "🏆 累計獲獎 {{n}} 次",
     "personality": "個性提示",
     "personalityHint": "寫下這個角色是什麼樣的存在。它會附加在 Claude Code 的系統提示後面，也會一併反映到肖像提示以及日記、得獎感言的語氣上。可以直接寫成多行。",
+    "discussionRole": "預設討論角色",
+    "discussionRoleNone": "無",
+    "discussionRoleHint": "該成員參加團隊討論時預先填入的角色，每次討論都可更改。角色清單在工作面板的 🎭 按鈕中編輯。",
     "archetype": "原型",
     "archetypeHint": "決定 Sprite 的體型與服裝系列。選「自動（種子）」時由種子決定。填入清單裡沒有的種族（例如龍），會原樣反映到肖像和像素圖提示，點陣角色則以人類體型繪製。"
   },

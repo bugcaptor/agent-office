@@ -69,7 +69,9 @@ export type ModalState =
   | { kind: "analytics" }
   | { kind: "usage" }
   | { kind: "about" }
-  | { kind: "awards" };
+  | { kind: "awards" }
+  /** 토의 역할 목록 편집. */
+  | { kind: "roles" };
 
 /**
  * 머리 위 작업 라벨의 에이전트별 소스 상태. 비영속(런타임 전용).

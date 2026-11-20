@@ -15,6 +15,9 @@
     "awardBadge": "🏆 {{n}} awards in total",
     "personality": "Personality prompt",
     "personalityHint": "Describe who this character is. It is appended to Claude Code's system prompt and also feeds the portrait prompt and the tone of diaries and award speeches. Multiple lines are kept as written.",
+    "discussionRole": "Default discussion role",
+    "discussionRoleNone": "None",
+    "discussionRoleHint": "Pre-filled when this member joins a team discussion; you can change it per discussion. Edit the role list from the 🎭 button in the work panel.",
     "archetype": "Archetype",
     "archetypeHint": "Sets the sprite's body type and outfit family. With “Auto (seed)” the seed decides. Typing a species that is not on the list (a dragon, say) carries straight into the portrait and pixel-art prompts, while the dot character is drawn with a human body."
   },

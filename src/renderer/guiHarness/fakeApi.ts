@@ -16,6 +16,7 @@ import type {
   MemoSheet,
   NotificationEvent,
   RepositoryAuditItem,
+  RolesFile,
   SessionState,
   SessionStateEvent,
   TaskChatRequest,
@@ -50,6 +51,7 @@ const scenario = loadScenario(String(harness.scenario), params.get("lang") ?? "k
 let settings: AppSettings = scenario.settings.settings;
 let state = scenario.state;
 let workItems = scenario.workItems;
+let roles: RolesFile | null = null;
 const auditRepo = (name: string, extra: Partial<RepositoryAuditItem>): RepositoryAuditItem => ({
   path: `/work/${name}`, name, lastWorkedAt: 0, branch: "main", upstream: "origin/main", hasRemote: true,
   ahead: 0, behind: 0, changedCount: 0, conflictCount: 0, timedOut: false, unavailable: false, ...extra,
@@ -138,6 +140,8 @@ const impl: Partial<AgentOfficeApi> = {
   async loadAwardPortrait() { return null; },
   async loadSessionTurns() { return []; },
   async loadSessionEvents() { return []; },
+  async loadRoles() { return structuredClone(roles); },
+  async saveRoles(file) { roles = structuredClone(file); },
   async loadWorkItems() { return structuredClone(workItems); },
   async saveWorkItems(next, expectedItems) {
     if (expectedItems && !sameWorkValue(expectedItems, workItems)) throw "work-items-changed";

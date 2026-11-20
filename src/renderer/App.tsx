@@ -25,6 +25,7 @@ import { AnalyticsDialog } from "./analytics/AnalyticsDialog";
 import { UsageDialog } from "./usage/UsageDialog";
 import { AboutDialog } from "./about/AboutDialog";
 import { AwardsDialog } from "./awards/AwardsDialog";
+import { RolesDialog } from "./discussion/RolesDialog";
 import { useAppStore } from "./store/appStore";
 import { useAgentList, useLightsOff } from "./store/selectors";
 import { THEMES } from "./theme/themes";
@@ -176,6 +177,7 @@ function App() {
         {/* 이 달의 우수사원. 하단바
             트로피 버튼에서 열리고, modal.kind로 self-gate한다. */}
         <AwardsDialog />
+        <RolesDialog />
       </div>
     </div>
   );

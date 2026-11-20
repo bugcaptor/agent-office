@@ -2,10 +2,12 @@
 //
 // 정체성 — 이름·역할·성격 프롬프트·아키타입. 다이얼로그에서 유일하게 "이 캐릭터가
 // 누구인가"만 다루는 칸이라, 외형(색·그림)과 터미널(환경)은 여기 없다.
+import { useEffect } from "react";
 import { useTranslation } from "react-i18next";
 
 import { useAwardsStore } from "../../awards/awardsStore";
 import { ArchetypePicker } from "../ArchetypePicker";
+import { useRoleStore } from "../../discussion/roleStore";
 import type { DraftProfile } from "../generate";
 import type { AgentProfile } from "@shared/types";
 import type { Dispatch, SetStateAction } from "react";
@@ -25,6 +27,11 @@ export function IdentitySection({
   // "이 달의 우수사원" 통산 수상 횟수 뱃지
   // — 스토어에서 count만 읽는 소규모 표시. 0회면 뱃지를 그리지 않는다.
   const awardCountFor = useAwardsStore((s) => s.awardCountFor);
+  const roles = useRoleStore((s) => s.roles);
+  const rolesStatus = useRoleStore((s) => s.status);
+  useEffect(() => { void useRoleStore.getState().ensureLoaded(); }, []);
+  // 지워진 역할을 가리키면 "없음"으로 보인다. 초안 값은 사용자가 고를 때만 바꾼다.
+  const roleValue = roles.some((r) => r.id === draft.defaultRoleId) ? draft.defaultRoleId : "";
   return (
     <>
     {/* ── 정체성: 이름 · 역할 · 성격 프롬프트 · 아키타입 ────── */}
@@ -68,6 +75,22 @@ export function IdentitySection({
           />
         </label>
         <p className="form-hint">{t("identity.personalityHint")}</p>
+      </div>
+      <div className="form-field">
+        <label>
+          <span className="form-label-text">{t("identity.discussionRole")}</span>
+          <select
+            value={roleValue}
+            disabled={rolesStatus !== "ready"}
+            onChange={(e) => setDraft({ ...draft, defaultRoleId: e.target.value })}
+          >
+            <option value="">{t("identity.discussionRoleNone")}</option>
+            {roles.map((r) => (
+              <option key={r.id} value={r.id}>{r.name}</option>
+            ))}
+          </select>
+        </label>
+        <p className="form-hint">{t("identity.discussionRoleHint")}</p>
       </div>
       <div className="form-field">
         <label>

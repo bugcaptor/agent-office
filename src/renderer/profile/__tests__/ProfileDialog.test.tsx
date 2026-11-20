@@ -18,6 +18,7 @@ import { useAwardsStore } from "../../awards/awardsStore";
 import { keyColorsFor, hexColor } from "../../office/gen/archetypes";
 import type { AgentProfile } from "../../store/types";
 import { WORDLISTS } from "@renderer/i18n/wordlists";
+import { resetRoleStoreForTest } from "../../discussion/roleStore";
 
 // 낱말 목록은 언어별 자료로 `@renderer/i18n/wordlists`에 있다. 테스트 UI 언어는
 // 정본 ko로 고정돼 있으므로(src/test-setup.ts) ko 목록을 그대로 기대값으로 쓴다.
@@ -35,8 +36,11 @@ const createSession = vi.fn().mockResolvedValue({ sessionId: "s1", state: "start
 const deletePortrait = vi.fn().mockResolvedValue(undefined);
 const deleteSprite = vi.fn().mockResolvedValue(undefined);
 const listAvailableShells = vi.fn().mockResolvedValue([]);
+const loadRoles = vi.fn().mockResolvedValue({ version: 1, roles: [] });
 vi.mock("../../ipc/tauriApi", () => ({
   tauriApi: {
+    loadRoles: (...args: unknown[]) => loadRoles(...args),
+    saveRoles: vi.fn().mockResolvedValue(undefined),
     workAgentModels: (...args: unknown[]) => workAgentModels(...args),
     createSession: (...args: unknown[]) => createSession(...args),
     deletePortrait: (...args: unknown[]) => deletePortrait(...args),
@@ -77,6 +81,8 @@ beforeEach(() => {
   deleteSprite.mockClear();
   listAvailableShells.mockClear();
   listAvailableShells.mockResolvedValue([]);
+  resetRoleStoreForTest();
+  loadRoles.mockResolvedValue({ version: 1, roles: [] });
 });
 
 afterEach(() => cleanup());
@@ -915,4 +921,48 @@ it("기본 업무 에이전트를 불러와 편집 저장하며 CLI 변경 시 �
   fireEvent.click(getByRole("button", { name: "저장" }));
   expect(useAppStore.getState().agents.a1.defaultAgent).toEqual({ cli: "pi", model: "new/model", effort: "xhigh" });
   expect(createSession).not.toHaveBeenCalled();
+});
+
+describe("토의 기본 역할", () => {
+  const roles = [
+    { id: "r1", name: "비판자", perspective: "", stance: "critical", criteria: "" },
+    { id: "r2", name: "사회자", perspective: "", stance: "moderator", criteria: "" },
+  ];
+  beforeEach(() => loadRoles.mockResolvedValue({ version: 1, roles }));
+
+  it("edit: 저장된 역할을 보여 주고 바꾼 역할을 저장한다", async () => {
+    useAppStore.getState().addAgent(mkProfile({ defaultRoleId: "r1" }));
+    useAppStore.getState().openModal({ kind: "profile-edit", agentId: "a1" });
+    const { getByLabelText, getByText } = render(<ProfileDialog />);
+    const select = getByLabelText("토의 기본 역할") as HTMLSelectElement;
+    await waitFor(() => expect(select.value).toBe("r1"));
+    fireEvent.change(select, { target: { value: "r2" } });
+    await act(async () => { fireEvent.click(getByText("저장")); await Promise.resolve(); });
+    expect(useAppStore.getState().agents.a1.defaultRoleId).toBe("r2");
+  });
+
+  it("edit: 없음을 고르면 필드를 지우고, 지워진 역할 id는 없음으로 보인다", async () => {
+    useAppStore.getState().addAgent(mkProfile({ defaultRoleId: "gone" }));
+    useAppStore.getState().openModal({ kind: "profile-edit", agentId: "a1" });
+    const { getByLabelText, getByText } = render(<ProfileDialog />);
+    const select = getByLabelText("토의 기본 역할") as HTMLSelectElement;
+    await waitFor(() => expect(select.disabled).toBe(false));
+    expect(select.value).toBe("");
+    fireEvent.change(select, { target: { value: "r1" } });
+    fireEvent.change(select, { target: { value: "" } });
+    await act(async () => { fireEvent.click(getByText("저장")); await Promise.resolve(); });
+    expect(useAppStore.getState().agents.a1.defaultRoleId).toBeUndefined();
+  });
+
+  it("create: 고른 역할이 새 프로필에 들어간다", async () => {
+    useAppStore.getState().openModal({ kind: "profile-create" });
+    const { getByLabelText, getByText } = render(<ProfileDialog />);
+    const select = getByLabelText("토의 기본 역할") as HTMLSelectElement;
+    await waitFor(() => expect(select.disabled).toBe(false));
+    fireEvent.change(select, { target: { value: "r2" } });
+    await act(async () => { fireEvent.click(getByText("저장")); await Promise.resolve(); });
+    const state = useAppStore.getState();
+    await waitFor(() => expect(useAppStore.getState().modal.kind).toBe("none"));
+    expect(state.agents[state.agentOrder[0]].defaultRoleId).toBe("r2");
+  });
 });

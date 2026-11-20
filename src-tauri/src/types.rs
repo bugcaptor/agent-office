@@ -711,6 +711,10 @@ pub struct AgentProfile {
     /// TS `keyboardSound?: string` 미러.
     #[serde(skip_serializing_if = "Option::is_none", default)]
     pub keyboard_sound: Option<String>,
+    /// 토의 기본 역할(`roles.json`의 `DiscussionRole.id`). 없는 id를 가리키면
+    /// 역할 없음으로 본다. TS `defaultRoleId?: string` 미러.
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub default_role_id: Option<String>,
 }
 
 /// 영속 상태. version은 리터럴 1.
@@ -1125,6 +1129,7 @@ mod tests {
             clocked_out: None,
             personality_prompt: None,
         keyboard_sound: None,
+        default_role_id: None,
         default_agent: None,
         };
         let json = serde_json::to_string(&profile).unwrap();
@@ -1169,6 +1174,7 @@ mod tests {
             clocked_out: None,
             personality_prompt: None,
         keyboard_sound: None,
+        default_role_id: None,
         default_agent: None,
         };
         let json = serde_json::to_string(&profile).unwrap();
@@ -1221,6 +1227,7 @@ mod tests {
             clocked_out: None,
             personality_prompt: None,
         keyboard_sound: None,
+        default_role_id: None,
         default_agent: None,
         };
         let json = serde_json::to_string(&profile).unwrap();
@@ -1250,6 +1257,7 @@ mod tests {
             clocked_out: None,
             personality_prompt: None,
                        keyboard_sound: Some("topre-hhkb".into()),
+                       default_role_id: None,
                        default_agent: None,
         };
         let json = serde_json::to_string(&profile).unwrap();
@@ -1277,6 +1285,7 @@ mod tests {
             clocked_out: None,
             personality_prompt: None,
         keyboard_sound: None,
+        default_role_id: None,
         default_agent: None,
         };
         let json = serde_json::to_string(&profile).unwrap();
@@ -1304,6 +1313,7 @@ mod tests {
             clocked_out: Some(true),
             personality_prompt: None,
         keyboard_sound: None,
+        default_role_id: None,
         default_agent: None,
         };
         let json = serde_json::to_string(&profile).unwrap();
@@ -1390,6 +1400,31 @@ pub struct WorkAgent {
     pub cli: WorkCli,
     #[serde(default, skip_serializing_if = "Option::is_none")] pub model: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")] pub effort: Option<String>,
+}
+// 토의 역할 목록 — src/shared/types/role.ts 미러. `roles.json`에 저장한다.
+/// 토의에서 이 역할이 취하는 태도. 사회자(`Moderator`)는 의견을 내지 않고
+/// 지목·수렴 판단·메모 작성만 한다.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum DiscussionStance { Moderator, Free, Supportive, Critical, DevilsAdvocate, Divergent, Synthesizer }
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DiscussionRole {
+    pub id: String,
+    pub name: String,
+    /// 관점·책임.
+    #[serde(default)] pub perspective: String,
+    pub stance: DiscussionStance,
+    /// 판단 기준·금지사항.
+    #[serde(default)] pub criteria: String,
+    /// 토의 참가 시 미리 채울 CLI·모델. 없으면 참가자 프로필 기본값.
+    #[serde(default, skip_serializing_if = "Option::is_none")] pub agent: Option<WorkAgent>,
+}
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RolesFile {
+    pub version: u32,
+    pub roles: Vec<DiscussionRole>,
 }
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]

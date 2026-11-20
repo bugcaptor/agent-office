@@ -1,0 +1,85 @@
+{
+  "roles": {
+    "open": "討論角色清單",
+    "title": "討論角色",
+    "sub": "團隊討論中成員擔任的角色卡。用作個人檔案的預設角色，以及開啟討論時的選項。",
+    "loadError": "無法讀取角色清單。如果檔案已損壞，會保持原樣；請重試。",
+    "retry": "重試",
+    "loading": "載入中…",
+    "listLabel": "角色清單",
+    "unnamed": "（未命名）",
+    "empty": "沒有角色。請新增或插入預設。",
+    "add": "新增",
+    "duplicate": "複製",
+    "delete": "刪除",
+    "addPreset": "新增預設…",
+    "name": "名稱",
+    "nameRequired": "必須填寫名稱才能儲存。",
+    "stance": "討論立場",
+    "perspective": "視角與職責",
+    "perspectivePlaceholder": "從什麼立場出發，負責關注什麼",
+    "criteria": "判斷標準與禁止事項",
+    "criteriaPlaceholder": "依據什麼判斷，哪些事不做",
+    "agent": "預設 CLI",
+    "agentFromProfile": "參與者個人檔案的預設值",
+    "agentHint": "開啟討論時，擔任此角色的參與者會預先填入這裡的 CLI 和模型。",
+    "usedBy": "以此為預設角色的成員：{{names}}",
+    "unused": "還沒有成員以此為預設角色。",
+    "noSelection": "請在左側選擇一個角色。",
+    "saveError": "儲存失敗。",
+    "save": "儲存",
+    "cancel": "取消",
+    "newName": "新角色",
+    "copyName": "{{name}} 副本"
+  },
+  "stances": {
+    "moderator": "主持人（中立）",
+    "free": "自由發言",
+    "supportive": "附和與補充",
+    "critical": "批評",
+    "devils_advocate": "唱反調",
+    "divergent": "發散創意",
+    "synthesizer": "綜合"
+  },
+  "stanceHints": {
+    "moderator": "不發表意見，只負責點名發言、判斷是否收斂、撰寫決定備忘。",
+    "free": "沒有固定態度，從自己的視角發表意見。",
+    "supportive": "接過好的提案，使其具體並加以補充。",
+    "critical": "指出提案的弱點、風險和缺少的依據。",
+    "devils_advocate": "刻意站在逐漸形成的共識的對立面，徹底檢驗它。",
+    "divergent": "暫緩判斷，廣泛提出多種替代方案。",
+    "synthesizer": "彙整各方意見，整理折衷方案和遺留爭議。"
+  },
+  "presets": {
+    "moderator": {
+      "name": "主持人",
+      "perspective": "讓討論不偏離目標。點名發言者，判斷意見是否已收斂，並撰寫決定備忘。",
+      "criteria": "不發表自己的意見，不偏袒任何人。未能得出結論的爭議不隱瞞，記為遺留爭議。"
+    },
+    "critic": {
+      "name": "批評者",
+      "perspective": "尋找提案的弱點、風險和隱性成本。",
+      "criteria": "沒有依據不表示同意。批評要附上理由，盡可能給出替代方案。批評提案而不是人。"
+    },
+    "devil": {
+      "name": "唱反調者",
+      "perspective": "站在多數人傾向的對立面，檢驗這個決定是否真的正確。",
+      "criteria": "即使是為反對而反對，也要認真建構論證。被說服時說明是被什麼說服的。"
+    },
+    "user": {
+      "name": "使用者視角",
+      "perspective": "站在實際使用者的立場，看是否好用、是否令人困惑、是否真的需要。",
+      "criteria": "把使用體驗放在實作便利之前。對使用者行為的推測要標明是推測。"
+    },
+    "maintainer": {
+      "name": "維護視角",
+      "perspective": "站在幾個月後修改這段程式碼的人的立場，關注複雜度、耦合度和可測試性。",
+      "criteria": "優先考慮易於修改的結構而非眼前的速度。對打破現有慣例的提案要求說明理由。"
+    },
+    "ideation": {
+      "name": "發散創意",
+      "perspective": "暫緩判斷，廣泛提出可能的替代方案。",
+      "criteria": "一開始不按可行性篩選。不重複相似的方案，提出彼此不同的方向。"
+    }
+  }
+}

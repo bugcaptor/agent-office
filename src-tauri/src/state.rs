@@ -165,6 +165,8 @@ pub struct AppState {
     /// 렌더러 버퍼를 디스크에 보존해 앱 재시작 후 복원한다. 렌더러가 쓰기를 주도한다.
     pub work_send_runtime: Arc<crate::work_send::WorkSendRuntime>,
     pub work_panels_store: crate::persistence::work_panels_store::WorkPanelsStore,
+    /// 토의 역할 목록(`roles.json`).
+    pub role_store: crate::persistence::role_store::RoleStore,
     pub work_log_store: crate::persistence::work_log_store::WorkLogStore,
     /// 이 달의 우수사원 시상 저장소(`awards/awards.json` + `awards/portraits/<YYYY-MM>.png`).
     /// 확정은 write-once라 같은 달을 다시 확정해도 첫 레코드가 남는다.

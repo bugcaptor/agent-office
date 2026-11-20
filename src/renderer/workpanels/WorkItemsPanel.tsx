@@ -192,6 +192,7 @@ export function WorkItemsPanel() {
     <div className="work-panel-actions">
       <button className="pixel-btn work-new-btn" disabled={!loaded} aria-expanded={creating} onClick={() => { setDraft((current) => current ?? { ...EMPTY_WORK_DRAFT }); setCreating(!creating); setTransferring(false); select(null); }}>{t(draft && !creating ? "resumeNewWork" : "newWork")}</button>
       <button className="pixel-btn" disabled={!loaded} aria-haspopup="dialog" aria-expanded={transferring} aria-label={t("transfer.open")} title={t("transfer.open")} onClick={() => { setTransferring(true); setCreating(false); select(null); }}>⇅</button>
+      <button className="pixel-btn work-roles-btn" aria-haspopup="dialog" aria-label={t("discussion:roles.open")} title={t("discussion:roles.open")} onClick={() => useAppStore.getState().openModal({ kind: "roles" })}>🎭</button>
     </div>
     {error && <div role="alert">{t(error === "load" ? "loadError" : "saveError")} <button className="pixel-btn" onClick={() => void (error === "load" ? load() : useWorkItemStore.getState().flush())}>{t("retry")}</button></div>}
     {!items.length && loaded && <p className="work-muted">{t("emptyWork")}</p>}

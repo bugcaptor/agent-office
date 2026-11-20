@@ -55,6 +55,7 @@
 | 터미널 탭·xterm | `terminal/` (`TerminalHost.tsx`, `TerminalRegistry.ts`, `AgentTabStrip.tsx`) |
 | 업무 패널·자동 진행·태스크 대화 | `workpanels/` |
 | 예약(규칙 계산·실행기·팝업 영역) | `workpanels/workSchedule.ts`, `scheduleRunner.ts`, `WorkScheduleSection.tsx` |
+| 팀 토의(역할 목록·프리셋) | `discussion/` (`roleStore.ts`, `RolesDialog.tsx`), 저장은 `persistence/role_store.rs` |
 | 마스코트 창·신호등 | `mascot/`, `store/mascotLights.ts`, `ipc/mascotBridge.ts` |
 | 그 밖의 기능 | 기능 이름의 폴더(`usage/`, `analytics/`, `sessionlog/`, `awards/`, `workdir/`, `markdown/`, `diary/`, `settings/` …) |
 | 다국어 | 카탈로그 `src/shared/i18n/locales/`, 하드코딩 검사 `__tests__/noHardcodedHangul.test.ts` |
