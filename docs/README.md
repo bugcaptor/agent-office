@@ -41,6 +41,7 @@
 | 업무 수신함 `office-task`, 공통 안내문 | `work_inbox_cli.rs`, `persistence/work_inbox.rs`, `office_instructions.rs` |
 | 문서 뷰어 `office-md` | `doc_view.rs`, `doc_view_cli.rs` |
 | 외부 CLI 제어 `ctl`, 플랜 위임(`autorun`·`ask`·턴 상태) | `control/` (`autorun.rs`·`turns.rs`), 렌더러 쪽 `workpanels/autoRunControl.ts` |
+| 팀 토의(저장·탭 세션·CLI) | 아래 [팀 토의](#팀-토의) 절 |
 | 작업 폴더·Git·파일 색인 | `workdir/`, `file_index/`, `file_manager.rs` |
 | 실행 레시피 | `run_recipes/` |
 
@@ -55,10 +56,28 @@
 | 터미널 탭·xterm | `terminal/` (`TerminalHost.tsx`, `TerminalRegistry.ts`, `AgentTabStrip.tsx`) |
 | 업무 패널·자동 진행·태스크 대화 | `workpanels/` |
 | 예약(규칙 계산·실행기·팝업 영역) | `workpanels/workSchedule.ts`, `scheduleRunner.ts`, `WorkScheduleSection.tsx` |
-| 팀 토의(역할 목록·프리셋, 토의 카드·열기 대화상자, 사회자 주도 진행, 라운드·시간·비용 상한과 사용량 대기, 결정 메모와 결론 확인) | `discussion/` (`roleStore.ts`, `RolesDialog.tsx`, `discussionStore.ts`, `discussionModel.ts`, `DiscussionSection.tsx`, `DiscussionEditor.tsx`, 진행 루프·안전장치 `discussionRun.ts`, 결정 메모 작성 `discussionMemo.ts`), 저장은 `persistence/role_store.rs`·`persistence/discussion_store.rs`(메모 `discussions/memos/<id>.md`), 메모 브라우저 열기는 `ipc/commands/doc_view.rs`. 에이전트·CLI 경로: 만들기 `office-task --discuss`(`discussion_cli.rs` → 수신함 `persistence/discussion_inbox.rs`, 렌더러 `discussionInbox.ts`), `ctl discuss list·status·memo·start·answer`(`control/discussion.rs`, 쓰기는 렌더러 `discussionControl.ts`). 오피스 회의실 연출: 맵 `office/map/mapData.ts`의 `meetingRoom`(오피스 씬만), 토의 → 씬 정보 `discussion/officeStage.ts` → `officeBus.onDiscussionStageChanged` → `OfficeWorld`·`CharacterEntity`(회의실 의자·`DiscussionOverlay.ts` 말풍선·사회자 의사봉) |
+| 팀 토의 | `discussion/` — 아래 [팀 토의](#팀-토의) 절 |
 | 마스코트 창·신호등 | `mascot/`, `store/mascotLights.ts`, `ipc/mascotBridge.ts` |
 | 그 밖의 기능 | 기능 이름의 폴더(`usage/`, `analytics/`, `sessionlog/`, `awards/`, `workdir/`, `markdown/`, `diary/`, `settings/` …) |
 | 다국어 | 카탈로그 `src/shared/i18n/locales/`, 하드코딩 검사 `__tests__/noHardcodedHangul.test.ts` |
+
+### 팀 토의
+
+사용 안내는 [guide.md의 팀 토의](guide.md#팀-토의)에 있다.
+
+| 무엇 | 어디 |
+|---|---|
+| 타입(역할·토의·진행 상태·탭 세션) | TS `src/shared/types/role.ts`·`discussion.ts`(상한 범위 `DISCUSSION_LIMIT_RANGES`, 검사 `discussionProblem`), Rust `src-tauri/src/types.rs`, 대조 fixture `src/shared/contract-fixtures/`의 `roles-file.json`·`discussions-file.json`·`discussion-run.forced-wrap.json`·`*-discussion-*.json` |
+| 역할 목록·프리셋·프로필 기본 역할 | 렌더러 `discussion/roleStore.ts`·`RolesDialog.tsx`, 저장 `persistence/role_store.rs`(`roles.json`) |
+| 토의 저장·카드·열기 대화상자 | `discussion/discussionStore.ts`·`discussionModel.ts`·`DiscussionSection.tsx`·`DiscussionEditor.tsx`, 저장 `persistence/discussion_store.rs`(`discussions.json`, 상한 기본값 `DiscussionLimits::default`) |
+| 토의 탭 세션·읽기 전용 플래그·첫 프롬프트·발언 수집 | Rust `discussion_session.rs`, 렌더러 `discussion/discussionSessionStore.ts`, 탭 표시 `terminal/AgentTabStrip.tsx` |
+| 발언 제출 `office-discuss say` | `discussion_cli.rs`(`say`), Codex 마지막 응답은 Stop 훅 → `observer/mod.rs`의 `StopReplySink` |
+| 사회자 주도 진행·상한·사용량 대기·마무리 | `discussion/discussionRun.ts`(부팅 배선 `bootstrap.ts`의 `installDiscussionRunner`) |
+| 결정 메모 | 작성 `discussion/discussionMemo.ts`, 저장 `discussions/memos/<id>.md`(`persistence/discussion_store.rs`), 브라우저 열기 `ipc/commands/doc_view.rs`, 렌더링 `markdown/renderMarkdown.ts` |
+| CLI에서 만들기 `office-task --discuss` | `discussion_cli.rs`(`create`) → 수신함 `persistence/discussion_inbox.rs` → 렌더러 `discussion/discussionInbox.ts`, 에이전트 안내 `office_instructions.rs` |
+| `ctl discuss list·status·memo·start·answer` | `control/discussion.rs`·`control/client.rs`, 쓰기 중계는 렌더러 `discussion/discussionControl.ts` |
+| 오피스 회의실 연출 | 맵 `office/map/mapData.ts`의 `meetingRoom`(오피스 풍경만), 토의 → 씬 정보 `discussion/officeStage.ts` → `officeBus.onDiscussionStageChanged`(`ipc/sessionBridge.ts`가 보냄) → `office/world/OfficeWorld.ts` → `office/entities/CharacterEntity.ts`·`behaviorFsm.ts`(`meeting` 상태), 말풍선·의사봉 `office/entities/DiscussionOverlay.ts`, 회의실 그림·팔레트 `office/scenes/officeScene.ts` |
+| gui 확인 | 시나리오 `discussions`·`meeting`, 스크립트 `scripts/gui-steps/discussion*.mjs` |
 
 ### 도구
 
