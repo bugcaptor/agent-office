@@ -11,24 +11,11 @@
 // stopPropagation해 터미널/전역 단축키로 새지 않게 한다.
 import { useMemo, useState } from "react";
 import { Trans, useTranslation } from "react-i18next";
-import { marked } from "marked";
-import DOMPurify from "dompurify";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { tauriApi } from "../ipc/tauriApi";
 import { useMarkdownStore, isEditorDirty } from "./markdownStore";
 import { resolveMarkdownLink } from "./markdownLinks";
-
-// 링크가 웹뷰에서 새 창을 열지 못하게 target 속성을 제거한다. 클릭은 아래에서
-// worktree 링크/OS 기본 앱으로 명시적으로 라우팅한다.
-DOMPurify.addHook("afterSanitizeAttributes", (node) => {
-  if (node.tagName === "A") node.removeAttribute("target");
-});
-
-/** 마크다운 → 안전한 HTML. marked는 동기 파싱(async 확장 없음), DOMPurify로 sanitize. */
-function renderMarkdown(src: string): string {
-  const raw = marked.parse(src, { async: false, gfm: true, breaks: false }) as string;
-  return DOMPurify.sanitize(raw, { FORBID_ATTR: ["target"] });
-}
+import { renderMarkdown } from "./renderMarkdown";
 
 function headingSlug(text: string): string {
   return text

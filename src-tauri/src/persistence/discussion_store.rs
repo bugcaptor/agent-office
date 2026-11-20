@@ -8,10 +8,12 @@
 // - 손상·미래 버전은 Err이고 파일을 건드리지 않는다(role_store 정책).
 // - 구조만 검사한다. 지워진 팀원·역할 id는 거부하지 않는다 — 읽는 쪽이 "없음"으로 본다.
 // - 쓰기는 `durable::write_atomic`(fsync + rename).
+// - 결정 메모는 토의마다 `<app_data>/discussions/memos/<토의 id>.md` 한 파일이다. 경로는 id로만 만들고
+//   렌더러가 준 경로는 받지 않는다. 토의를 지우면 메모도 지운다.
 
 use std::collections::HashSet;
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
 use super::durable::write_atomic;
@@ -63,14 +65,55 @@ fn limits_ok(l: &DiscussionLimits) -> bool {
         && l.max_cost_usd <= MAX_COST_USD_RANGE.1
 }
 
+/// 결정 메모 폴더(`<app_data>/discussions/memos`).
+pub fn memos_dir(app_data: &Path) -> PathBuf {
+    app_data.join("discussions").join("memos")
+}
+
+/// 토의 하나의 결정 메모 경로. id가 파일 이름이 되므로 `[A-Za-z0-9_-]{1,64}`만 받는다.
+pub fn memo_path(app_data: &Path, id: &str) -> Result<PathBuf, String> {
+    if !crate::persistence::work_inbox::valid_task_id(id) {
+        return Err("discussion-memo-invalid-id".into());
+    }
+    Ok(memos_dir(app_data).join(format!("{id}.md")))
+}
+
 pub struct DiscussionStore {
+    dir: PathBuf,
     file: PathBuf,
     lock: Mutex<()>,
 }
 
 impl DiscussionStore {
     pub fn new(dir: PathBuf) -> Self {
-        Self { file: dir.join("discussions.json"), lock: Mutex::new(()) }
+        Self { file: dir.join("discussions.json"), dir, lock: Mutex::new(()) }
+    }
+
+    /// 결정 메모를 쓰고 절대 경로를 돌려준다. 없는 토의면 `discussion-memo-missing`.
+    pub fn write_memo(&self, id: &str, markdown: &str) -> Result<PathBuf, String> {
+        let path = memo_path(&self.dir, id)?;
+        let _guard = self.lock.lock().map_err(|e| e.to_string())?;
+        if !self.read()?.discussions.iter().any(|d| d.id == id) {
+            return Err("discussion-memo-missing".into());
+        }
+        write_atomic(&path, markdown.as_bytes()).map_err(|e| e.to_string())?;
+        Ok(path)
+    }
+
+    /// 결정 메모 본문. 아직 쓰지 않았으면 None.
+    pub fn read_memo(&self, id: &str) -> Result<Option<String>, String> {
+        let path = memo_path(&self.dir, id)?;
+        match fs::read_to_string(&path) {
+            Ok(text) => Ok(Some(text)),
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(None),
+            Err(e) => Err(e.to_string()),
+        }
+    }
+
+    /// 결정 메모 경로(파일이 있을 때만). 브라우저로 열 때 쓴다.
+    pub fn existing_memo_path(&self, id: &str) -> Result<PathBuf, String> {
+        let path = memo_path(&self.dir, id)?;
+        if path.is_file() { Ok(path) } else { Err("discussion-memo-not-found".into()) }
     }
 
     pub fn load(&self) -> Result<Vec<Discussion>, String> {
@@ -123,7 +166,12 @@ impl DiscussionStore {
         if file.discussions.len() == before {
             return Ok(());
         }
-        self.write(&file)
+        self.write(&file)?;
+        // 메모는 토의 카드에서만 열람하므로 함께 지운다. 지우지 못해도 토의 삭제는 성공이다.
+        if let Ok(path) = memo_path(&self.dir, id) {
+            let _ = fs::remove_file(path);
+        }
+        Ok(())
     }
 }
 
@@ -232,6 +280,40 @@ mod tests {
             assert_eq!(fs::read(&path).unwrap(), raw);
         }
         fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn memo_is_written_under_app_data_by_id_and_removed_with_the_discussion() {
+        let (store, dir) = store();
+        assert_eq!(store.write_memo("d1", "# memo"), Err("discussion-memo-missing".into()));
+        store.save(&discussion("d1", 1)).unwrap();
+        assert_eq!(store.read_memo("d1").unwrap(), None);
+        assert_eq!(store.existing_memo_path("d1"), Err("discussion-memo-not-found".into()));
+
+        let path = store.write_memo("d1", "# 결정 메모\n\n본문\n").unwrap();
+        assert_eq!(path, dir.join("discussions").join("memos").join("d1.md"));
+        assert!(path.is_absolute());
+        assert_eq!(store.read_memo("d1").unwrap().as_deref(), Some("# 결정 메모\n\n본문\n"));
+        assert_eq!(store.existing_memo_path("d1").unwrap(), path);
+        // 다시 쓰면 바뀐다.
+        store.write_memo("d1", "v2").unwrap();
+        assert_eq!(store.read_memo("d1").unwrap().as_deref(), Some("v2"));
+
+        store.delete("d1").unwrap();
+        assert!(!path.exists());
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn memo_ids_that_could_escape_the_folder_are_rejected() {
+        let (store, dir) = store();
+        for id in ["../x", "a/b", "", "a.b", &"x".repeat(65)] {
+            assert_eq!(memo_path(&dir, id), Err("discussion-memo-invalid-id".into()), "{id}");
+            assert!(store.write_memo(id, "x").is_err());
+            assert!(store.read_memo(id).is_err());
+        }
+        assert!(!dir.join("discussions").exists());
+        let _ = fs::remove_dir_all(dir);
     }
 
     #[test]

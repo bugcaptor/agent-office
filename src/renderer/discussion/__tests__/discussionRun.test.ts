@@ -5,7 +5,7 @@ import { discussionCollectionMode, discussionReadOnlyMode, discussionSessionAgen
 const { api, notify } = vi.hoisted(() => ({
   api: {
     openDiscussionSession: vi.fn(), disposeSession: vi.fn(), sendDiscussionTurn: vi.fn(), collectDiscussionUtterance: vi.fn(),
-    saveDiscussion: vi.fn(), loadDiscussions: vi.fn(), loadUsageSnapshot: vi.fn(),
+    saveDiscussion: vi.fn(), loadDiscussions: vi.fn(), loadUsageSnapshot: vi.fn(), saveDiscussionMemo: vi.fn(),
   },
   notify: vi.fn(),
 }));
@@ -21,7 +21,7 @@ import { useRoleStore } from "../roleStore";
 import { applyDiscussionSessionState, applyDiscussionTurn, resetDiscussionSessionStoreForTest, useDiscussionSessionStore } from "../discussionSessionStore";
 import { resetUsageForecast } from "../../usage/usageForecastStore";
 import {
-  MODERATOR_FORMAT, WRAP_FORMAT, WRAP_GRACE_MS, addDiscussionTurnCost, handleDiscussionTurnUsage, checkDiscussionUsageWaits, discussionLimitReached, answerDiscussion, discussionStartBlockedReason, endDiscussion, installDiscussionRunner, isDiscussionStepping,
+  MODERATOR_FORMAT, WRAP_FORMAT, WRAP_GRACE_MS, addDiscussionTurnCost, confirmDiscussion, handleDiscussionTurnUsage, checkDiscussionUsageWaits, discussionLimitReached, answerDiscussion, discussionStartBlockedReason, endDiscussion, installDiscussionRunner, isDiscussionStepping,
   parseModeratorDirective, pauseDiscussion, resetDiscussionRunForTest, restoreDiscussionsAfterRestart, resumeDiscussion, startDiscussion,
 } from "../discussionRun";
 
@@ -82,6 +82,7 @@ beforeEach(() => {
   });
   api.disposeSession.mockResolvedValue(undefined);
   api.saveDiscussion.mockResolvedValue(undefined);
+  api.saveDiscussionMemo.mockImplementation(async (id: string) => `/data/discussions/memos/${id}.md`);
   const agents = Object.fromEntries([["m", "Mina"], ["a", "Ari"], ["b", "Bo"], ["x", "Xu"]].map(([id, name]) => [id, { id, name, role: "", seed: id, createdAt: now, deskIndex: 0 }]));
   useAppStore.setState({ ...initialApp, agents, agentOrder: Object.keys(agents), recentAgentIds: [], activeTerminalAgentId: null,
     appSettings: { ...initialApp.appSettings, observerEnabled: true } }, true);
@@ -114,6 +115,27 @@ describe("사회자 지시 읽기", () => {
     expect(parseModeratorDirective('Asking: {"action":"ask_user","question":"Budget?"} thanks', d, names))
       .toEqual({ directive: { action: "ask_user", question: "Budget?" } });
     expect(parseModeratorDirective('{"action":"wrap","summary":"Corner wins."}', d, names)).toEqual({ directive: { action: "wrap", summary: "Corner wins." } });
+  });
+  it("정리 지시의 메모 칸을 읽고, 문자열 안의 날 줄바꿈과 안쪽 코드 블록도 견딘다", () => {
+    const raw = [
+      "Wrapping up.",
+      "```json",
+      '{"action":"wrap","summary":"Corner wins.',
+      "",
+      "Run:",
+      "```sh",
+      "npm test",
+      '```","reasons":["Quiet", "Light"],"rejected":[{"option":"Pantry","reason":"Noisy"}, "Roof"],',
+      '"open_issues":"Budget","userChecks":["Friday use?"],"ideas":[{"group":"Places","items":["Corner","Pantry"]}]}',
+      "```",
+    ].join("\n");
+    expect(parseModeratorDirective(raw, d, names)).toEqual({ directive: {
+      action: "wrap", summary: "Corner wins.\n\nRun:\n```sh\nnpm test\n```",
+      memo: {
+        reasons: ["Quiet", "Light"], rejected: [{ option: "Pantry", reason: "Noisy" }, { option: "Roof", reason: "" }],
+        openIssues: ["Budget"], userChecks: ["Friday use?"], ideas: [{ group: "Places", items: ["Corner", "Pantry"] }],
+      },
+    } });
   });
   it("형식이 틀리면 이유를 돌려준다", () => {
     const problem = (v: unknown) => "problem" in (v = parseModeratorDirective(typeof v === "string" ? v : JSON.stringify(v), d, names)) ? (v as { problem: string }).problem : null;
@@ -235,15 +257,37 @@ describe("사용자 질문", () => {
 });
 
 describe("종료", () => {
-  it("사회자가 정리하면 끝남이 되고 토의 탭을 모두 닫는다", async () => {
+  it("사회자가 정리하면 결정 메모를 남기고 토의 탭을 모두 닫고 알린 뒤 결론 확인을 기다린다", async () => {
     await throughOpening();
-    await finishTurn("m", '{"action":"wrap","summary":"North corner, because it is quiet."}');
-    expect(d1()).toMatchObject({ state: "finished" });
+    await finishTurn("m", '{"action":"wrap","summary":"North corner, because it is quiet.","reasons":["Quiet"],"rejected":[{"option":"Pantry","reason":"Noisy"}],"user_checks":["Is the corner free?"]}');
+    expect(d1()).toMatchObject({ state: "review", decisionMemoPath: "/data/discussions/memos/d1.md" });
+    expect(api.saveDiscussionMemo).toHaveBeenCalledTimes(1);
+    const [memoId, memo] = api.saveDiscussionMemo.mock.calls[0] as [string, string];
+    expect(memoId).toBe("d1");
+    expect(memo).toMatch(/^# .*Where does the meeting room go\?/);
+    for (const text of ["North corner, because it is quiet.", "- Quiet", "**Pantry** — Noisy", "- Is the corner free?", "**Mina**", "**Ari**", "Critic"]) expect(memo).toContain(text);
+    expect(notify).toHaveBeenCalledWith(t("discussion:run.notify.concluded", { topic: d1().topic }), t("discussion:run.notify.concludedBody"));
     expect(d1().run).toBeUndefined();
     expect(d1().endedAt).toBeGreaterThan(0);
     expect(d1().transcript.slice(-1)[0]).toMatchObject({ kind: "moderator", text: "North corner, because it is quiet." });
     expect(api.disposeSession.mock.calls.map(([id]) => id).sort()).toEqual([sid("a"), sid("b"), sid("m")]);
     expect(useDiscussionSessionStore.getState().order).toEqual([]);
+    // 결론 확인은 다음 토의를 막지 않고, 사람이 확인하면 끝남이다.
+    const agents = useAppStore.getState().agents;
+    expect(discussionStartBlockedReason(discussion({ id: "d2" }), [d1(), discussion({ id: "d2" })], agents, true)).toBeUndefined();
+    expect(confirmDiscussion("d1")).toBe(true);
+    expect(d1()).toMatchObject({ state: "finished", decisionMemoPath: "/data/discussions/memos/d1.md" });
+    expect(confirmDiscussion("d1")).toBe(false);
+  });
+
+  it("메모를 저장하지 못해도 탭은 닫고 결론 확인으로 둔다", async () => {
+    api.saveDiscussionMemo.mockRejectedValue(new Error("disk full"));
+    await throughOpening();
+    await finishTurn("m", directive({ action: "wrap", summary: "Corner." }));
+    expect(d1().state).toBe("review");
+    expect(d1().decisionMemoPath).toBeUndefined();
+    expect(useDiscussionSessionStore.getState().order).toEqual([]);
+    expect(notify).toHaveBeenLastCalledWith(expect.any(String), t("discussion:run.notify.concludedNoMemo"));
   });
 
   it("탭을 여는 사이에 끝내면 늦게 열린 탭도 닫는다", async () => {
@@ -269,6 +313,8 @@ describe("종료", () => {
     await endDiscussion("d1");
     expect(d1()).toMatchObject({ state: "finished" });
     expect(d1().transcript.slice(-1)[0]).toMatchObject({ kind: "notice", text: "ended-by-user" });
+    // 사람이 도중에 끝내면 결정 메모는 쓰지 않는다.
+    expect(api.saveDiscussionMemo).not.toHaveBeenCalled();
     expect(useDiscussionSessionStore.getState().order).toEqual([]);
   });
 });
@@ -444,7 +490,10 @@ describe("라운드 상한", () => {
     expect(sentTurns("m").slice(-1)[0]).toContain(forcedPrompt(reason));
     expect(sentTurns("m").slice(-1)[0]).toContain("Coffee is there.");
     await finishTurn("m", directive({ action: "wrap", summary: "Pantry, for the coffee." }));
-    expect(d1()).toMatchObject({ state: "finished", run: undefined });
+    expect(d1()).toMatchObject({ state: "review", run: undefined });
+    const memo = api.saveDiscussionMemo.mock.calls[0][1] as string;
+    expect(memo).toContain("Pantry, for the coffee.");
+    expect(memo).toContain(t("discussion:memo.endedForced", { reason: t("discussion:run.limitName.rounds") }));
     expect(d1().transcript.slice(-1)[0]).toMatchObject({ kind: "moderator", agentId: "m", text: "Pantry, for the coffee." });
     expect(sentTurns("m")).toHaveLength(1);
     expect(useDiscussionSessionStore.getState().order).toEqual([]);
@@ -474,7 +523,8 @@ describe("시간 상한", () => {
     await finishTurn("b", "Too late.");
     expect(d1().transcript.some((e) => e.text === "Too late.")).toBe(false);
     await finishTurn("m", "Pantry it is: the only voice so far, nothing against it.");
-    expect(d1()).toMatchObject({ state: "finished" });
+    expect(d1()).toMatchObject({ state: "review" });
+    expect(api.saveDiscussionMemo.mock.calls[0][1]).toContain("Pantry it is: the only voice so far, nothing against it.");
     expect(d1().transcript.slice(-1)[0]).toMatchObject({ kind: "moderator", text: "Pantry it is: the only voice so far, nothing against it." });
   });
 
@@ -487,8 +537,12 @@ describe("시간 상한", () => {
     await settle();
     expect(d1().state).toBe("wrapping_up");
     await setElapsed(d1().run!.forcedAtMs! + WRAP_GRACE_MS);
-    expect(d1()).toMatchObject({ state: "finished" });
+    expect(d1()).toMatchObject({ state: "review" });
     expect(notices().slice(-1)[0]).toBe(t("discussion:run.notice.wrapTimeout"));
+    // 요약 없이 끝나도 메모는 남기고, 결론 자리에 까닭을 적는다.
+    const memo = api.saveDiscussionMemo.mock.calls[0][1] as string;
+    expect(memo).toContain(t("discussion:run.notice.wrapTimeout"));
+    expect(memo).toContain(`## ${t("discussion:memo.participants")}`);
     expect(useDiscussionSessionStore.getState().order).toEqual([]);
   });
 
@@ -543,7 +597,7 @@ describe("비용 상한", () => {
     const sends = sentTurns("m").length;
     await finishTurn("m", null);
     expect(sentTurns("m")).toHaveLength(sends);
-    expect(d1()).toMatchObject({ state: "finished" });
+    expect(d1()).toMatchObject({ state: "review" });
     expect(notices().slice(-1)[0]).toBe(t("discussion:run.notice.wrapMissing"));
   });
 

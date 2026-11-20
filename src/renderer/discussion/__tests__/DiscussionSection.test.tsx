@@ -13,7 +13,11 @@ const api = vi.hoisted(() => ({
   workAgentModels: vi.fn().mockResolvedValue([]),
   // 답한 뒤 실행기가 사회자 탭을 열려고 한다. 이 테스트는 열기 실패(멈춤)까지만 본다.
   openDiscussionSession: vi.fn().mockRejectedValue(new Error("work-send-create-failed")),
+  loadDiscussionMemo: vi.fn<(id: string) => Promise<string | null>>(),
+  openDiscussionMemo: vi.fn<(id: string) => Promise<void>>(),
 }));
+const { openUrl } = vi.hoisted(() => ({ openUrl: vi.fn().mockResolvedValue(undefined) }));
+vi.mock("@tauri-apps/plugin-opener", () => ({ openUrl }));
 vi.mock("../../ipc/tauriApi", () => ({ tauriApi: api }));
 vi.mock("../../terminal/TerminalRegistry", () => ({ terminalRegistry: { ensure: vi.fn(), destroy: vi.fn(), get: vi.fn(), has: vi.fn() } }));
 vi.mock("../../workpanels/AgentFace", () => ({ AgentFace: () => null }));
@@ -164,6 +168,48 @@ describe("DiscussionSection run controls", () => {
     const d = useDiscussionStore.getState().discussions[0];
     expect(d.transcript.slice(-1)[0]).toMatchObject({ kind: "answer", text: "10만 원" });
     expect(d.run?.phase).toBe("moderator");
+  });
+
+  it("shows the decision memo of a concluded discussion, opens it in the browser and confirms the conclusion", async () => {
+    const review: Discussion = { ...structuredClone(ready), state: "review", round: 3, endedAt: 9, decisionMemoPath: "/data/discussions/memos/d1.md" };
+    api.loadDiscussions.mockResolvedValue([review]);
+    api.loadDiscussionMemo.mockReset().mockResolvedValue("# 결정 메모: 회의실 이름\n\n## 결론\n\n**북쪽** 구석 <img src=x onerror=alert(1)> [근거](https://example.com/a)\n");
+    api.openDiscussionMemo.mockReset().mockResolvedValue(undefined);
+    render(<DiscussionSection />);
+    const card = (await screen.findByRole("button", { name: /회의실 이름/ })).closest("article")!;
+    expect(card.classList.contains("attention")).toBe(true);
+    expect(within(card).getByText("결정 메모를 확인하고 결론 확인을 누르세요")).toBeTruthy();
+    fireEvent.click(within(card).getByRole("button", { name: /회의실 이름/ }));
+    const body = await waitFor(() => {
+      const el = dialog().querySelector(".discussion-memo-body");
+      if (!el) throw new Error("memo not rendered yet");
+      return el;
+    });
+    expect(api.loadDiscussionMemo).toHaveBeenCalledWith("d1");
+    expect(body.querySelector("strong")?.textContent).toBe("북쪽");
+    // 에이전트가 쓴 글이므로 스크립트 속성은 걸러진다. 링크는 웹뷰가 아니라 OS로 연다.
+    expect(body.innerHTML).not.toContain("onerror");
+    fireEvent.click(within(body as HTMLElement).getByRole("link", { name: "근거" }));
+    expect(openUrl).toHaveBeenCalledWith("https://example.com/a");
+    fireEvent.click(within(dialog()).getByRole("button", { name: "브라우저로 열기" }));
+    expect(api.openDiscussionMemo).toHaveBeenCalledWith("d1");
+    // 결론 확인 대기에서는 끝내기 대신 결론 확인을 보이고, 지울 수 있다.
+    expect(within(dialog()).queryByRole("button", { name: "끝내기" })).toBeNull();
+    expect(within(dialog()).getByRole("button", { name: "삭제" })).toBeTruthy();
+    fireEvent.click(within(dialog()).getByRole("button", { name: "결론 확인" }));
+    expect(useDiscussionStore.getState().discussions[0].state).toBe("finished");
+    expect(within(dialog()).queryByRole("button", { name: "결론 확인" })).toBeNull();
+    expect(dialog().querySelector(".discussion-memo-body")).toBeTruthy();
+  });
+
+  it("says so when the memo file cannot be read", async () => {
+    const done: Discussion = { ...structuredClone(ready), state: "finished", decisionMemoPath: "/data/discussions/memos/d1.md" };
+    api.loadDiscussions.mockResolvedValue([done]);
+    api.loadDiscussionMemo.mockReset().mockResolvedValue(null);
+    render(<DiscussionSection />);
+    fireEvent.click(await screen.findByRole("button", { name: /회의실 이름/ }));
+    expect(await within(dialog()).findByText("메모 파일을 읽지 못했습니다.")).toBeTruthy();
+    expect((within(dialog()).getByRole("button", { name: "브라우저로 열기" }) as HTMLButtonElement).disabled).toBe(true);
   });
 
   it("shows a forced wrap-up waiting on usage, and offers skipping the wait or pausing it", async () => {

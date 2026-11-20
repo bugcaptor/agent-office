@@ -2,12 +2,15 @@
 //
 // 업무 패널의 토의 카드 묶음과 토의 대화상자(열기·보기·고치기).
 // 토의가 하나도 없으면 묶음은 숨기고 대화상자만 띄운다. 시작·멈춤·계속·끝내기와 사회자 질문의 답은
-// 보기 대화상자에서 한다(진행은 discussionRun.ts).
-import { useEffect, useState } from "react";
+// 보기 대화상자에서 한다(진행은 discussionRun.ts). 정리가 끝나면 보기에서 결정 메모를 읽고(브라우저로 열기도) 결론을 확인한다.
+import { useEffect, useMemo, useState, type MouseEvent } from "react";
+import { openUrl } from "@tauri-apps/plugin-opener";
 import { useTranslation } from "react-i18next";
 
 import type { Discussion } from "@shared/types";
 import { useAppStore } from "../store/appStore";
+import { tauriApi } from "../ipc/tauriApi";
+import { renderMarkdown } from "../markdown/renderMarkdown";
 import { useWorkGroupStore } from "../workpanels/panelLayoutStore";
 import { WorkDialog } from "../workpanels/WorkDialog";
 import { AgentFace } from "../workpanels/AgentFace";
@@ -18,7 +21,8 @@ import { usageBlockText, useNow } from "../workpanels/AutoRunUsage";
 import { discussionReadOnlyMode } from "@shared/types";
 import { DiscussionEditor } from "./DiscussionEditor";
 import {
-  answerDiscussion, discussionStartBlockedReason, endDiscussion, pauseDiscussion, resumeDiscussion, startDiscussion,
+  answerDiscussion, confirmDiscussion, discussionStartBlockedReason, endDiscussion, isActiveDiscussion, pauseDiscussion, resumeDiscussion,
+  startDiscussion,
 } from "./discussionRun";
 import "./discussion.css";
 
@@ -72,6 +76,7 @@ function RunStatus({ discussion: d }: { discussion: Discussion }) {
   const { t } = useTranslation("discussion");
   const agents = useAppStore((s) => s.agents);
   const run = d.run;
+  if (d.state === "review") return <small className="discussion-run-status">{t("run.phase.review")}</small>;
   if (!run) return null;
   const name = (id: string | undefined) => (id && agents[id]?.name) || t("board.missingAgent");
   let text: string;
@@ -89,8 +94,9 @@ function DiscussionCard({ discussion: d, selected, onOpen }: { discussion: Discu
   const { t } = useTranslation("discussion");
   const agents = useAppStore((s) => s.agents);
   const debaters = d.participants.filter((p) => p.agentId !== d.moderatorAgentId);
-  // 사회자가 사람에게 물으면 카드를 강조한다.
-  return <article className={`discussion-card state-${d.state}${d.state === "waiting_user" ? " attention" : ""}${selected ? " selected" : ""}`}>
+  // 사회자가 사람에게 묻거나 결론 확인을 기다리면 카드를 강조한다.
+  const attention = d.state === "waiting_user" || d.state === "review";
+  return <article className={`discussion-card state-${d.state}${attention ? " attention" : ""}${selected ? " selected" : ""}`}>
     <button type="button" className="discussion-card-heading" aria-haspopup="dialog" onClick={onOpen}>
       <span className="discussion-card-title">
         <span className={`work-status-chip discussion-state-chip state-${d.state}`}>{t(`states.${d.state}`)}</span>
@@ -133,6 +139,7 @@ function DiscussionDetail({ discussion: d, onClose }: { discussion: Discussion; 
     <RunStatus discussion={d} />
     {d.context && <p className="discussion-context">{d.context}</p>}
     <RunPanel discussion={d} />
+    {d.decisionMemoPath && <MemoPanel discussion={d} />}
     <dl className="discussion-facts">
       <dt>{t("detail.cwd")}</dt><dd>{d.cwd ?? t("detail.homeFolder")}</dd>
       <dt>{t("detail.limits")}</dt><dd>{limitsText(t, d)}{d.limits.usageGuard ? ` · ${t("detail.usageGuard")}` : ""}</dd>
@@ -173,7 +180,7 @@ function RunPanel({ discussion: d }: { discussion: Discussion }) {
   const run = d.run;
   const blocked = d.state === "ready" ? discussionStartBlockedReason(d, discussions, agents, observerEnabled) : undefined;
   const fail = (code: string | undefined) => setError(code);
-  const active = d.state !== "ready" && d.state !== "finished";
+  const active = isActiveDiscussion(d);
   const usageWaiting = d.state === "paused" && run?.pauseReason === "usage-wait";
   return <div className="discussion-run">
     {d.state === "paused" && run?.pauseReason && <p className="discussion-run-paused" role="status">
@@ -191,6 +198,11 @@ function RunPanel({ discussion: d }: { discussion: Discussion }) {
       </label>
       <button type="submit" className="pixel-btn primary" disabled={!answer.trim()}>{t("run.actions.answer")}</button>
     </form>}
+    {d.state === "review" && <div className="work-dialog-actions discussion-run-actions">
+      <span className="work-send-hint">{t("detail.reviewHint")}</span>
+      <span className="work-dialog-spacer" />
+      <button type="button" className="pixel-btn primary" onClick={() => confirmDiscussion(d.id)}>{t("run.actions.confirm")}</button>
+    </div>}
     {(d.state === "ready" || active) && <div className="work-dialog-actions discussion-run-actions">
       {d.state === "ready" && <button type="button" className="pixel-btn primary" disabled={!!blocked} title={blocked ? t(`run.blocked.${blocked}`) : undefined}
         onClick={() => fail(startDiscussion(d.id))}>{t("run.actions.start")}</button>}
@@ -216,4 +228,42 @@ function UsageWaitLine({ discussion: d }: { discussion: Discussion }) {
   if (!wait) return null;
   const stage = t("run.usageStage", { name: agents[wait.agentId]?.name ?? t("board.missingAgent") });
   return <span className="discussion-run-usage"> {usageBlockText(tWork, tActivity, wait, stage, now)}</span>;
+}
+
+/** 결정 메모 보기와 브라우저로 열기. 메모는 에이전트가 쓴 글이라 거른 HTML만 넣고, 링크는 웹뷰가 아니라 OS로 연다. */
+function MemoPanel({ discussion: d }: { discussion: Discussion }) {
+  const { t } = useTranslation("discussion");
+  // undefined = 읽는 중, null = 없거나 못 읽음.
+  const [memo, setMemo] = useState<string | null | undefined>(undefined);
+  const [openFailed, setOpenFailed] = useState(false);
+  useEffect(() => {
+    let alive = true;
+    setMemo(undefined);
+    tauriApi.loadDiscussionMemo(d.id).then((text) => { if (alive) setMemo(text); }, () => { if (alive) setMemo(null); });
+    return () => { alive = false; };
+  }, [d.id, d.decisionMemoPath]);
+  const html = useMemo(() => (memo ? renderMarkdown(memo) : ""), [memo]);
+  const open = () => {
+    setOpenFailed(false);
+    tauriApi.openDiscussionMemo(d.id).catch((error: unknown) => { console.warn("discussion: memo open failed", error); setOpenFailed(true); });
+  };
+  const onClick = (e: MouseEvent<HTMLDivElement>) => {
+    const anchor = (e.target as HTMLElement).closest("a");
+    if (!anchor) return;
+    e.preventDefault();
+    const href = anchor.getAttribute("href") ?? "";
+    if (/^https?:\/\//i.test(href)) void openUrl(href).catch((error: unknown) => console.warn("discussion: memo link open failed", error));
+  };
+  return <section className="discussion-memo">
+    <div className="discussion-memo-head">
+      <h3 className="discussion-subtitle">{t("detail.memo")}</h3>
+      <span className="work-dialog-spacer" />
+      <button type="button" className="pixel-btn" disabled={!memo} onClick={open}>{t("run.actions.openMemo")}</button>
+    </div>
+    {memo === undefined ? <p className="work-send-hint">{t("detail.memoLoading")}</p>
+      : memo === null ? <p className="work-send-hint" role="alert">{t("detail.memoMissing")}</p>
+      // marked+DOMPurify로 거른 HTML만 넣는다.
+      : <div className="discussion-memo-body md-editor-preview" onClick={onClick} dangerouslySetInnerHTML={{ __html: html }} />}
+    {openFailed && <p className="work-send-hint" role="alert">{t("detail.memoOpenError")}</p>}
+  </section>;
 }

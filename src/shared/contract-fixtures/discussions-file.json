@@ -23,7 +23,7 @@
         { "at": 1720000500000, "round": 3, "kind": "statement", "agentId": "p3", "text": "Then one file under a lock is enough." },
         { "at": 1720000600000, "round": 3, "kind": "notice", "text": "round-limit" }
       ],
-      "decisionMemoPath": "/Users/me/Library/Application Support/agent-office/discussions/disc-full/decision.md",
+      "decisionMemoPath": "/Users/me/Library/Application Support/agent-office/discussions/memos/disc-full.md",
       "costUsd": 0.4125,
       "createdAt": 1720000000000,
       "updatedAt": 1720000700000,
@@ -84,6 +84,32 @@
         "pauseReason": "human-input",
         "pauseDetail": "work-send-human-input"
       }
+    },
+    {
+      "id": "disc-review",
+      "topic": "Pick a name for the weekly digest",
+      "context": "Ideas only; the person decides later.",
+      "participants": [
+        { "agentId": "p1", "roleId": "preset-moderator", "agent": { "cli": "claude" } },
+        { "agentId": "p2", "roleId": "preset-ideation", "agent": { "cli": "codex" } },
+        { "agentId": "p3", "agent": { "cli": "claude" } }
+      ],
+      "moderatorAgentId": "p1",
+      "limits": { "maxRounds": 2, "maxMinutes": 30, "maxCostUsd": 5.5, "usageGuard": true },
+      "state": "review",
+      "round": 2,
+      "transcript": [
+        { "at": 1720002000000, "round": 1, "kind": "opening", "agentId": "p2", "text": "Office Weekly, Desk Notes." },
+        { "at": 1720002000001, "round": 1, "kind": "opening", "agentId": "p3", "text": "Something short: Pulse." },
+        { "at": 1720002100000, "round": 2, "kind": "moderator", "agentId": "p1", "text": "Short names won; Pulse leads." }
+      ],
+      "decisionMemoPath": "/Users/me/Library/Application Support/agent-office/discussions/memos/disc-review.md",
+      "costUsd": 0.31,
+      "createdAt": 1720001900000,
+      "updatedAt": 1720002200000,
+      "startedAt": 1720001950000,
+      "endedAt": 1720002200000,
+      "activeMs": 250000
     }
   ]
 }

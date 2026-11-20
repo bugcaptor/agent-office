@@ -21,9 +21,12 @@ export const DISCUSSION_LIMIT_RANGES = {
   maxCostUsd: { min: 0.5, max: 50, defaultValue: 5 },
 } as const;
 
-/** 진행 상태. 준비(`ready`)에서만 내용을 고칠 수 있다. */
-export type DiscussionState = "ready" | "running" | "waiting_user" | "wrapping_up" | "finished" | "paused";
-export const DISCUSSION_STATES: readonly DiscussionState[] = ["ready", "running", "waiting_user", "wrapping_up", "finished", "paused"];
+/**
+ * 진행 상태. 준비(`ready`)에서만 내용을 고칠 수 있다. `review`는 사회자가 정리해 결정 메모를 남기고 탭을 닫은 뒤
+ * 사람이 결론을 확인하기를 기다리는 상태다(확인하면 `finished`).
+ */
+export type DiscussionState = "ready" | "running" | "waiting_user" | "wrapping_up" | "review" | "finished" | "paused";
+export const DISCUSSION_STATES: readonly DiscussionState[] = ["ready", "running", "waiting_user", "wrapping_up", "review", "finished", "paused"];
 
 /** 참가자 한 명. 사회자도 이 목록에 들어 있다. */
 export interface DiscussionParticipant {
@@ -153,7 +156,7 @@ export interface Discussion {
   /** 지금 라운드. 시작 전 0. */
   round: number;
   transcript: DiscussionUtterance[];
-  /** 결정 메모 파일(절대 경로). 쓰기 전에는 없다. */
+  /** 결정 메모 파일(절대 경로, `<app_data>/discussions/memos/<id>.md`). 쓰기 전에는 없다. */
   decisionMemoPath?: string;
   /** 참가자 CLI 비용 누계(USD). */
   costUsd: number;

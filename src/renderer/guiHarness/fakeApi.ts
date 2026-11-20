@@ -77,6 +77,26 @@ const markdownSample = "# Doc viewer\n\n- [x] GFM table\n- [ ] Mermaid\n\n```mer
 const docViewOpened: string[] = [];
 /** `openTaskChat`이 받은 요청(스크립트가 읽어 확인한다). */
 const taskChatRequests: TaskChatRequest[] = [];
+/** 결정 메모 본문(토의 id → Markdown). 픽스처의 메모 경로가 있는 토의는 예시 본문으로 채운다. */
+const FAKE_MEMO_DIR = "/Users/me/Library/Application Support/agent-office/discussions/memos";
+const discussionMemos: Record<string, string> = Object.fromEntries(
+  discussions.filter((d) => d.decisionMemoPath).map((d) => [d.id, sampleMemo(d)]),
+);
+/** `openDiscussionMemo`가 받은 토의 id(스크립트가 읽어 확인한다). */
+const discussionMemosOpened: string[] = [];
+function sampleMemo(d: Discussion): string {
+  return [
+    `# Decision memo: ${d.topic}`,
+    "- When: 2024-07-03 10:00 – 10:12\n- Progress: 2/2 rounds · 4 min · $0.31\n- Ended: wrapped up by the moderator",
+    "## Conclusion\n\nGo with **Pulse**: short, easy to say, fits the office theme.",
+    "## Reasons\n\n- Short names were preferred by every debater\n- No clash with existing [docs](https://example.com/docs)",
+    "## Rejected alternatives\n\n- **Office Weekly** — too generic\n- **Desk Notes** — sounds like a notes app",
+    "## Open issues\n\n- Whether the digest also goes to email",
+    "## Needs your confirmation\n\n- Final pick between Pulse and Beat",
+    "## Ideas\n\n### Short\n\n- Pulse\n- Beat\n\n### Descriptive\n\n- Office Weekly\n- Desk Notes",
+    "## Participants and roles\n\n- **Ana** — moderator · Moderator · claude\n- **Ben** — debater · Ideation · codex",
+  ].join("\n\n") + "\n";
+}
 /** `openDiscussionSession`이 받은 요청. */
 const discussionSessionRequests: DiscussionSessionRequest[] = [];
 
@@ -153,7 +173,17 @@ const impl: Partial<AgentOfficeApi> = {
     const copy = structuredClone(next);
     discussions = discussions.some((d) => d.id === next.id) ? discussions.map((d) => (d.id === next.id ? copy : d)) : [...discussions, copy];
   },
-  async deleteDiscussion(id) { discussions = discussions.filter((d) => d.id !== id); },
+  async deleteDiscussion(id) { discussions = discussions.filter((d) => d.id !== id); delete discussionMemos[id]; },
+  async saveDiscussionMemo(id, markdown) {
+    if (!discussions.some((d) => d.id === id)) throw new Error("discussion-memo-missing");
+    discussionMemos[id] = markdown;
+    return `${FAKE_MEMO_DIR}/${id}.md`;
+  },
+  async loadDiscussionMemo(id) { return discussionMemos[id] ?? null; },
+  async openDiscussionMemo(id) {
+    if (discussionMemos[id] === undefined) throw new Error("discussion-memo-not-found");
+    discussionMemosOpened.push(id);
+  },
   async loadWorkItems() { return structuredClone(workItems); },
   async saveWorkItems(next, expectedItems) {
     if (expectedItems && !sameWorkValue(expectedItems, workItems)) throw "work-items-changed";
@@ -312,6 +342,8 @@ Object.assign(harness, {
   discussionStore: async () => await import("../discussion/discussionStore"),
   discussionRun: async () => await import("../discussion/discussionRun"),
   discussionSessionRequests,
+  discussionMemos,
+  discussionMemosOpened,
   /** 외부 파일 쓰기처럼 백엔드 스냅샷만 교체한다. 렌더러가 poll로 받아야 한다. */
   replaceWorkItems: (items: WorkItem[]) => { workItems = structuredClone(items); },
 });

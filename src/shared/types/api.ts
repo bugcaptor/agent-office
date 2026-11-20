@@ -104,6 +104,12 @@ export interface AgentOfficeApi {
   saveDiscussion(discussion: Discussion): Promise<void>;
   /** 없는 id면 아무것도 하지 않는다. */
   deleteDiscussion(id: string): Promise<void>;
+  /** 결정 메모를 `<app_data>/discussions/memos/<id>.md`에 쓰고 절대 경로를 돌려준다. 없는 토의면 discussion-memo-missing. */
+  saveDiscussionMemo(id: string, markdown: string): Promise<string>;
+  /** 결정 메모 본문. 아직 없으면 null. */
+  loadDiscussionMemo(id: string): Promise<string | null>;
+  /** 결정 메모를 문서 뷰어 HTML로 바꿔 기본 브라우저로 연다. */
+  openDiscussionMemo(id: string): Promise<void>;
   loadWorkItems(): Promise<WorkItem[]>;
   /** expectedItems가 있으면 디스크가 그 스냅샷일 때만 저장한다. 충돌은 work-items-changed. */
   saveWorkItems(items: WorkItem[], expectedItems?: WorkItem[]): Promise<void>;

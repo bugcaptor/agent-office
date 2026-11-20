@@ -382,9 +382,20 @@ pub async fn load_discussions(app_state: State<'_, AppState>) -> Result<Vec<Disc
 pub async fn save_discussion(app_state: State<'_, AppState>, discussion: Discussion) -> Result<(), String> {
     app_state.discussion_store.save(&discussion)
 }
+/// 토의와 그 결정 메모를 지운다.
 #[tauri::command(rename_all = "camelCase")]
 pub async fn delete_discussion(app_state: State<'_, AppState>, id: String) -> Result<(), String> {
     app_state.discussion_store.delete(&id)
+}
+/// 결정 메모를 `<app_data>/discussions/memos/<id>.md`에 쓰고 절대 경로를 돌려준다.
+#[tauri::command(rename_all = "camelCase")]
+pub async fn save_discussion_memo(app_state: State<'_, AppState>, id: String, markdown: String) -> Result<String, String> {
+    app_state.discussion_store.write_memo(&id, &markdown).map(|p| p.to_string_lossy().into_owned())
+}
+/// 결정 메모 본문. 아직 없으면 null.
+#[tauri::command(rename_all = "camelCase")]
+pub async fn load_discussion_memo(app_state: State<'_, AppState>, id: String) -> Result<Option<String>, String> {
+    app_state.discussion_store.read_memo(&id)
 }
 #[tauri::command(rename_all = "camelCase")]
 pub async fn load_work_items(app_state: State<'_, AppState>) -> Result<Vec<WorkItem>, String> {

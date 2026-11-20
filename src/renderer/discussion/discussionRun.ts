@@ -12,6 +12,8 @@
 // - 안전장치: 라운드·진행 시간·비용 상한에 닿으면 하던 차례를 버리고 사회자에게 정리 차례 하나(forced wrap_up)를 준다.
 //   그 차례는 재촉하지 않고, 유예(WRAP_GRACE_MS) 안에 끝나지 않으면 요약 없이 끝낸다. 진행 시간은 진행 중·정리 중에만 흐른다.
 //   사용량 대기가 켜져 있으면 차례를 넣기 전마다 그 참가자의 구독을 예측해, 모자라면 한도 창 리셋까지 기다렸다가 스스로 이어 간다.
+// - 마무리: 정리 지시(wrap)의 칸으로 결정 메모를 써 앱 데이터에 저장하고(discussionMemo.ts), 토의 탭을 모두 닫고 OS 알림을 보낸 뒤
+//   결론 확인(review)으로 둔다. 사람이 확인하면 끝남(finished)이다. 사람이 도중에 끝내면 메모 없이 바로 끝남이다.
 import type {
   AgentProfile, Discussion, DiscussionLimitReason, DiscussionPauseReason, DiscussionRun, DiscussionTurn, DiscussionUsageWait,
   DiscussionUtterance, TurnUsageEvent,
@@ -30,22 +32,30 @@ import { useRoleStore } from "./roleStore";
 import { discussionElapsedMs, discussionTicking } from "./discussionModel";
 import { tokensCost } from "../usage/usageForecast";
 import { assessTurn, refreshUsage, workerProvider } from "../usage/usageForecastStore";
+import { composeDecisionMemo, parseWrapMemo, wrapMemoEmpty, type MemoInput, type WrapMemo } from "./discussionMemo";
 
+/**
+ * 정리 지시 형식. summary(결론)만 꼭 있어야 하고 나머지 칸은 결정 메모의 절이 된다. ideas는 아이디어 발산 토의에서
+ * 나온 안을 주제별로 묶은 것이다.
+ */
+export const WRAP_FORMAT =
+  '{"action":"wrap","summary":"<conclusion>","reasons":["<why>"],"rejected":[{"option":"<alternative>","reason":"<why not>"}],'
+  + '"open_issues":["<unresolved point>"],"user_checks":["<what the person must confirm>"],"ideas":[{"group":"<theme>","items":["<idea>"]}]}';
 /** 사회자 지시 형식. 키는 언어와 무관하게 고정이다. */
 export const MODERATOR_FORMAT = [
   '{"action":"next","speakers":[{"id":"<debater id>","question":"<question for them>"}]}',
   '{"action":"ask_user","question":"<question for the person>"}',
-  '{"action":"wrap","summary":"<conclusion, reasons, rejected alternatives, open issues>"}',
+  WRAP_FORMAT,
 ].join("\n");
 
 /** 강제 정리 차례의 유예(진행 시간 기준). 넘기면 요약 없이 끝낸다. 정리가 상한을 크게 넘기지 않게 한다. */
 export const WRAP_GRACE_MS = 5 * 60_000;
-/** 강제 정리 차례에서 사회자가 낼 형식. */
-export const WRAP_FORMAT = '{"action":"wrap","summary":"<conclusion, reasons, rejected alternatives, open issues>"}';
-
-/** 끝나지 않은 토의(동시 토의는 하나만). 준비·끝남이 아니면 진행 중으로 본다. */
+/**
+ * 끝나지 않은 토의(동시 토의는 하나만). 준비·결론 확인·끝남이 아니면 진행 중으로 본다. 결론 확인은 탭을 모두 닫은
+ * 뒤라 다음 토의를 막지 않는다.
+ */
 export function isActiveDiscussion(d: Pick<Discussion, "state">): boolean {
-  return d.state !== "ready" && d.state !== "finished";
+  return d.state !== "ready" && d.state !== "review" && d.state !== "finished";
 }
 
 // ── 사회자 지시 ────────────────────────────────────────────────────────
@@ -53,11 +63,24 @@ export function isActiveDiscussion(d: Pick<Discussion, "state">): boolean {
 export type ModeratorDirective =
   | { action: "next"; speakers: { agentId: string; question: string }[] }
   | { action: "ask_user"; question: string }
-  | { action: "wrap"; summary: string };
+  | { action: "wrap"; summary: string; memo?: WrapMemo };
 /** 지시를 못 읽은 이유. 사회자에게 다시 낼 때 알려 준다(`discussion:run.problems.*`). */
 export type DirectiveProblem =
   | "no-json" | "bad-action" | "no-speakers" | "unknown-speaker" | "moderator-speaker" | "duplicate-speaker"
   | "empty-question" | "empty-summary";
+
+/** 문자열 안의 날 줄바꿈·탭을 이스케이프한다. 긴 정리 요약을 여러 줄로 쓴 JSON도 읽게 한다. */
+function escapeRawControls(raw: string): string {
+  let out = "", inString = false, escaped = false;
+  for (const ch of raw) {
+    if (!inString) { if (ch === '"') inString = true; out += ch; continue; }
+    if (escaped) { escaped = false; out += ch; continue; }
+    if (ch === "\\") escaped = true;
+    else if (ch === '"') inString = false;
+    out += ch === "\n" ? "\\n" : ch === "\r" ? "\\r" : ch === "\t" ? "\\t" : ch;
+  }
+  return out;
+}
 
 function jsonObjects(text: string): unknown[] {
   const candidates = [...text.matchAll(/```(?:json)?\s*([\s\S]*?)```/g)].map((m) => m[1]);
@@ -66,7 +89,9 @@ function jsonObjects(text: string): unknown[] {
   for (const raw of candidates) {
     const start = raw.indexOf("{"), end = raw.lastIndexOf("}");
     if (start < 0 || end <= start) continue;
-    try { out.push(JSON.parse(raw.slice(start, end + 1))); } catch { /* 다음 후보 */ }
+    const slice = raw.slice(start, end + 1);
+    try { out.push(JSON.parse(slice)); continue; } catch { /* 날 줄바꿈을 고쳐 다시 */ }
+    try { out.push(JSON.parse(escapeRawControls(slice))); } catch { /* 다음 후보 */ }
   }
   return out;
 }
@@ -90,7 +115,9 @@ export function parseModeratorDirective(
   }
   if (action === "wrap") {
     const summary = str(object.summary);
-    return summary ? { directive: { action, summary } } : { problem: "empty-summary" };
+    if (!summary) return { problem: "empty-summary" };
+    const memo = parseWrapMemo(object);
+    return { directive: { action, summary, ...(wrapMemoEmpty(memo) ? {} : { memo }) } };
   }
   if (action !== "next") return { problem: "bad-action" };
   const list = Array.isArray(object.speakers) ? object.speakers : [];
@@ -287,11 +314,48 @@ export function answerDiscussion(id: string, text: string): boolean {
   return true;
 }
 
-/** 끝내기. 어느 단계에서든 토의를 끝남으로 바꾸고 참가자 세션을 모두 닫는다. */
+/** 끝내기. 어느 단계에서든 토의를 끝남으로 바꾸고 참가자 세션을 모두 닫는다. 결정 메모는 쓰지 않는다. */
 export async function endDiscussion(id: string): Promise<void> {
   const d = find(id);
   if (!d || !isActiveDiscussion(d)) return;
   await finish(id, "ended-by-user");
+}
+
+/** 사람이 결론(결정 메모)을 확인했다. 결론 확인에서 끝남으로. */
+export function confirmDiscussion(id: string): boolean {
+  if (find(id)?.state !== "review") return false;
+  update(id, (d) => ({ ...d, state: "finished" }));
+  return true;
+}
+
+/**
+ * 정리를 마친다. 결론 확인(review)으로 바꿔 루프·시계를 멈추고, 결정 메모를 써 경로를 남긴 뒤, 토의 탭을 모두 닫고
+ * OS 알림을 보낸다. 메모를 쓰지 못해도 탭은 닫는다(안 닫으면 다음 토의가 막힌다).
+ */
+async function conclude(id: string, input: Omit<MemoInput, "forced">): Promise<void> {
+  const before = find(id);
+  if (!before || !isActiveDiscussion(before)) return;
+  const forced = before.run?.forced;
+  const d = update(id, (x) => ({
+    ...x, state: "review", endedAt: Date.now(), run: undefined,
+    transcript: input.notice ? [...x.transcript, utterance(x, "notice", input.notice)] : x.transcript,
+  }))!;
+  let memoPath: string | undefined;
+  try {
+    memoPath = await tauriApi.saveDiscussionMemo(id, composeDecisionMemo(d, { ...input, forced }));
+  } catch (error) {
+    console.warn("discussion: memo save failed", error);
+  }
+  try {
+    // 그 사이 지워졌으면 경로를 남길 곳이 없다.
+    if (memoPath && find(id)) update(id, (x) => ({ ...x, decisionMemoPath: memoPath }));
+  } finally {
+    await closeDiscussionSessions(id);
+  }
+  void maybeSendOsNotification(
+    t("discussion:run.notify.concluded", { topic: d.topic }),
+    t(memoPath ? "discussion:run.notify.concludedBody" : "discussion:run.notify.concludedNoMemo"),
+  );
 }
 
 async function finish(id: string, notice?: string): Promise<void> {
@@ -392,22 +456,23 @@ async function stepWrapUp(id: string): Promise<void> {
   const d = running(id)!;
   const run = d.run!;
   const turn = run.forced ? run.turns[0] : undefined;
-  if (!turn) return finish(id);
-  if (discussionElapsedMs(d) >= (run.forcedAtMs ?? 0) + WRAP_GRACE_MS) return finish(id, t("discussion:run.notice.wrapTimeout"));
+  // 사회자가 스스로 정리하던 중 멈췄다 이어 가면(정리는 바로 끝나므로 드물다) 마지막 사회자 기록을 요약으로 쓴다.
+  if (!turn) return conclude(id, { summary: [...d.transcript].reverse().find((e) => e.kind === "moderator")?.text });
+  if (discussionElapsedMs(d) >= (run.forcedAtMs ?? 0) + WRAP_GRACE_MS) return conclude(id, { notice: t("discussion:run.notice.wrapTimeout") });
   if (turn.sentAt === undefined) return deliver(id, turn.agentId);
   const text = await receive(id, turn.agentId, { nudge: false });
   if (text === null) return;
   const latest = running(id);
   if (!latest) return;
   const parsed = parseModeratorDirective(text, latest, names(latest));
-  const summary = "directive" in parsed ? (parsed.directive.action === "wrap" ? parsed.directive.summary : "")
-    : parsed.problem === "no-json" ? text : "";
-  if (!summary) return finish(id, t("discussion:run.notice.wrapMissing"));
+  const wrap = "directive" in parsed && parsed.directive.action === "wrap" ? parsed.directive : undefined;
+  const summary = wrap ? wrap.summary : "problem" in parsed && parsed.problem === "no-json" ? text : "";
+  if (!summary) return conclude(id, { notice: t("discussion:run.notice.wrapMissing") });
   update(id, (x) => ({
     ...x, transcript: [...x.transcript, utterance(x, "moderator", summary, x.moderatorAgentId)],
     run: { ...x.run!, turns: x.run!.turns.map((y) => (y.agentId === turn.agentId ? { ...y, text: summary } : y)) },
   }));
-  return finish(id);
+  return conclude(id, { summary, memo: wrap?.memo });
 }
 
 /** 참가자들의 구독 사용량이 모자랄 것 같으면 사용량 대기로 멈추고 true. 사람이 건너뛰었으면 통과시킨다. */
@@ -597,7 +662,7 @@ async function stepModerator(id: string): Promise<void> {
     transcript: [...x.transcript, utterance(x, "moderator", directive.summary, moderator)],
     run: { ...x.run!, phase: "wrap_up", turns: [] },
   }));
-  return stepDiscussion(id);
+  return conclude(id, { summary: directive.summary, memo: directive.memo });
 }
 
 /** 지목된 토론자가 순서대로 말한다. 뒤 사람은 앞 사람의 발언을 델타로 받는다. 다 말하면 사회자 차례. */

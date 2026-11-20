@@ -99,6 +99,7 @@
     "running": "进行中",
     "waiting_user": "等待回答",
     "wrapping_up": "整理中",
+    "review": "待确认结论",
     "finished": "已结束",
     "paused": "已暂停"
   },
@@ -159,7 +160,11 @@
     "confirmDelete": "确认删除",
     "deleteError": "无法删除。",
     "edit": "编辑",
-    "readOnly": "只读"
+    "readOnly": "只读",
+    "memoLoading": "正在读取备忘…",
+    "memoMissing": "无法读取备忘文件。",
+    "memoOpenError": "无法在浏览器中打开。",
+    "reviewHint": "讨论标签页已关闭。阅读决策备忘并确认结论后即结束。"
   },
   "readOnly": {
     "summary": {
@@ -205,13 +210,13 @@
     "prompt": {
       "opening": "这是第一轮。所有辩论者在看不到彼此意见的情况下同时发言。请从角色卡的视角就主题发表你的意见。如有需要，可以先阅读代码和文档。",
       "speaker": "主持人点名请你发言。\n\n问题：{{question}}\n\n请反驳或补充前面的发言。不要重复已经说过的内容。",
-      "moderator": "轮到主持人（当前第 {{round}} 轮，最多 {{max}} 轮）。根据已有发言，从下列选项中选一个，只提交一个 JSON 作为指示，不要加其他文字。\n\n```json\n{{format}}\n```\n\n- next：按顺序点名一位或多位辩论者反驳或补充，并给每人一个问题。后发言的人能看到前面的人说了什么。点名一次算一轮。\n- ask_user：只有在没有人的决定或信息就无法继续时才向人提问。收到答复后又轮到你。\n- wrap：意见已经收敛或继续讨论也不会更好时进行总结。在 summary 中写出结论、依据、被否决的方案和遗留问题。\n\n辩论者（id 请使用以下值）：\n{{roster}}",
+      "moderator": "轮到主持人（当前第 {{round}} 轮，最多 {{max}} 轮）。根据已有发言，从下列选项中选一个，只提交一个 JSON 作为指示，不要加其他文字。\n\n```json\n{{format}}\n```\n\n- next：按顺序点名一位或多位辩论者反驳或补充，并给每人一个问题。后发言的人能看到前面的人说了什么。点名一次算一轮。\n- ask_user：只有在没有人的决定或信息就无法继续时才向人提问。收到答复后又轮到你。\n- wrap：意见已经收敛或继续讨论也不会更好时进行总结。这会成为决策备忘：在 summary 写结论，reasons 写依据，rejected 写被否决的方案及原因，open_issues 写遗留问题，user_checks 写需要人确认的事项。若是发散创意的讨论，请在 ideas 中按主题归类提出的方案。字符串内的换行请写成 \\n。\n\n辩论者（id 请使用以下值）：\n{{roster}}",
       "nudge": "没有收到你这一轮的发言。请用提交命令重新提交。如果无法使用该命令，请在最后的回复中只写发言内容。",
       "invalid": "无法读取指示：{{problem}} 请重新提交一个格式正确的 JSON。\n\n```json\n{{format}}\n```",
       "newHeader": "### 你上一轮之后的发言",
       "allHeader": "### 到目前为止的发言",
       "noNew": "（你上一轮之后没有新的发言。）",
-      "forcedWrap": "{{reason}}，讨论到此结束。请只根据目前的发言整理决策备忘。这是你的最后一次发言，不能再点名或向人提问。请只提交一个下面格式的 JSON。在 summary 中写明结论、依据、被否决的方案和遗留问题。\n\n```json\n{{format}}\n```"
+      "forcedWrap": "{{reason}}，讨论到此结束。请只根据目前的发言整理决策备忘。这是你的最后一次发言，不能再点名或向人提问。请只提交一个下面格式的 JSON。在 summary 写结论，reasons 写依据，rejected 写被否决的方案及原因，open_issues 写遗留问题，user_checks 写需要人确认的事项；若是发散创意的讨论，请在 ideas 中按主题归类方案。没有内容的字段留空列表。\n\n```json\n{{format}}\n```"
     },
     "label": {
       "answer": "人的答复",
@@ -230,7 +235,10 @@
       "empty-summary": "summary 为空。"
     },
     "notify": {
-      "question": "讨论提问：{{topic}}"
+      "question": "讨论提问：{{topic}}",
+      "concluded": "讨论结论：{{topic}}",
+      "concludedBody": "已保存决策备忘并关闭讨论标签页，请查看备忘。",
+      "concludedNoMemo": "已关闭讨论标签页，但未能保存决策备忘。"
     },
     "blocked": {
       "discussion-not-ready": "只能开始处于准备状态的讨论。",
@@ -256,7 +264,8 @@
       "speakers": "轮到 {{name}} 发言（{{index}}/{{total}}）",
       "user": "主持人提出了问题",
       "wrap_up": "正在总结",
-      "wrapForced": "整理中（{{reason}}）"
+      "wrapForced": "整理中（{{reason}}）",
+      "review": "请阅读决策备忘并确认结论"
     },
     "actions": {
       "start": "开始",
@@ -265,7 +274,9 @@
       "end": "结束",
       "confirmEnd": "确认结束",
       "answer": "回答",
-      "skipUsageWait": "不等待，继续"
+      "skipUsageWait": "不等待，继续",
+      "confirm": "确认结论",
+      "openMemo": "在浏览器中打开"
     },
     "question": "主持人的问题",
     "answerLabel": "答复",
@@ -287,5 +298,27 @@
       "wrapMissing": "未从整理发言中收到总结，已在没有总结的情况下结束。"
     },
     "usageStage": "{{name}} 的下一次发言"
+  },
+  "memo": {
+    "title": "决策备忘：{{topic}}",
+    "when": "时间：{{start}} ~ {{end}}",
+    "progress": "进度：{{round}}/{{maxRounds}} 轮 · {{minutes}} 分钟 · ${{cost}}",
+    "ending": "结束方式：{{text}}",
+    "endedByModerator": "主持人总结",
+    "endedForced": "达到{{reason}}而强制总结",
+    "cwd": "工作文件夹：{{cwd}}",
+    "context": "主题与背景",
+    "conclusion": "结论",
+    "noSummary": "未收到主持人的总结。",
+    "reasons": "依据",
+    "rejected": "被否决的方案及原因",
+    "openIssues": "遗留问题",
+    "userChecks": "需要用户确认",
+    "ideas": "提出的方案",
+    "ideasOther": "其他",
+    "participants": "参与者与角色",
+    "moderator": "主持人",
+    "debater": "讨论者",
+    "none": "未记录"
   }
 }

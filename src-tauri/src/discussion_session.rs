@@ -558,7 +558,7 @@ pub fn validate(request: &DiscussionSessionRequest, discussions: Vec<Discussion>
         .into_iter()
         .find(|d| d.id == request.discussion_id)
         .ok_or("discussion-session-missing")?;
-    if discussion.state == crate::types::DiscussionState::Finished {
+    if matches!(discussion.state, crate::types::DiscussionState::Finished | crate::types::DiscussionState::Review) {
         return Err("discussion-session-finished".into());
     }
     let participant = discussion
@@ -943,6 +943,10 @@ mod tests {
         let mut finished = discussion();
         finished.state = DiscussionState::Finished;
         assert_eq!(validate(&request("d1", "hana"), vec![finished]).unwrap_err(), "discussion-session-finished");
+        // 결론 확인을 기다리는 토의도 탭을 다시 열지 않는다.
+        let mut review = discussion();
+        review.state = DiscussionState::Review;
+        assert_eq!(validate(&request("d1", "hana"), vec![review]).unwrap_err(), "discussion-session-finished");
         let mut relative = discussion();
         relative.cwd = Some("repo".into());
         assert_eq!(validate(&request("d1", "hana"), vec![relative]).unwrap_err(), "discussion-session-invalid-cwd");

@@ -99,6 +99,7 @@
     "running": "進行中",
     "waiting_user": "等待回答",
     "wrapping_up": "整理中",
+    "review": "待確認結論",
     "finished": "已結束",
     "paused": "已暫停"
   },
@@ -159,7 +160,11 @@
     "confirmDelete": "確認刪除",
     "deleteError": "無法刪除。",
     "edit": "編輯",
-    "readOnly": "唯讀"
+    "readOnly": "唯讀",
+    "memoLoading": "正在讀取備忘…",
+    "memoMissing": "無法讀取備忘檔案。",
+    "memoOpenError": "無法在瀏覽器中開啟。",
+    "reviewHint": "討論分頁已關閉。閱讀決策備忘並確認結論後即結束。"
   },
   "readOnly": {
     "summary": {
@@ -205,13 +210,13 @@
     "prompt": {
       "opening": "這是第一輪。所有辯論者在看不到彼此意見的情況下同時發言。請從角色卡的觀點就主題發表你的意見。如有需要，可以先閱讀程式碼和文件。",
       "speaker": "主持人點名請你發言。\n\n問題：{{question}}\n\n請反駁或補充前面的發言。不要重複已經說過的內容。",
-      "moderator": "輪到主持人（目前第 {{round}} 輪，最多 {{max}} 輪）。根據已有發言，從下列選項中選一個，只提交一個 JSON 作為指示，不要加其他文字。\n\n```json\n{{format}}\n```\n\n- next：依序點名一位或多位辯論者反駁或補充，並給每人一個問題。後發言的人能看到前面的人說了什麼。點名一次算一輪。\n- ask_user：只有在沒有人的決定或資訊就無法繼續時才向人提問。收到答覆後又輪到你。\n- wrap：意見已經收斂或繼續討論也不會更好時進行總結。在 summary 中寫出結論、依據、被否決的方案和遺留問題。\n\n辯論者（id 請使用以下值）：\n{{roster}}",
+      "moderator": "輪到主持人（目前第 {{round}} 輪，最多 {{max}} 輪）。根據已有發言，從下列選項中選一個，只提交一個 JSON 作為指示，不要加其他文字。\n\n```json\n{{format}}\n```\n\n- next：依序點名一位或多位辯論者反駁或補充，並給每人一個問題。後發言的人能看到前面的人說了什麼。點名一次算一輪。\n- ask_user：只有在沒有人的決定或資訊就無法繼續時才向人提問。收到答覆後又輪到你。\n- wrap：意見已經收斂或繼續討論也不會更好時進行總結。這會成為決策備忘：在 summary 寫結論，reasons 寫依據，rejected 寫被否決的方案及原因，open_issues 寫遺留問題，user_checks 寫需要人確認的事項。若是發散創意的討論，請在 ideas 中按主題歸類提出的方案。字串內的換行請寫成 \\n。\n\n辯論者（id 請使用以下值）：\n{{roster}}",
       "nudge": "沒有收到你這一輪的發言。請用提交命令重新提交。如果無法使用該命令，請在最後的回覆中只寫發言內容。",
       "invalid": "無法讀取指示：{{problem}} 請重新提交一個格式正確的 JSON。\n\n```json\n{{format}}\n```",
       "newHeader": "### 你上一輪之後的發言",
       "allHeader": "### 到目前為止的發言",
       "noNew": "（你上一輪之後沒有新的發言。）",
-      "forcedWrap": "{{reason}}，討論到此結束。請只根據目前的發言整理決策備忘。這是你的最後一次發言，不能再點名或向人提問。請只提交一個下面格式的 JSON。在 summary 中寫明結論、依據、被否決的方案和遺留問題。\n\n```json\n{{format}}\n```"
+      "forcedWrap": "{{reason}}，討論到此結束。請只根據目前的發言整理決策備忘。這是你的最後一次發言，不能再點名或向人提問。請只提交一個下面格式的 JSON。在 summary 寫結論，reasons 寫依據，rejected 寫被否決的方案及原因，open_issues 寫遺留問題，user_checks 寫需要人確認的事項；若是發散創意的討論，請在 ideas 中按主題歸類方案。沒有內容的欄位留空列表。\n\n```json\n{{format}}\n```"
     },
     "label": {
       "answer": "人的答覆",
@@ -230,7 +235,10 @@
       "empty-summary": "summary 是空的。"
     },
     "notify": {
-      "question": "討論提問：{{topic}}"
+      "question": "討論提問：{{topic}}",
+      "concluded": "討論結論：{{topic}}",
+      "concludedBody": "已儲存決策備忘並關閉討論分頁，請查看備忘。",
+      "concludedNoMemo": "已關閉討論分頁，但未能儲存決策備忘。"
     },
     "blocked": {
       "discussion-not-ready": "只能開始處於準備狀態的討論。",
@@ -256,7 +264,8 @@
       "speakers": "輪到 {{name}} 發言（{{index}}/{{total}}）",
       "user": "主持人提出了問題",
       "wrap_up": "正在總結",
-      "wrapForced": "整理中（{{reason}}）"
+      "wrapForced": "整理中（{{reason}}）",
+      "review": "請閱讀決策備忘並確認結論"
     },
     "actions": {
       "start": "開始",
@@ -265,7 +274,9 @@
       "end": "結束",
       "confirmEnd": "確認結束",
       "answer": "回答",
-      "skipUsageWait": "不等待，繼續"
+      "skipUsageWait": "不等待，繼續",
+      "confirm": "確認結論",
+      "openMemo": "在瀏覽器中開啟"
     },
     "question": "主持人的問題",
     "answerLabel": "答覆",
@@ -287,5 +298,27 @@
       "wrapMissing": "未從整理發言中收到總結，已在沒有總結的情況下結束。"
     },
     "usageStage": "{{name}} 的下一次發言"
+  },
+  "memo": {
+    "title": "決策備忘：{{topic}}",
+    "when": "時間：{{start}} ~ {{end}}",
+    "progress": "進度：{{round}}/{{maxRounds}} 輪 · {{minutes}} 分鐘 · ${{cost}}",
+    "ending": "結束方式：{{text}}",
+    "endedByModerator": "主持人總結",
+    "endedForced": "達到{{reason}}而強制總結",
+    "cwd": "工作資料夾：{{cwd}}",
+    "context": "主題與背景",
+    "conclusion": "結論",
+    "noSummary": "未收到主持人的總結。",
+    "reasons": "依據",
+    "rejected": "被否決的方案及原因",
+    "openIssues": "遺留問題",
+    "userChecks": "需要使用者確認",
+    "ideas": "提出的方案",
+    "ideasOther": "其他",
+    "participants": "參與者與角色",
+    "moderator": "主持人",
+    "debater": "討論者",
+    "none": "未記錄"
   }
 }

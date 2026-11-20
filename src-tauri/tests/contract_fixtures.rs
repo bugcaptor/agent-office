@@ -526,7 +526,7 @@ fn roles_file_roundtrips() {
 fn discussions_file_roundtrips() {
     assert_roundtrip::<DiscussionsFile>(fixture!("discussions-file.json"));
     let parsed: DiscussionsFile = serde_json::from_str(fixture!("discussions-file.json")).unwrap();
-    let [full, ready, running] = &parsed.discussions[..] else { panic!("three discussions") };
+    let [full, ready, running, review] = &parsed.discussions[..] else { panic!("four discussions") };
     assert_eq!((full.state, ready.state), (DiscussionState::Finished, DiscussionState::Ready));
     assert_eq!(full.participants[1].agent.cli, WorkCli::Codex);
     assert_eq!(full.transcript[3].kind, DiscussionUtteranceKind::Answer);
@@ -539,6 +539,10 @@ fn discussions_file_roundtrips() {
     assert_eq!((run.turns[0].sent_at, run.turns[1].sent_at), (Some(1720001100500), None));
     assert_eq!(run.seen["p3"].count, 3);
     assert_eq!((full.active_ms, running.active_ms, running.active_since), (Some(610000), Some(245000), None));
+    // 정리 뒤 사람의 결론 확인을 기다리는 토의: 실행 상태는 없고 메모 경로가 있다.
+    assert_eq!(review.state, DiscussionState::Review);
+    assert!(review.run.is_none() && review.ended_at.is_some());
+    assert!(review.decision_memo_path.as_deref().is_some_and(|p| p.ends_with("discussions/memos/disc-review.md")));
     for d in &parsed.discussions {
         assert_eq!(agent_office_lib::persistence::discussion_store::discussion_problem(d), None);
     }

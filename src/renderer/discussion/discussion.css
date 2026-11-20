@@ -66,6 +66,7 @@
 .discussion-card.state-running, .discussion-card.state-wrapping_up { border-left-color: var(--accent); }
 .discussion-card.state-waiting_user, .discussion-card.state-paused { border-left-color: var(--accent-warn); }
 .discussion-card.state-finished { border-left-color: var(--text-dim); }
+.discussion-card.state-review { border-left-color: var(--accent-warn); }
 .discussion-card.selected { border-color: var(--accent); }
 .discussion-card-heading { display: flex; flex-direction: column; align-items: stretch; gap: 4px; padding: 0; width: 100%; text-align: left; cursor: pointer; color: inherit; background: transparent; border: 0; font: inherit; }
 .discussion-card-heading small { color: var(--text-dim); }
@@ -74,7 +75,7 @@
 /* 사회자 얼굴은 테두리로 구분하고 토론자와 조금 띄운다. */
 .discussion-card-moderator { margin-right: 6px; outline: 2px solid var(--accent); outline-offset: 1px; display: inline-flex; }
 .discussion-state-chip.state-running, .discussion-state-chip.state-wrapping_up { color: var(--accent); }
-.discussion-state-chip.state-waiting_user, .discussion-state-chip.state-paused { color: var(--accent-warn); }
+.discussion-state-chip.state-waiting_user, .discussion-state-chip.state-paused, .discussion-state-chip.state-review { color: var(--accent-warn); }
 
 /* 토의 열기 대화상자: 5명 × (팀원·역할·CLI·모델·노력)이 들어가게 넓힌다. */
 .work-detail-dialog.discussion-editor { width: min(720px, 94vw); max-height: calc(100vh - 48px); overflow-y: auto; box-sizing: border-box; }
@@ -121,3 +122,12 @@
 .discussion-run-question textarea { width: 100%; box-sizing: border-box; resize: vertical; font: inherit; }
 .discussion-run-question button { align-self: flex-end; }
 .discussion-run-actions { justify-content: flex-end; }
+
+/* 결정 메모 보기. 미리보기 글꼴·표 모양은 .md-editor-preview를 쓰고, 대화상자 안에서 높이만 줄인다. */
+.discussion-memo { margin: 8px 0; }
+.discussion-memo-head { display: flex; align-items: center; gap: 6px; }
+.discussion-memo-head .discussion-subtitle { margin: 0; }
+.discussion-memo-body.md-editor-preview { height: auto; max-height: 360px; padding: 4px 12px; border: 1px solid var(--border-dark); background: var(--bg-base); box-sizing: border-box; }
+.discussion-memo-body h1 { font-size: 1.1rem; }
+.discussion-memo-body h2 { font-size: 1rem; }
+.discussion-memo-body h3 { font-size: 0.92rem; border-bottom: 0; }

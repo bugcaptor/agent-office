@@ -1443,10 +1443,11 @@ pub struct RolesFile {
 }
 // 팀 토의 — src/shared/types/discussion.ts 미러. `discussions.json`에 저장한다.
 // 렌더러(실행기)와 CLI가 함께 쓰므로 저장은 토의 하나씩 upsert·삭제한다.
-/// 토의 진행 상태. 준비(`Ready`)에서만 내용을 고칠 수 있다.
+/// 토의 진행 상태. 준비(`Ready`)에서만 내용을 고칠 수 있다. `Review`는 사회자가 정리해 결정 메모를 남기고
+/// 탭을 닫은 뒤 사람이 결론을 확인하기를 기다리는 상태다(확인하면 `Finished`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
-pub enum DiscussionState { Ready, Running, WaitingUser, WrappingUp, Finished, Paused }
+pub enum DiscussionState { Ready, Running, WaitingUser, WrappingUp, Review, Finished, Paused }
 /// 참가자 한 명. 사회자도 참가자 목록에 들어 있다(`Discussion.moderator_agent_id`).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]

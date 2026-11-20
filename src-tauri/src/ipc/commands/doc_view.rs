@@ -30,6 +30,20 @@ pub async fn doc_view_open(app: AppHandle, root: String, rel_path: String) -> Re
         .map_err(|e| format!("open-failed: {rel_path} ({e})"))
 }
 
+/// 토의 결정 메모를 같은 변환기로 바꿔 브라우저로 연다. 경로는 토의 id로만 정한다.
+fn render_discussion_memo(data_dir: &Path, store: &crate::persistence::discussion_store::DiscussionStore, id: &str) -> Result<PathBuf, String> {
+    doc_view::render_to_cache(data_dir, &store.existing_memo_path(id)?)
+}
+
+#[tauri::command(rename_all = "camelCase")]
+pub async fn open_discussion_memo(app: AppHandle, app_state: tauri::State<'_, crate::state::AppState>, id: String) -> Result<(), String> {
+    let data_dir = app.path().app_data_dir().map_err(|e| e.to_string())?;
+    let html = render_discussion_memo(&data_dir, &app_state.discussion_store, &id)?;
+    app.opener()
+        .open_path(html.to_string_lossy().into_owned(), None::<&str>)
+        .map_err(|e| format!("open-failed: {id} ({e})"))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -49,6 +63,25 @@ mod tests {
         assert_eq!(html, doc_view::cache_path(data.path(), &source));
         let body = fs::read_to_string(&html).unwrap();
         assert!(body.contains("<title>Plan</title>"), "{body}");
+    }
+
+    #[test]
+    fn renders_a_discussion_memo_by_id() {
+        use crate::persistence::discussion_store::DiscussionStore;
+        let data = tempfile::tempdir().unwrap();
+        let store = DiscussionStore::new(data.path().to_path_buf());
+        let missing = render_discussion_memo(data.path(), &store, "d1").unwrap_err();
+        assert_eq!(missing, "discussion-memo-not-found");
+        assert_eq!(render_discussion_memo(data.path(), &store, "../d1").unwrap_err(), "discussion-memo-invalid-id");
+        let memo = crate::persistence::discussion_store::memo_path(data.path(), "d1").unwrap();
+        fs::create_dir_all(memo.parent().unwrap()).unwrap();
+        fs::write(&memo, "# 결정 메모: 저장 형식\n\n## 결론\n\n하나로\n").unwrap();
+
+        let html = render_discussion_memo(data.path(), &store, "d1").unwrap();
+
+        assert_eq!(html, doc_view::cache_path(data.path(), &memo));
+        let body = fs::read_to_string(&html).unwrap();
+        assert!(body.contains("<title>결정 메모: 저장 형식</title>"), "{body}");
     }
 
     #[test]
