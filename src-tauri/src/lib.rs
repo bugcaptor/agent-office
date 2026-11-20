@@ -904,6 +904,7 @@ pub fn run() {
             ipc::commands::save_discussion_memo,
             ipc::commands::load_discussion_memo,
             ipc::commands::open_discussion_memo,
+            ipc::commands::open_discussion_transcript,
             ipc::commands::scan_work_inbox,
             ipc::commands::ack_work_inbox,
             ipc::commands::reject_work_inbox,

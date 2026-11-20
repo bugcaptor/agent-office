@@ -35,6 +35,7 @@ import { resolveXtermTheme } from "./terminal/theme";
 import { terminalRegistry } from "./terminal/TerminalRegistry";
 import { TaskLabelLayer } from "./labels/TaskLabelLayer";
 import { MeetingBoard } from "./discussion/MeetingBoard";
+import { DiscussionDialogs } from "./discussion/DiscussionSection";
 import { TerminalOverlay } from "./terminal/TerminalOverlay";
 import { MarkdownPalette } from "./markdown/MarkdownPalette";
 import { MarkdownEditorOverlay } from "./markdown/MarkdownEditorOverlay";
@@ -141,6 +142,8 @@ function App() {
         <MeetingBoard bus={officeBus} />
       </div>
       <UIChrome />
+      {/* 토의 열기·보기 대화상자(포털). 업무 패널을 접거나 꺼도 회의록 보드에서 열 수 있게 여기에 둔다. */}
+      <DiscussionDialogs />
       <AgentHoverCard />
       <DeskAssignMenu />
       <TerminalOverlay />

@@ -43,6 +43,7 @@ describe("Commands / Events name constants", () => {
     expect(Commands.saveDiscussionMemo).toBe("save_discussion_memo");
     expect(Commands.loadDiscussionMemo).toBe("load_discussion_memo");
     expect(Commands.openDiscussionMemo).toBe("open_discussion_memo");
+    expect(Commands.openDiscussionTranscript).toBe("open_discussion_transcript");
     expect(Commands.openSessionLog).toBe("open_session_log");
     expect(Commands.generateStudyMaterial).toBe("generate_study_material");
 

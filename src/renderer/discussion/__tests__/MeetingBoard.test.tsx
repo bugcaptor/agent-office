@@ -99,4 +99,16 @@ describe("MeetingBoard", () => {
     fireEvent.click(screen.getByRole("button", { expanded: false }));
     expect(screen.getByText("국밥이 무난하다")).toBeTruthy();
   });
+
+  it("행을 누르면 보기 창의 속기록 탭을 열고 그 참가자의 최근 발언을 가리킨다", () => {
+    useDiscussionStore.setState({ discussions: [running] });
+    render(<MeetingBoard bus={createMockOfficeBus()} />);
+    fireEvent.click(screen.getByText("타락천사").closest("button")!);
+    expect(useDiscussionStore.getState().dialog).toEqual({ kind: "view", id: "d1", tab: "transcript", focus: 0 });
+    fireEvent.click(screen.getByText("시니어캣").closest("button")!);
+    expect(useDiscussionStore.getState().dialog).toMatchObject({ focus: 1 });
+    // 아직 발언이 없으면 속기록 끝으로 연다.
+    fireEvent.click(screen.getByText("오버플로우").closest("button")!);
+    expect(useDiscussionStore.getState().dialog).toEqual({ kind: "view", id: "d1", tab: "transcript", focus: undefined });
+  });
 });

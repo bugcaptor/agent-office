@@ -84,6 +84,8 @@ const discussionMemos: Record<string, string> = Object.fromEntries(
 );
 /** `openDiscussionMemo`가 받은 토의 id(스크립트가 읽어 확인한다). */
 const discussionMemosOpened: string[] = [];
+/** `openDiscussionTranscript`가 받은 속기록(스크립트가 읽어 확인한다). */
+const discussionTranscriptsOpened: { id: string; markdown: string }[] = [];
 function sampleMemo(d: Discussion): string {
   return [
     `# Decision memo: ${d.topic}`,
@@ -185,6 +187,7 @@ const impl: Partial<AgentOfficeApi> = {
     if (discussionMemos[id] === undefined) throw new Error("discussion-memo-not-found");
     discussionMemosOpened.push(id);
   },
+  async openDiscussionTranscript(id, markdown) { discussionTranscriptsOpened.push({ id, markdown }); },
   async loadWorkItems() { return structuredClone(workItems); },
   async saveWorkItems(next, expectedItems) {
     if (expectedItems && !sameWorkValue(expectedItems, workItems)) throw "work-items-changed";
@@ -346,6 +349,7 @@ Object.assign(harness, {
   discussionSessionRequests,
   discussionMemos,
   discussionMemosOpened,
+  discussionTranscriptsOpened,
   /** 외부 파일 쓰기처럼 백엔드 스냅샷만 교체한다. 렌더러가 poll로 받아야 한다. */
   replaceWorkItems: (items: WorkItem[]) => { workItems = structuredClone(items); },
 });

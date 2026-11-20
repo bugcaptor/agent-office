@@ -116,6 +116,8 @@ export interface AgentOfficeApi {
   loadDiscussionMemo(id: string): Promise<string | null>;
   /** 결정 메모를 문서 뷰어 HTML로 바꿔 기본 브라우저로 연다. */
   openDiscussionMemo(id: string): Promise<void>;
+  /** 렌더러가 엮은 속기록 Markdown을 임시 HTML(`doc-view/discussion-transcript-<id>.html`)로 바꿔 기본 브라우저로 연다. */
+  openDiscussionTranscript(id: string, markdown: string): Promise<void>;
   loadWorkItems(): Promise<WorkItem[]>;
   /** expectedItems가 있으면 디스크가 그 스냅샷일 때만 저장한다. 충돌은 work-items-changed. */
   saveWorkItems(items: WorkItem[], expectedItems?: WorkItem[]): Promise<void>;

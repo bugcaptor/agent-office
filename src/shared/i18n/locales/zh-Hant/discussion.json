@@ -323,5 +323,41 @@
     "ageHours": "{{count}}小時前",
     "collapse": "收合會議記錄",
     "expand": "展開會議記錄"
+  },
+  "transcript": {
+    "tabOverview": "概覽",
+    "tabTranscript": "速記",
+    "title": "速記：{{topic}}",
+    "stateLine": "狀態：{{state}}",
+    "kindFilter": "依類型篩選",
+    "speakerFilter": "依發言人篩選",
+    "speakerAll": "所有人",
+    "group": {
+      "debate": "發言",
+      "moderator": "主持人",
+      "human": "與你的問答",
+      "notice": "通知"
+    },
+    "kind": {
+      "opening": "第一輪",
+      "statement": "發言",
+      "moderator": "主持",
+      "question": "向你提問",
+      "answer": "你的回答",
+      "notice": "通知"
+    },
+    "human": "你",
+    "system": "應用程式",
+    "round": "第 {{round}} 輪",
+    "empty": "還沒有發言。",
+    "emptyFiltered": "沒有符合所選條件的發言。",
+    "more": "展開",
+    "less": "收合",
+    "openingPending": "第一輪發言要等所有人提交後才公開 · 已提交 {{submitted}}/{{total}}",
+    "speaking": "{{name}} 正在發言",
+    "speakingFor": "{{name}} 正在發言 · 第 {{minutes}} 分鐘",
+    "export": "匯出",
+    "exportHint": "把完整速記產生為暫時 HTML 並在瀏覽器中開啟",
+    "exportError": "無法在瀏覽器中開啟。"
   }
 }

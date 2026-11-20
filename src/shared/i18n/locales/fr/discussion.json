@@ -323,5 +323,41 @@
     "ageHours": "il y a {{count}} h",
     "collapse": "Replier le compte rendu",
     "expand": "Déplier le compte rendu"
+  },
+  "transcript": {
+    "tabOverview": "Aperçu",
+    "tabTranscript": "Compte rendu",
+    "title": "Compte rendu : {{topic}}",
+    "stateLine": "État : {{state}}",
+    "kindFilter": "Filtrer par type",
+    "speakerFilter": "Filtrer par intervenant",
+    "speakerAll": "Tout le monde",
+    "group": {
+      "debate": "Interventions",
+      "moderator": "Modérateur",
+      "human": "Questions-réponses avec vous",
+      "notice": "Avis"
+    },
+    "kind": {
+      "opening": "Premier tour",
+      "statement": "Intervention",
+      "moderator": "Modérateur",
+      "question": "Question pour vous",
+      "answer": "Votre réponse",
+      "notice": "Avis"
+    },
+    "human": "Vous",
+    "system": "Application",
+    "round": "Tour {{round}}",
+    "empty": "Aucune intervention pour l’instant.",
+    "emptyFiltered": "Rien ne correspond aux filtres choisis.",
+    "more": "Afficher plus",
+    "less": "Réduire",
+    "openingPending": "Les interventions du premier tour sont révélées quand tout le monde a répondu · {{submitted}}/{{total}} reçues",
+    "speaking": "{{name}} parle",
+    "speakingFor": "{{name}} parle · {{minutes}} min",
+    "export": "Exporter",
+    "exportHint": "Ouvrir le compte rendu complet dans le navigateur sous forme de page HTML temporaire",
+    "exportError": "Impossible de l’ouvrir dans le navigateur."
   }
 }

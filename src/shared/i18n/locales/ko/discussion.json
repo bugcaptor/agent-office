@@ -323,5 +323,41 @@
     "ageHours": "{{count}}시간 전",
     "collapse": "회의록 접기",
     "expand": "회의록 펼치기"
+  },
+  "transcript": {
+    "tabOverview": "개요",
+    "tabTranscript": "속기록",
+    "title": "속기록: {{topic}}",
+    "stateLine": "상태: {{state}}",
+    "kindFilter": "종류로 거르기",
+    "speakerFilter": "화자로 거르기",
+    "speakerAll": "모든 참가자",
+    "group": {
+      "debate": "토론 발언",
+      "moderator": "사회자",
+      "human": "사람과 문답",
+      "notice": "알림"
+    },
+    "kind": {
+      "opening": "첫 라운드",
+      "statement": "발언",
+      "moderator": "사회",
+      "question": "사람에게 질문",
+      "answer": "사람의 답",
+      "notice": "알림"
+    },
+    "human": "사람",
+    "system": "앱",
+    "round": "{{round}}라운드",
+    "empty": "아직 발언이 없습니다.",
+    "emptyFiltered": "고른 조건에 맞는 발언이 없습니다.",
+    "more": "더 보기",
+    "less": "접기",
+    "openingPending": "첫 라운드 발언은 전원이 낸 뒤 공개됩니다 · {{submitted}}/{{total}} 제출",
+    "speaking": "{{name}} 말하는 중",
+    "speakingFor": "{{name}} 말하는 중 · {{minutes}}분째",
+    "export": "내보내기",
+    "exportHint": "전체 속기록을 임시 HTML로 만들어 브라우저로 엽니다",
+    "exportError": "브라우저로 열지 못했습니다."
   }
 }

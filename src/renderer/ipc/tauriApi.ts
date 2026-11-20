@@ -86,6 +86,7 @@ export const tauriApi: AgentOfficeApi = {
   async saveDiscussionMemo(id, markdown) { return await invoke(Commands.saveDiscussionMemo, { id, markdown }); },
   async loadDiscussionMemo(id) { return await invoke(Commands.loadDiscussionMemo, { id }); },
   async openDiscussionMemo(id) { await invoke(Commands.openDiscussionMemo, { id }); },
+  async openDiscussionTranscript(id, markdown) { await invoke(Commands.openDiscussionTranscript, { id, markdown }); },
   async loadWorkItems() { return await invoke(Commands.loadWorkItems); },
   async saveWorkItems(items, expectedItems) { await invoke(Commands.saveWorkItems, { items, expectedItems }); },
   async loadSessionSummaries() { return await invoke(Commands.loadSessionSummaries); },

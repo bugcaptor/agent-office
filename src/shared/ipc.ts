@@ -34,6 +34,7 @@ export const Commands = {
   saveDiscussionMemo: "save_discussion_memo",
   loadDiscussionMemo: "load_discussion_memo",
   openDiscussionMemo: "open_discussion_memo",
+  openDiscussionTranscript: "open_discussion_transcript",
   loadWorkItems: "load_work_items",
   saveWorkItems: "save_work_items",
   loadSessionSummaries: "load_session_summaries",

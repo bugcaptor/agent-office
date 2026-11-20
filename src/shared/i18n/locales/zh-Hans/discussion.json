@@ -323,5 +323,41 @@
     "ageHours": "{{count}}小时前",
     "collapse": "收起会议记录",
     "expand": "展开会议记录"
+  },
+  "transcript": {
+    "tabOverview": "概览",
+    "tabTranscript": "速记",
+    "title": "速记：{{topic}}",
+    "stateLine": "状态：{{state}}",
+    "kindFilter": "按类型筛选",
+    "speakerFilter": "按发言人筛选",
+    "speakerAll": "所有人",
+    "group": {
+      "debate": "发言",
+      "moderator": "主持人",
+      "human": "与你的问答",
+      "notice": "通知"
+    },
+    "kind": {
+      "opening": "第一轮",
+      "statement": "发言",
+      "moderator": "主持",
+      "question": "向你提问",
+      "answer": "你的回答",
+      "notice": "通知"
+    },
+    "human": "你",
+    "system": "应用",
+    "round": "第 {{round}} 轮",
+    "empty": "还没有发言。",
+    "emptyFiltered": "没有符合所选条件的发言。",
+    "more": "展开",
+    "less": "收起",
+    "openingPending": "第一轮发言要等所有人提交后才公开 · 已提交 {{submitted}}/{{total}}",
+    "speaking": "{{name}} 正在发言",
+    "speakingFor": "{{name}} 正在发言 · 第 {{minutes}} 分钟",
+    "export": "导出",
+    "exportHint": "把完整速记生成为临时 HTML 并在浏览器中打开",
+    "exportError": "无法在浏览器中打开。"
   }
 }

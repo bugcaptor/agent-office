@@ -68,7 +68,7 @@
 | 무엇 | 어디 |
 |---|---|
 | 타입(역할·토의·진행 상태·탭 세션) | TS `src/shared/types/role.ts`·`discussion.ts`(상한 범위 `DISCUSSION_LIMIT_RANGES`, 검사 `discussionProblem`), Rust `src-tauri/src/types.rs`, 대조 fixture `src/shared/contract-fixtures/`의 `roles-file.json`·`discussions-file.json`·`discussion-run.forced-wrap.json`·`*-discussion-*.json` |
-| Rust 커맨드 | 역할·토의 저장·메모·수신함 `ipc/commands/persistence.rs`(`load_roles`·`save_roles`·`load_discussions`·`save_discussion`·`delete_discussion`·`save_discussion_memo`·`load_discussion_memo`·`scan_discussion_inbox`·`scan_role_inbox`), 탭 세션·ctl 회신 `ipc/commands/work_panels.rs`(`open_discussion_session`·`send_discussion_turn`·`collect_discussion_utterance`·`discussion_control_reply`), 메모 열기 `ipc/commands/doc_view.rs`(`open_discussion_memo`) |
+| Rust 커맨드 | 역할·토의 저장·메모·수신함 `ipc/commands/persistence.rs`(`load_roles`·`save_roles`·`load_discussions`·`save_discussion`·`delete_discussion`·`save_discussion_memo`·`load_discussion_memo`·`scan_discussion_inbox`·`scan_role_inbox`), 탭 세션·ctl 회신 `ipc/commands/work_panels.rs`(`open_discussion_session`·`send_discussion_turn`·`collect_discussion_utterance`·`discussion_control_reply`), 메모 열기·속기록 내보내기 `ipc/commands/doc_view.rs`(`open_discussion_memo`·`open_discussion_transcript`) |
 | 역할 목록·프리셋·프로필 기본 역할 | 렌더러 `discussion/roleStore.ts`·`RolesDialog.tsx`, 저장 `persistence/role_store.rs`(`roles.json`), CLI `role_cli.rs`(`office-task --roles`·`--role-add`·`--role-edit`·`--role-delete`)와 수신함 `persistence/role_inbox.rs`·렌더러 `discussion/discussionInbox.ts`(`receiveRoleInbox`) |
 | 토의 저장·카드·열기 대화상자 | `discussion/discussionStore.ts`·`discussionModel.ts`·`DiscussionSection.tsx`·`DiscussionEditor.tsx`, 저장 `persistence/discussion_store.rs`(`discussions.json`, 상한 기본값 `DiscussionLimits::default`) |
 | 토의 탭 세션·첫 프롬프트(읽기 전용 규칙)·발언 수집 | Rust `discussion_session.rs`, 렌더러 `discussion/discussionSessionStore.ts`, 탭 표시 `terminal/AgentTabStrip.tsx` |
@@ -78,7 +78,8 @@
 | CLI에서 만들기 `office-task --discuss` | `discussion_cli.rs`(`create`) → 수신함 `persistence/discussion_inbox.rs` → 렌더러 `discussion/discussionInbox.ts`, 에이전트 안내 `office_instructions.rs` |
 | `ctl discuss list·status·watch·memo·start·answer` | `control/discussion.rs`(참가자별 `speaking`·`last`), `control/client.rs`(`watch` 루프 `run_discuss_watch`), 쓰기 중계는 렌더러 `discussion/discussionControl.ts` |
 | 오피스 회의실 연출 | 맵 `office/map/mapData.ts`의 `meetingRoom`(풍경마다 `meetingRoomAt`으로 둔다), 토의 → 씬 정보 `discussion/officeStage.ts`(`speakingSince`) → `officeBus.onDiscussionStageChanged`(`ipc/sessionBridge.ts`가 보냄) → `office/world/OfficeWorld.ts` → `office/entities/CharacterEntity.ts`·`behaviorFsm.ts`(`meeting` 상태), 분신 `office/entities/MeetingAvatar.ts`(`OfficeWorld.syncMeetingAvatars`), 말풍선·의사봉 `office/entities/DiscussionOverlay.ts`, 회의실 그림 `office/scenes/meetingTiles.ts`(색은 오피스 테마 팔레트, 다른 풍경은 저작 팔레트의 `meet*` 키) |
-| 회의록 보드 | 행 파생 `discussion/meetingBoardModel.ts`, 화면 `discussion/MeetingBoard.tsx`(`App.tsx`에 마운트, 붙는 쪽 `boardLeft`), 회의실 화면 사각형 `OfficeScene.publishMeetingRoomRect` → `officeBus.onMeetingRoomRectChanged` |
+| 회의록 보드 | 행 파생 `discussion/meetingBoardModel.ts`, 화면 `discussion/MeetingBoard.tsx`(`App.tsx`에 마운트, 붙는 쪽 `boardLeft`), 회의실 화면 사각형 `OfficeScene.publishMeetingRoomRect` → `officeBus.onMeetingRoomRectChanged`, 행 클릭 → 속기록 탭(`openDialog`의 `tab`·`focus`) |
+| 속기록 탭·내보내기 | 행·필터·접기·Markdown 엮기 `discussion/transcriptModel.ts`, 화면 `discussion/DiscussionTranscript.tsx`(보기 창 탭은 `DiscussionSection.tsx`의 `DiscussionDetail`, 대화상자는 업무 패널과 무관하게 `App.tsx`의 `DiscussionDialogs`), 임시 HTML은 Rust `open_discussion_transcript` → `doc-view/discussion-transcript-<id>.html` |
 | gui 확인 | 시나리오 `discussions`·`meeting`, 스크립트 `scripts/gui-steps/discussion*.mjs` |
 
 ### 도구

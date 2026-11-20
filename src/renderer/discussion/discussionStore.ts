@@ -10,7 +10,13 @@ import { tauriApi } from "../ipc/tauriApi";
 type Status = "idle" | "loading" | "ready" | "error";
 
 /** 업무 패널 위에 뜨는 토의 대화상자. 한 번에 하나만. */
-export type DiscussionDialog = { kind: "new" } | { kind: "view"; id: string } | { kind: "edit"; id: string } | null;
+/** 보기 창의 탭. 기본은 개요다. 회의록 보드에서 들어오면 속기록 탭과 가리킬 발언(`transcript` 위치)을 준다. */
+export type DiscussionDetailTab = "overview" | "transcript";
+export type DiscussionDialog =
+  | { kind: "new" }
+  | { kind: "view"; id: string; tab?: DiscussionDetailTab; focus?: number }
+  | { kind: "edit"; id: string }
+  | null;
 
 interface DiscussionStoreState {
   discussions: Discussion[];

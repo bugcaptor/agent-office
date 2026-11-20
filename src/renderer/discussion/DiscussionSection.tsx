@@ -1,10 +1,10 @@
 // src/renderer/discussion/DiscussionSection.tsx
 //
-// 업무 패널의 토의 카드 묶음과 토의 대화상자(열기·보기·고치기).
-// 토의가 하나도 없으면 묶음은 숨기고 대화상자만 띄운다. 시작·멈춤·계속·끝내기와 사회자 질문의 답은
+// 업무 패널의 토의 카드 묶음(`DiscussionSection`)과 토의 대화상자(`DiscussionDialogs`: 열기·보기·고치기).
+// 대화상자는 업무 패널을 접거나 꺼도 회의록 보드에서 열 수 있게 App.tsx에 마운트한다. 토의가 하나도 없으면 묶음은 숨긴다.
+// 보기 창은 개요·속기록 두 탭이다(속기록은 DiscussionTranscript.tsx). 시작·멈춤·계속·끝내기와 사회자 질문의 답은
 // 보기 대화상자에서 한다(진행은 discussionRun.ts). 정리가 끝나면 보기에서 결정 메모를 읽고(브라우저로 열기도) 결론을 확인한다.
-import { useEffect, useMemo, useState, type MouseEvent } from "react";
-import { openUrl } from "@tauri-apps/plugin-opener";
+import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import type { Discussion } from "@shared/types";
@@ -15,7 +15,8 @@ import { useWorkGroupStore } from "../workpanels/panelLayoutStore";
 import { WorkDialog } from "../workpanels/WorkDialog";
 import { AgentFace } from "../workpanels/AgentFace";
 import { useRoleStore } from "./roleStore";
-import { sortDiscussions, useDiscussionStore } from "./discussionStore";
+import { sortDiscussions, useDiscussionStore, type DiscussionDetailTab } from "./discussionStore";
+import { DiscussionTranscript, openMarkdownLink } from "./DiscussionTranscript";
 import {
   discussionDeletable, discussionEditable, discussionElapsedMs, discussionTicking, isActiveDiscussion,
   participantRoleLabel, participantsModeratorFirst,
@@ -45,18 +46,31 @@ export function DiscussionSection() {
   // 카드의 역할 이름을 보이려면 역할 목록이 있어야 한다.
   useEffect(() => { if (discussions.length) void useRoleStore.getState().ensureLoaded(); }, [discussions.length]);
 
-  const close = () => openDialog(null);
-  const target = dialog && dialog.kind !== "new" ? discussions.find((d) => d.id === dialog.id) : undefined;
+  const selectedId = dialog && dialog.kind !== "new" ? dialog.id : undefined;
   return <>
     {status === "error" && <div role="alert">{t("board.loadError")}{" "}
       <button className="pixel-btn" onClick={() => void useDiscussionStore.getState().load()}>{t("roles.retry")}</button></div>}
     {discussions.length > 0 && <details className="work-group discussion-group" open={!collapsed} onToggle={(e) => setCollapsed(GROUP_KEY, !e.currentTarget.open)}>
       <summary><strong>{t("board.title")}</strong> <span className="work-group-count">{discussions.length}</span></summary>
-      {sortDiscussions(discussions).map((d) => <DiscussionCard key={d.id} discussion={d} selected={target?.id === d.id} onOpen={() => openDialog({ kind: "view", id: d.id })} />)}
+      {sortDiscussions(discussions).map((d) => <DiscussionCard key={d.id} discussion={d} selected={selectedId === d.id} onOpen={() => openDialog({ kind: "view", id: d.id })} />)}
     </details>}
+  </>;
+}
+
+/** 토의 대화상자. 업무 패널과 상관없이 App.tsx에 마운트한다. */
+export function DiscussionDialogs() {
+  const discussions = useDiscussionStore((s) => s.discussions);
+  const dialog = useDiscussionStore((s) => s.dialog);
+  const openDialog = useDiscussionStore((s) => s.openDialog);
+  useEffect(() => { if (dialog) { void useDiscussionStore.getState().ensureLoaded(); void useRoleStore.getState().ensureLoaded(); } }, [dialog]);
+  const close = () => openDialog(null);
+  const target = dialog && dialog.kind !== "new" ? discussions.find((d) => d.id === dialog.id) : undefined;
+  return <>
     {dialog?.kind === "new" && <DiscussionEditor onClose={close} />}
     {dialog?.kind === "edit" && target && discussionEditable(target) && <DiscussionEditor key={target.id} base={target} onClose={() => openDialog({ kind: "view", id: target.id })} />}
-    {dialog?.kind === "view" && target && <DiscussionDetail key={target.id} discussion={target} onClose={close} />}
+    {/* 보드에서 다른 발언을 가리키면 다시 마운트해 그 발언으로 스크롤한다. */}
+    {dialog?.kind === "view" && target && <DiscussionDetail key={`${target.id}|${dialog.tab ?? ""}|${dialog.focus ?? ""}`} discussion={target}
+      tab={dialog.tab} focus={dialog.focus} onClose={close} />}
   </>;
 }
 
@@ -123,8 +137,9 @@ function ReadOnlyBadge() {
   return <small className="discussion-readonly" title={t("readOnly.hint")}>🔒 {t("readOnly.label")}</small>;
 }
 
-function DiscussionDetail({ discussion: d, onClose }: { discussion: Discussion; onClose(): void }) {
+function DiscussionDetail({ discussion: d, tab: initialTab, focus, onClose }: { discussion: Discussion; tab?: DiscussionDetailTab; focus?: number; onClose(): void }) {
   const { t } = useTranslation("discussion");
+  const [tab, setTab] = useState<DiscussionDetailTab>(initialTab ?? "overview");
   const agents = useAppStore((s) => s.agents);
   const roles = useRoleStore((s) => s.roles);
   const openDialog = useDiscussionStore((s) => s.openDialog);
@@ -136,7 +151,22 @@ function DiscussionDetail({ discussion: d, onClose }: { discussion: Discussion; 
     setFailed(false);
     try { await useDiscussionStore.getState().remove(d.id); } catch { setFailed(true); }
   };
+  const tabs = <div className="discussion-detail-tabs" role="tablist">
+    {(["overview", "transcript"] as const).map((k) => <button key={k} type="button" role="tab" id={`discussion-tab-${k}`} aria-selected={tab === k}
+      aria-controls="discussion-tab-panel" className={`discussion-detail-tab${tab === k ? " selected" : ""}`} onClick={() => setTab(k)}>
+      {t(k === "overview" ? "transcript.tabOverview" : "transcript.tabTranscript")}
+      {k === "transcript" && <span className="work-group-count">{d.transcript.length}</span>}
+    </button>)}
+  </div>;
+  if (tab === "transcript") return <WorkDialog title={d.topic} id={d.id} onClose={onClose} className="discussion-detail transcript-tab">
+    {tabs}
+    <div id="discussion-tab-panel" role="tabpanel" aria-labelledby="discussion-tab-transcript">
+      <DiscussionTranscript discussion={d} focus={focus} />
+    </div>
+  </WorkDialog>;
   return <WorkDialog title={d.topic} id={d.id} onClose={onClose} className="discussion-detail">
+    {tabs}
+    <div id="discussion-tab-panel" role="tabpanel" aria-labelledby="discussion-tab-overview">
     <p><span className={`work-status-chip discussion-state-chip state-${d.state}`}>{t(`states.${d.state}`)}</span>
       {d.state !== "ready" && <RunMeter discussion={d} />}</p>
     <RunStatus discussion={d} />
@@ -167,6 +197,7 @@ function DiscussionDetail({ discussion: d, onClose }: { discussion: Discussion; 
       {discussionEditable(d) && <button type="button" className="pixel-btn" onClick={() => openDialog({ kind: "edit", id: d.id })}>{t("detail.edit")}</button>}
     </div>
     {failed && <p className="work-send-hint" role="alert">{t("detail.deleteError")}</p>}
+    </div>
   </WorkDialog>;
 }
 
@@ -251,13 +282,6 @@ function MemoPanel({ discussion: d }: { discussion: Discussion }) {
     setOpenFailed(false);
     tauriApi.openDiscussionMemo(d.id).catch((error: unknown) => { console.warn("discussion: memo open failed", error); setOpenFailed(true); });
   };
-  const onClick = (e: MouseEvent<HTMLDivElement>) => {
-    const anchor = (e.target as HTMLElement).closest("a");
-    if (!anchor) return;
-    e.preventDefault();
-    const href = anchor.getAttribute("href") ?? "";
-    if (/^https?:\/\//i.test(href)) void openUrl(href).catch((error: unknown) => console.warn("discussion: memo link open failed", error));
-  };
   return <section className="discussion-memo">
     <div className="discussion-memo-head">
       <h3 className="discussion-subtitle">{t("detail.memo")}</h3>
@@ -267,7 +291,7 @@ function MemoPanel({ discussion: d }: { discussion: Discussion }) {
     {memo === undefined ? <p className="work-send-hint">{t("detail.memoLoading")}</p>
       : memo === null ? <p className="work-send-hint" role="alert">{t("detail.memoMissing")}</p>
       // marked+DOMPurify로 거른 HTML만 넣는다.
-      : <div className="discussion-memo-body md-editor-preview" onClick={onClick} dangerouslySetInnerHTML={{ __html: html }} />}
+      : <div className="discussion-memo-body md-editor-preview" onClick={openMarkdownLink} dangerouslySetInnerHTML={{ __html: html }} />}
     {openFailed && <p className="work-send-hint" role="alert">{t("detail.memoOpenError")}</p>}
   </section>;
 }

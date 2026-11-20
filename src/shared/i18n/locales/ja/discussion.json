@@ -323,5 +323,41 @@
     "ageHours": "{{count}}時間前",
     "collapse": "議事録をたたむ",
     "expand": "議事録を広げる"
+  },
+  "transcript": {
+    "tabOverview": "概要",
+    "tabTranscript": "速記録",
+    "title": "速記録: {{topic}}",
+    "stateLine": "状態: {{state}}",
+    "kindFilter": "種類で絞り込む",
+    "speakerFilter": "話者で絞り込む",
+    "speakerAll": "全員",
+    "group": {
+      "debate": "発言",
+      "moderator": "司会",
+      "human": "あなたとの質疑",
+      "notice": "お知らせ"
+    },
+    "kind": {
+      "opening": "第1ラウンド",
+      "statement": "発言",
+      "moderator": "司会",
+      "question": "あなたへの質問",
+      "answer": "あなたの回答",
+      "notice": "お知らせ"
+    },
+    "human": "あなた",
+    "system": "アプリ",
+    "round": "第{{round}}ラウンド",
+    "empty": "まだ発言はありません。",
+    "emptyFiltered": "選んだ条件に合う発言はありません。",
+    "more": "もっと見る",
+    "less": "折りたたむ",
+    "openingPending": "第1ラウンドの発言は全員が出したあとに公開されます · {{submitted}}/{{total}} 提出",
+    "speaking": "{{name}}が発言中",
+    "speakingFor": "{{name}}が発言中 · {{minutes}}分目",
+    "export": "書き出す",
+    "exportHint": "速記録の全文を一時HTMLにしてブラウザで開きます",
+    "exportError": "ブラウザで開けませんでした。"
   }
 }

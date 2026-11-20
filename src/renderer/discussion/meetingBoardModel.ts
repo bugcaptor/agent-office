@@ -6,7 +6,7 @@
 // - 행 순서 = 회의실 의자 순서(사회자 먼저, 이어서 토론자 저장 순서).
 // - 최근 발언은 기록(transcript)에서만 고른다. 동시 첫 라운드 발언은 전원이 낸 뒤에야 기록에 들어오므로
 //   공개 전 발언이 보드에 새지 않는다.
-// - 발췌는 앞부분을 자른 한 줄이다(요약 LLM 호출 없음). 전문은 토의 탭과 결정 메모에서 본다.
+// - 발췌는 앞부분을 자른 한 줄이다(요약 LLM 호출 없음). 전문은 보기 창의 속기록 탭에서 본다(행을 누르면 열린다).
 import type { Discussion, DiscussionUtterance, DiscussionUtteranceKind } from "@shared/types";
 import { participantsModeratorFirst } from "./discussionModel";
 import { speakingSince } from "./officeStage";
@@ -17,6 +17,8 @@ export const EXCERPT_CHARS = 80;
 export const EXCERPT_TITLE_CHARS = 300;
 
 export interface MeetingBoardLast {
+  /** `transcript` 안 위치(행을 누르면 속기록에서 이 발언을 가리킨다). */
+  index: number;
   at: number;
   kind: DiscussionUtteranceKind;
   /** 한 줄로 편 발췌(EXCERPT_CHARS까지). */
@@ -40,20 +42,21 @@ export function meetingBoardRows(d: Discussion): MeetingBoardRow[] {
   for (const p of participantsModeratorFirst(d)) {
     if (seen.has(p.agentId)) continue;
     seen.add(p.agentId);
-    const u = lastUtteranceOf(d.transcript, p.agentId);
+    const index = lastUtteranceIndex(d.transcript, p.agentId);
+    const u = index >= 0 ? d.transcript[index] : undefined;
     rows.push({
       agentId: p.agentId,
       moderator: p.agentId === d.moderatorAgentId,
       ...(speaking.has(p.agentId) ? { speakingSince: speaking.get(p.agentId) } : {}),
-      ...(u ? { last: { at: u.at, kind: u.kind, excerpt: utteranceExcerpt(u, EXCERPT_CHARS), title: utteranceExcerpt(u, EXCERPT_TITLE_CHARS) } } : {}),
+      ...(u ? { last: { index, at: u.at, kind: u.kind, excerpt: utteranceExcerpt(u, EXCERPT_CHARS), title: utteranceExcerpt(u, EXCERPT_TITLE_CHARS) } } : {}),
     });
   }
   return rows;
 }
 
-function lastUtteranceOf(transcript: readonly DiscussionUtterance[], agentId: string): DiscussionUtterance | undefined {
-  for (let i = transcript.length - 1; i >= 0; i--) if (transcript[i].agentId === agentId) return transcript[i];
-  return undefined;
+function lastUtteranceIndex(transcript: readonly DiscussionUtterance[], agentId: string): number {
+  for (let i = transcript.length - 1; i >= 0; i--) if (transcript[i].agentId === agentId) return i;
+  return -1;
 }
 
 /**

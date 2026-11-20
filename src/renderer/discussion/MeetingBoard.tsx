@@ -3,7 +3,7 @@
 // 회의록 보드: 토의가 이어지는 동안 오피스 회의실 옆에 참가자마다 한 줄씩 최근 발언과 "N분 전"을 보여 준다.
 // 말하는 중인 참가자는 "말하는 중 · N분째". 위치는 씬이 알려 주는 회의실 화면 사각형의 오른쪽이고, 오른쪽에 자리가
 // 모자라면(회의실이 맵 동쪽에 있는 풍경) 왼쪽이다. 회의실이 없는 맵이면 오피스 화면 왼쪽 위에 붙는다. 경과 표기는 30초마다 다시 센다(저장 상태는 건드리지 않는다).
-// 접힘 여부는 이 기기에만 기억한다.
+// 접힘 여부는 이 기기에만 기억한다. 행을 누르면 보기 창의 속기록 탭이 열리고 그 참가자의 최근 발언을 가리킨다.
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { useTranslation } from "react-i18next";
 
@@ -83,7 +83,8 @@ export function MeetingBoard({ bus }: { bus: OfficeBus }) {
         {!collapsed && (
           <ul className="meeting-board-rows">
             {rows.map((row) => (
-              <BoardRow key={row.agentId} row={row} name={agents[row.agentId]?.name ?? t("board.missingAgent")} now={now} age={age} />
+              <BoardRow key={row.agentId} row={row} name={agents[row.agentId]?.name ?? t("board.missingAgent")} now={now} age={age}
+                onOpen={() => useDiscussionStore.getState().openDialog({ kind: "view", id: discussion.id, tab: "transcript", focus: row.last?.index })} />
             ))}
           </ul>
         )}
@@ -100,7 +101,7 @@ export function boardLeft(rect: ScreenRect, layerW: number): number {
   return left >= 0 ? left : right;
 }
 
-function BoardRow({ row, name, now, age }: { row: MeetingBoardRow; name: string; now: number; age: (a: BoardAge) => string }) {
+function BoardRow({ row, name, now, age, onOpen }: { row: MeetingBoardRow; name: string; now: number; age: (a: BoardAge) => string; onOpen(): void }) {
   const { t } = useTranslation("discussion");
   let text: string;
   let when = "";
@@ -118,12 +119,14 @@ function BoardRow({ row, name, now, age }: { row: MeetingBoardRow; name: string;
   }
   return (
     <li className={`meeting-board-row${row.speakingSince !== undefined ? " speaking" : ""}${row.last || row.speakingSince !== undefined ? "" : " silent"}`}>
+      <button type="button" className="meeting-board-row-open" onClick={onOpen}>
       <span className="meeting-board-name">
         {name}
         {row.moderator && <span className="meeting-board-tag">{t("meetingBoard.moderator")}</span>}
       </span>
       <span className="meeting-board-text" title={title}>{text}</span>
       {when && <span className="meeting-board-when">{when}</span>}
+      </button>
     </li>
   );
 }

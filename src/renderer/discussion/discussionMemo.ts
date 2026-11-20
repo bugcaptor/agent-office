@@ -2,7 +2,7 @@
 //
 // 결정 메모(Markdown). 사회자의 정리 지시(wrap)에 담긴 칸을 화면 언어의 절로 엮고, 머리말(일시·진행·마무리 까닭)과
 // 참가자·역할 목록은 앱이 붙인다. 역할 이름은 지금 이름으로 박아 둔다(나중에 역할이 지워져도 메모는 그대로다).
-// 저장은 Rust가 `<app_data>/discussions/memos/<id>.md`에 한다. 전체 회의록은 남기지 않는다.
+// 저장은 Rust가 `<app_data>/discussions/memos/<id>.md`에 한다. 전체 발언은 메모에 넣지 않는다(속기록 탭·내보내기는 transcriptModel.ts).
 import type { Discussion, DiscussionLimitReason } from "@shared/types";
 import { t } from "../i18n";
 import { useAppStore } from "../store/appStore";
@@ -61,7 +61,7 @@ export interface MemoInput {
   notice?: string;
 }
 
-function stamp(ms: number | undefined): string {
+export function stamp(ms: number | undefined): string {
   if (ms === undefined) return "-";
   const d = new Date(ms);
   const p = (n: number) => String(n).padStart(2, "0");
@@ -73,7 +73,7 @@ const item = (s: string) => `- ${s.trim().replace(/\n/g, "\n  ")}`;
 const none = () => `_${t("discussion:memo.none")}_`;
 const bullets = (xs: string[]) => (xs.length ? xs.map(item).join("\n") : none());
 
-function participantLines(d: Discussion): string {
+export function participantLines(d: Discussion): string {
   const agents = useAppStore.getState().agents;
   const roles = useRoleStore.getState().roles;
   return participantsModeratorFirst(d).map((p) => {

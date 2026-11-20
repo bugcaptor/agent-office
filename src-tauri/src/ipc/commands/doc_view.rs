@@ -44,6 +44,28 @@ pub async fn open_discussion_memo(app: AppHandle, app_state: tauri::State<'_, cr
         .map_err(|e| format!("open-failed: {id} ({e})"))
 }
 
+/// 토의 속기록 내보내기. 렌더러가 엮은 Markdown을 같은 변환기로 바꿔 `doc-view/discussion-transcript-<id>.html`에
+/// 쓴다. 원본 .md는 남기지 않는 임시 HTML이라 다른 문서 캐시처럼 7일 뒤 부팅 청소가 지운다. 다시 내보내면 덮어쓴다.
+fn render_discussion_transcript(data_dir: &Path, id: &str, markdown: &str) -> Result<PathBuf, String> {
+    if !crate::persistence::work_inbox::valid_task_id(id) {
+        return Err("discussion-transcript-invalid-id".into());
+    }
+    // 원본 파일이 없으므로 HTML 자신을 원본 자리에 둔다(머리 링크·상대 경로 기준).
+    let html_path = doc_view::cache_dir(data_dir).join(format!("discussion-transcript-{id}.html"));
+    crate::persistence::durable::write_atomic(&html_path, doc_view::render_document(&html_path, markdown).as_bytes())
+        .map_err(|e| format!("failed to write {}: {e}", html_path.display()))?;
+    Ok(html_path)
+}
+
+#[tauri::command(rename_all = "camelCase")]
+pub async fn open_discussion_transcript(app: AppHandle, id: String, markdown: String) -> Result<(), String> {
+    let data_dir = app.path().app_data_dir().map_err(|e| e.to_string())?;
+    let html = render_discussion_transcript(&data_dir, &id, &markdown)?;
+    app.opener()
+        .open_path(html.to_string_lossy().into_owned(), None::<&str>)
+        .map_err(|e| format!("open-failed: {id} ({e})"))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -63,6 +85,23 @@ mod tests {
         assert_eq!(html, doc_view::cache_path(data.path(), &source));
         let body = fs::read_to_string(&html).unwrap();
         assert!(body.contains("<title>Plan</title>"), "{body}");
+    }
+
+    #[test]
+    fn renders_a_discussion_transcript_into_a_temporary_cache_file() {
+        let data = tempfile::tempdir().unwrap();
+        assert_eq!(render_discussion_transcript(data.path(), "../x", "# T").unwrap_err(), "discussion-transcript-invalid-id");
+
+        let html = render_discussion_transcript(data.path(), "d1", "# 속기록: 주제\n\n<script>alert(1)</script>본문\n").unwrap();
+        assert_eq!(html.parent().unwrap(), doc_view::cache_dir(data.path()));
+        let body = fs::read_to_string(&html).unwrap();
+        assert!(body.contains("<title>속기록: 주제</title>"), "{body}");
+        assert!(!body.contains("alert(1)"), "{body}");
+        // 다시 내보내면 같은 파일을 덮어쓴다.
+        assert_eq!(render_discussion_transcript(data.path(), "d1", "# v2\n").unwrap(), html);
+        assert!(fs::read_to_string(&html).unwrap().contains("<title>v2</title>"));
+        // 원본 .md는 남기지 않는다.
+        assert!(fs::read_dir(doc_view::cache_dir(data.path())).unwrap().all(|e| e.unwrap().path().extension().is_some_and(|x| x == "html")));
     }
 
     #[test]

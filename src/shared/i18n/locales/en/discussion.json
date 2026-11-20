@@ -323,5 +323,41 @@
     "ageHours": "{{count}}h ago",
     "collapse": "Collapse minutes",
     "expand": "Expand minutes"
+  },
+  "transcript": {
+    "tabOverview": "Overview",
+    "tabTranscript": "Transcript",
+    "title": "Transcript: {{topic}}",
+    "stateLine": "State: {{state}}",
+    "kindFilter": "Filter by kind",
+    "speakerFilter": "Filter by speaker",
+    "speakerAll": "Everyone",
+    "group": {
+      "debate": "Statements",
+      "moderator": "Moderator",
+      "human": "Q&A with you",
+      "notice": "Notices"
+    },
+    "kind": {
+      "opening": "First round",
+      "statement": "Statement",
+      "moderator": "Moderator",
+      "question": "Question to you",
+      "answer": "Your answer",
+      "notice": "Notice"
+    },
+    "human": "You",
+    "system": "App",
+    "round": "Round {{round}}",
+    "empty": "No statements yet.",
+    "emptyFiltered": "Nothing matches the selected filters.",
+    "more": "Show more",
+    "less": "Show less",
+    "openingPending": "First-round statements are revealed once everyone has submitted · {{submitted}}/{{total}} in",
+    "speaking": "{{name}} is speaking",
+    "speakingFor": "{{name}} is speaking · {{minutes}} min",
+    "export": "Export",
+    "exportHint": "Open the full transcript in the browser as a temporary HTML page",
+    "exportError": "Could not open it in the browser."
   }
 }

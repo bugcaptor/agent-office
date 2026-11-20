@@ -15,6 +15,7 @@ const api = vi.hoisted(() => ({
   openDiscussionSession: vi.fn().mockRejectedValue(new Error("work-send-create-failed")),
   loadDiscussionMemo: vi.fn<(id: string) => Promise<string | null>>(),
   openDiscussionMemo: vi.fn<(id: string) => Promise<void>>(),
+  openDiscussionTranscript: vi.fn<(id: string, markdown: string) => Promise<void>>(),
 }));
 const { openUrl } = vi.hoisted(() => ({ openUrl: vi.fn().mockResolvedValue(undefined) }));
 vi.mock("@tauri-apps/plugin-opener", () => ({ openUrl }));
@@ -25,7 +26,10 @@ vi.mock("../../workpanels/AgentFace", () => ({ AgentFace: () => null }));
 import { useAppStore } from "../../store/appStore";
 import { resetRoleStoreForTest } from "../roleStore";
 import { resetDiscussionStoreForTest, useDiscussionStore } from "../discussionStore";
-import { DiscussionSection } from "../DiscussionSection";
+import { DiscussionDialogs, DiscussionSection } from "../DiscussionSection";
+
+/** 업무 패널은 카드 묶음과 (패널 밖의) 대화상자를 함께 마운트한다. */
+const Discussions = () => <><DiscussionSection /><DiscussionDialogs /></>;
 
 const adaCwd = "//office/share/ada";
 const roles: RolesFile = {
@@ -67,7 +71,7 @@ const dialog = () => screen.getByRole("dialog");
 
 describe("DiscussionSection", () => {
   it("hides the card group when there is nothing and creates a ready discussion from the dialog", async () => {
-    const { container } = render(<DiscussionSection />);
+    const { container } = render(<Discussions />);
     await waitFor(() => expect(useDiscussionStore.getState().status).toBe("ready"));
     expect(container.querySelector(".discussion-group")).toBeNull();
     act(() => useDiscussionStore.getState().openDialog({ kind: "new" }));
@@ -110,7 +114,7 @@ describe("DiscussionSection", () => {
 
   it("shows a card, opens the detail, edits a ready discussion and deletes it after confirming", async () => {
     api.loadDiscussions.mockResolvedValue([structuredClone(ready)]);
-    const { container } = render(<DiscussionSection />);
+    const { container } = render(<Discussions />);
     const card = await screen.findByRole("button", { name: /회의실 이름/ });
     expect(container.querySelector(".discussion-card small")?.textContent).toBe("최대 4라운드 · 30분 · $5");
     fireEvent.click(card);
@@ -138,7 +142,7 @@ describe("DiscussionSection", () => {
     // 진행 시간은 누계 7분 + 지금 흐르는 구간 5분, 비용은 추산 누계.
     api.loadDiscussions.mockResolvedValue([{ ...structuredClone(ready), state: "running", round: 2, costUsd: 0.4231,
       activeMs: 7 * 60_000, activeSince: Date.now() - 5 * 60_000 - 1000 }]);
-    render(<DiscussionSection />);
+    render(<Discussions />);
     const meter = `2/4 라운드 · 12/${ready.limits.maxMinutes}분 · $0.42/$${ready.limits.maxCostUsd}`;
     expect(await screen.findByText(meter, { selector: ".discussion-card .discussion-run-meter" })).toBeTruthy();
     fireEvent.click(await screen.findByRole("button", { name: /회의실 이름/ }));
@@ -154,7 +158,7 @@ describe("DiscussionSection run controls", () => {
   it("offers start for a ready discussion and explains why it is blocked", async () => {
     api.loadDiscussions.mockResolvedValue([structuredClone(ready)]);
     useAppStore.setState((s) => ({ appSettings: { ...s.appSettings, observerEnabled: false } }));
-    render(<DiscussionSection />);
+    render(<Discussions />);
     await open();
     expect((within(dialog()).getByRole("button", { name: "시작" }) as HTMLButtonElement).disabled).toBe(true);
     expect(within(dialog()).getByText(/관찰 훅이 꺼져/)).toBeTruthy();
@@ -165,7 +169,7 @@ describe("DiscussionSection run controls", () => {
   it("highlights a card whose moderator asked the person and takes the answer from the detail", async () => {
     const waiting: Discussion = { ...structuredClone(ready), state: "waiting_user", round: 2, run: { phase: "user", turns: [], seen: {}, question: "예산은 얼마인가요?" } };
     api.loadDiscussions.mockResolvedValue([waiting]);
-    render(<DiscussionSection />);
+    render(<Discussions />);
     const card = (await screen.findByRole("button", { name: /회의실 이름/ })).closest("article")!;
     expect(card.classList.contains("attention")).toBe(true);
     fireEvent.click(within(card).getByRole("button", { name: /회의실 이름/ }));
@@ -184,7 +188,7 @@ describe("DiscussionSection run controls", () => {
     api.loadDiscussions.mockResolvedValue([review]);
     api.loadDiscussionMemo.mockReset().mockResolvedValue("# 결정 메모: 회의실 이름\n\n## 결론\n\n**북쪽** 구석 <img src=x onerror=alert(1)> [근거](https://example.com/a)\n");
     api.openDiscussionMemo.mockReset().mockResolvedValue(undefined);
-    render(<DiscussionSection />);
+    render(<Discussions />);
     const card = (await screen.findByRole("button", { name: /회의실 이름/ })).closest("article")!;
     expect(card.classList.contains("attention")).toBe(true);
     expect(within(card).getByText("결정 메모를 확인하고 결론 확인을 누르세요")).toBeTruthy();
@@ -215,7 +219,7 @@ describe("DiscussionSection run controls", () => {
     const done: Discussion = { ...structuredClone(ready), state: "finished", decisionMemoPath: "/data/discussions/memos/d1.md" };
     api.loadDiscussions.mockResolvedValue([done]);
     api.loadDiscussionMemo.mockReset().mockResolvedValue(null);
-    render(<DiscussionSection />);
+    render(<Discussions />);
     fireEvent.click(await screen.findByRole("button", { name: /회의실 이름/ }));
     expect(await within(dialog()).findByText("메모 파일을 읽지 못했습니다.")).toBeTruthy();
     expect((within(dialog()).getByRole("button", { name: "브라우저로 열기" }) as HTMLButtonElement).disabled).toBe(true);
@@ -226,7 +230,7 @@ describe("DiscussionSection run controls", () => {
     const run = structuredClone(forcedRun) as DiscussionRun;
     const waiting: Discussion = { ...structuredClone(ready), state: "paused", round: 3, run: { ...run, turns: [{ agentId: "a1" }], usageWait: { ...run.usageWait!, agentId: "a1" } } };
     api.loadDiscussions.mockResolvedValue([waiting]);
-    render(<DiscussionSection />);
+    render(<Discussions />);
     await open();
     expect(within(dialog()).getByText("정리 중 (시간 상한)")).toBeTruthy();
     expect(within(dialog()).getByText(/리셋되기를 기다립니다/)).toBeTruthy();
@@ -239,7 +243,7 @@ describe("DiscussionSection run controls", () => {
   it("shows why a discussion paused and offers resume and end", async () => {
     const paused: Discussion = { ...structuredClone(ready), state: "paused", round: 1, run: { phase: "opening", turns: [], seen: {}, pauseReason: "human-input" } };
     api.loadDiscussions.mockResolvedValue([paused]);
-    render(<DiscussionSection />);
+    render(<Discussions />);
     await open();
     expect(within(dialog()).getByText(/쓰다 만 입력/)).toBeTruthy();
     expect(within(dialog()).getByRole("button", { name: "계속" })).toBeTruthy();
@@ -253,12 +257,87 @@ describe("DiscussionEditor stray roles", () => {
     // a2의 역할 critic이 나중에 사회자 스탠스로 바뀐 경우: 토론자 칸 선택지에는 없지만 값은 남는다.
     api.loadRoles.mockResolvedValue({ version: 1, roles: [roles.roles[0], { ...roles.roles[1], stance: "moderator" }] });
     api.loadDiscussions.mockResolvedValue([{ ...structuredClone(ready), participants: [ready.participants[0], { ...ready.participants[1], roleId: "critic" }] }]);
-    render(<DiscussionSection />);
+    render(<Discussions />);
     await waitFor(() => expect(useDiscussionStore.getState().status).toBe("ready"));
     act(() => useDiscussionStore.getState().openDialog({ kind: "edit", id: "d1" }));
     await screen.findByDisplayValue("회의실 이름");
     const roleSelects = within(dialog()).getAllByRole("combobox", { name: "역할" }) as HTMLSelectElement[];
     expect(roleSelects[1].value).toBe("critic");
     expect(roleSelects[1].selectedOptions[0].textContent).toBe("비판자");
+  });
+});
+
+describe("DiscussionTranscript", () => {
+  const long = Array.from({ length: 14 }, (_, i) => `줄 ${i + 1}`).join("\n");
+  const said = (round: number, kind: Discussion["transcript"][number]["kind"], text: string, agentId?: string) =>
+    ({ at: 1_720_000_000_000 + round * 60_000, round, kind, text, ...(agentId ? { agentId } : {}) });
+  const held: Discussion = {
+    ...structuredClone(ready), state: "review", round: 2, endedAt: 9,
+    transcript: [
+      said(1, "opening", long, "a2"),
+      said(2, "moderator", "- Bo: 근거는?", "a1"),
+      said(2, "statement", "**측정값**이 있다", "a2"),
+      said(2, "notice", "라운드 상한"),
+    ],
+  };
+
+  it("opens on the overview, lists every utterance by round on the transcript tab, filters, folds long ones and exports all", async () => {
+    api.loadDiscussions.mockResolvedValue([held]);
+    api.openDiscussionTranscript.mockReset().mockResolvedValue(undefined);
+    api.loadDiscussionMemo.mockReset().mockResolvedValue(null);
+    render(<Discussions />);
+    await waitFor(() => expect(useDiscussionStore.getState().status).toBe("ready"));
+    act(() => useDiscussionStore.getState().openDialog({ kind: "view", id: "d1" }));
+    expect(within(dialog()).getByRole("tab", { name: "개요" }).getAttribute("aria-selected")).toBe("true");
+    fireEvent.click(within(dialog()).getByRole("tab", { name: /속기록/ }));
+    const list = () => dialog().querySelector(".discussion-transcript-list")!;
+    expect([...list().querySelectorAll(".transcript-round")].map((el) => el.textContent)).toEqual(["1라운드", "2라운드"]);
+    expect(list().querySelectorAll(".transcript-entry")).toHaveLength(4);
+    expect(list().querySelector(".transcript-entry.kind-statement .transcript-entry-body strong")?.textContent).toBe("측정값");
+
+    // 긴 발언은 접혀 있다가 펼친다.
+    const more = within(dialog()).getByRole("button", { name: "더 보기" });
+    expect(list().querySelector(".transcript-entry.kind-opening .transcript-entry-body")!.classList.contains("clamped")).toBe(true);
+    fireEvent.click(more);
+    expect(list().querySelector(".transcript-entry.kind-opening .transcript-entry-body")!.classList.contains("clamped")).toBe(false);
+    expect(within(dialog()).getByRole("button", { name: "접기" })).toBeTruthy();
+
+    // 사회자 묶음을 끄면 지목이 빠지고, 화자 Bo를 고르면 Bo의 발언만 남는다.
+    fireEvent.click(within(dialog()).getByRole("button", { name: "사회자" }));
+    expect(list().querySelector(".kind-moderator")).toBeNull();
+    fireEvent.click(within(dialog()).getByRole("button", { name: "사회자" }));
+    fireEvent.click(within(dialog()).getByRole("button", { name: "Bo" }));
+    expect([...list().querySelectorAll(".transcript-entry")].map((el) => el.className.match(/kind-(\w+)/)![1])).toEqual(["opening", "statement"]);
+
+    // 내보내기는 필터와 상관없이 전체를 보낸다.
+    fireEvent.click(within(dialog()).getByRole("button", { name: "내보내기" }));
+    expect(api.openDiscussionTranscript).toHaveBeenCalledTimes(1);
+    const [id, markdown] = api.openDiscussionTranscript.mock.calls[0];
+    expect(id).toBe("d1");
+    for (const u of held.transcript) expect(markdown).toContain(u.text);
+  });
+
+  it("opens straight on the transcript tab pointing at the given utterance (from the meeting board)", async () => {
+    api.loadDiscussions.mockResolvedValue([held]);
+    render(<Discussions />);
+    await waitFor(() => expect(useDiscussionStore.getState().status).toBe("ready"));
+    act(() => useDiscussionStore.getState().openDialog({ kind: "view", id: "d1", tab: "transcript", focus: 2 }));
+    expect(within(dialog()).getByRole("tab", { name: /속기록/ }).getAttribute("aria-selected")).toBe("true");
+    expect(dialog().querySelector('[data-index="2"]')!.classList.contains("focused")).toBe(true);
+  });
+
+  it("shows only the submission count while the first round is still private, and who is speaking", async () => {
+    const opening: Discussion = {
+      ...structuredClone(ready), state: "running", round: 1, startedAt: 1, activeSince: 1,
+      run: { phase: "opening", seen: {}, turns: [{ agentId: "a2", sentAt: Date.now() }] },
+    };
+    api.loadDiscussions.mockResolvedValue([opening]);
+    render(<Discussions />);
+    await waitFor(() => expect(useDiscussionStore.getState().status).toBe("ready"));
+    act(() => useDiscussionStore.getState().openDialog({ kind: "view", id: "d1", tab: "transcript" }));
+    const live = within(dialog()).getByRole("status");
+    expect(live.textContent).toContain("0/1 제출");
+    expect(live.textContent).toContain("Bo 말하는 중");
+    expect(within(dialog()).getByText("아직 발언이 없습니다.")).toBeTruthy();
   });
 });
