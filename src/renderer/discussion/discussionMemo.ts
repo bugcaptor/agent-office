@@ -7,6 +7,8 @@ import type { Discussion, DiscussionLimitReason } from "@shared/types";
 import { t } from "../i18n";
 import { useAppStore } from "../store/appStore";
 import { useRoleStore } from "./roleStore";
+import { participantRoleLabel, participantsModeratorFirst } from "./discussionModel";
+import { workAgentLabel } from "../profile/generate";
 
 /** 정리 지시의 구조화된 칸. 비어 있으면 그 절은 "적힌 것 없음"으로 둔다(발산 묶음은 아예 뺀다). */
 export interface WrapMemo {
@@ -74,13 +76,11 @@ const bullets = (xs: string[]) => (xs.length ? xs.map(item).join("\n") : none())
 function participantLines(d: Discussion): string {
   const agents = useAppStore.getState().agents;
   const roles = useRoleStore.getState().roles;
-  const ordered = [...d.participants].sort((a, b) => Number(b.agentId === d.moderatorAgentId) - Number(a.agentId === d.moderatorAgentId));
-  return ordered.map((p) => {
+  return participantsModeratorFirst(d).map((p) => {
     const name = agents[p.agentId]?.name.trim() || t("discussion:board.missingAgent");
-    const role = !p.roleId ? t("discussion:board.noRole") : roles.find((r) => r.id === p.roleId)?.name.trim() || t("discussion:board.missingRole");
+    const role = participantRoleLabel(p.roleId, roles);
     const duty = p.agentId === d.moderatorAgentId ? t("discussion:memo.moderator") : t("discussion:memo.debater");
-    const cli = [p.agent.cli, p.agent.model, p.agent.effort].filter(Boolean).join(" · ");
-    return item(`**${name}** — ${duty} · ${role} · ${cli}`);
+    return item(`**${name}** — ${duty} · ${role} · ${workAgentLabel(p.agent)}`);
   }).join("\n");
 }
 

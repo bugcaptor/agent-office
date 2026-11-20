@@ -2,6 +2,7 @@ import { useEffect, useId, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { WorkAgent } from "@shared/types";
 import { tauriApi } from "../ipc/tauriApi";
+import { workAgentLabel } from "../profile/generate";
 
 const CLIS: WorkAgent["cli"][] = ["claude", "codex", "agy", "kilo", "pi"];
 const EFFORTS: Record<WorkAgent["cli"], string[]> = {
@@ -36,7 +37,7 @@ export function WorkAgentFields({ value, onChange, profile = false, inherited, l
       <option value="">{labels?.empty ?? t(profile ? "claudeDefault" : "useProfileDefault")}</option>
       {CLIS.map((cli) => <option value={cli} key={cli}>{cli}</option>)}
     </select></label>
-    {!value && !profile && !labels && <small>{t("effectiveAgent", { agent: [effective.cli, effective.model, effective.effort].filter(Boolean).join(" · ") })}</small>}
+    {!value && !profile && !labels && <small>{t("effectiveAgent", { agent: workAgentLabel(effective) })}</small>}
     {value && <>
       <label><span className="form-label-text">{t("model")}</span><input list={id} value={value.model ?? ""} placeholder={t("cliDefault")} onChange={(e) => onChange({ ...value, model: e.target.value || undefined })} /></label>
       <datalist id={id}>{models.map((model) => <option value={model} key={model} />)}</datalist>

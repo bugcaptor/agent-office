@@ -18,8 +18,7 @@ import {
   ConfirmClockOutDialog,
 } from "./agent/confirmDialogs";
 import { ConfirmQuitDialog } from "./agent/ConfirmQuitDialog";
-import { ConfirmCloseTaskChatDialog } from "./workpanels/ConfirmCloseTaskChatDialog";
-import { ConfirmCloseDiscussionSessionDialog } from "./discussion/ConfirmCloseDiscussionSessionDialog";
+import { ConfirmCloseSideTabDialog } from "./terminal/ConfirmCloseSideTabDialog";
 import { SettingsDialog } from "./settings/SettingsDialog";
 import { FirstRunDialog } from "./settings/FirstRunDialog";
 import { AnalyticsDialog } from "./analytics/AnalyticsDialog";
@@ -167,8 +166,7 @@ function App() {
         <ConfirmRestartDialog />
         <ConfirmResumeDialog />
         <ConfirmTerminateDialog />
-        <ConfirmCloseTaskChatDialog />
-        <ConfirmCloseDiscussionSessionDialog />
+        <ConfirmCloseSideTabDialog />
         <ConfirmClockOutDialog />
         <ConfirmQuitDialog />
         <SettingsDialog />

@@ -1,8 +1,7 @@
 // @vitest-environment jsdom
 import { describe, expect, it } from "vitest";
-import { DISCUSSION_STATES, type Discussion } from "@shared/types";
-import { discussionStageEquals, isStagedDiscussion, officeDiscussionStage } from "../officeStage";
-import { isActiveDiscussion } from "../discussionRun";
+import type { Discussion } from "@shared/types";
+import { discussionStageEquals, officeDiscussionStage } from "../officeStage";
 
 const now = 1_800_000_000_000;
 function discussion(patch: Partial<Discussion> = {}): Discussion {
@@ -19,10 +18,6 @@ function discussion(patch: Partial<Discussion> = {}): Discussion {
 }
 
 describe("officeDiscussionStage", () => {
-  it("연출 대상 상태는 실행기의 '끝나지 않은 토의' 판정과 같다", () => {
-    for (const state of DISCUSSION_STATES) expect(isStagedDiscussion({ state }), state).toBe(isActiveDiscussion({ state }));
-  });
-
   it("준비·결론 확인·끝남이면 null", () => {
     for (const state of ["ready", "review", "finished"] as const) expect(officeDiscussionStage([discussion({ state })])).toBeNull();
     expect(officeDiscussionStage([])).toBeNull();

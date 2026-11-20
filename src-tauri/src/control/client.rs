@@ -300,7 +300,15 @@ fn build_request(p: &Parsed) -> Result<(&'static str, Value), String> {
                 "memo" => Ok(("/v1/discuss/memo", json!({ "id": id }))),
                 "start" => Ok(("/v1/discuss/start", json!({ "id": id }))),
                 "answer" => {
-                    let text = pos.get(3).filter(|t| !t.trim().is_empty()).ok_or("discuss answer: 사회자에게 줄 답이 필요합니다")?;
+                    // 서버(`discussion::answer`)와 같은 검사를 먼저 해 코드 대신 이유를 보여 준다.
+                    let text = match super::discussion::normalize_answer(pos.get(3).map(String::as_str).unwrap_or("")) {
+                        Ok(text) => text,
+                        Err("discussion-answer-empty") => return Err("discuss answer: 사회자에게 줄 답이 필요합니다".into()),
+                        Err(code) => return Err(format!(
+                            "discuss answer: 답에는 탭·줄바꿈 밖의 제어 문자(색 코드 등)를 넣을 수 없고 {}바이트를 넘을 수 없습니다 ({code})",
+                            crate::persistence::work_inbox::MAX_BYTES
+                        )),
+                    };
                     Ok(("/v1/discuss/answer", json!({ "id": id, "text": text })))
                 }
                 other => Err(format!("discuss: 알 수 없는 하위 명령: {other}")),
@@ -391,7 +399,8 @@ agent-office ctl — 실행 중인 Agent Office를 조종하는 CLI (이슈 #55)
   discuss status <id> [--wait] [--timeout S] [--since REV]
                                   상태·라운드·비용·사회자 질문(attention)과 결정 메모 유무.
                                   --wait: 결론이 나거나(review·finished) 조치가 필요할 때까지
-                                  (ready=사람이 시작해야 함, waiting_user=사회자 질문, paused) 기다린다
+                                  (ready=사람이 시작해야 함, waiting_user=사회자 질문, paused) 기다린다.
+                                  waiting-usage(사용량 대기)는 스스로 이어 가므로 계속 기다린다
   discuss start <id>              준비된 토의를 시작한다(카드의 시작과 같다)
   discuss answer <id> <답>        사회자가 사용자에게 한 질문에 답한다
   discuss memo <id>               결정 메모(Markdown)를 출력한다
@@ -959,7 +968,12 @@ mod tests {
         assert_eq!(request_timeout(path, &body), Duration::from_secs(30));
         let (path, body) = build_request(&parse(&args(&["discuss", "answer", "disc-1", "예산은 월 100만 원"])).unwrap()).unwrap();
         assert_eq!((path, body), ("/v1/discuss/answer", json!({ "id": "disc-1", "text": "예산은 월 100만 원" })));
-        for bad in [&["discuss"][..], &["discuss", "status"], &["discuss", "answer", "disc-1"], &["discuss", "answer", "disc-1", "  "], &["discuss", "confirm", "disc-1"], &["discuss", "status", "d", "--wait", "--timeout", "0"]] {
+        // 줄 끝은 LF로 맞춰 보낸다.
+        let (_, body) = build_request(&parse(&args(&["discuss", "answer", "disc-1", "첫 줄\r\n둘째\r셋째"])).unwrap()).unwrap();
+        assert_eq!(body["text"], "첫 줄\n둘째\n셋째");
+        let colored = build_request(&parse(&args(&["discuss", "answer", "disc-1", "\x1b[31m빨강\x1b[0m"])).unwrap()).unwrap_err();
+        assert!(colored.contains("discussion-answer-invalid"), "{colored}");
+        for bad in [&["discuss"][..], &["discuss", "status"], &["discuss", "answer", "disc-1"], &["discuss", "answer", "disc-1", "  "], &["discuss", "answer", "disc-1", "\r\n"], &["discuss", "confirm", "disc-1"], &["discuss", "status", "d", "--wait", "--timeout", "0"]] {
             assert!(build_request(&parse(&args(bad)).unwrap()).is_err(), "{bad:?}");
         }
     }

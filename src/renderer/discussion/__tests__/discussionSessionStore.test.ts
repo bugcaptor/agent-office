@@ -32,7 +32,7 @@ import { useRoleStore } from "../roleStore";
 import {
   closeDiscussionSession, closeDiscussionSessions, collectDiscussionUtterance, discussionSessionBlockedReason,
   discussionSessionErrorText, discussionSessionTitle, installDiscussionSessionTracking, liveDiscussionSessionCount,
-  openDiscussionSession, requestCloseDiscussionSession, resetDiscussionSessionStoreForTest, sendDiscussionTurn,
+  openDiscussionSession as openWithTurn, requestCloseDiscussionSession, resetDiscussionSessionStoreForTest, sendDiscussionTurn,
   useDiscussionSessionStore,
 } from "../discussionSessionStore";
 
@@ -50,6 +50,9 @@ function discussion(id: string, people: string[], patch: Partial<Discussion> = {
 }
 const sid = (d: string, p: string) => discussionSessionAgentId(d, p)!;
 function emitState(e: Partial<SessionStateEvent>) { cbs.state.forEach((cb) => cb({ agentId: "", sessionId: "", state: "running", at: now, ...e } as SessionStateEvent)); }
+/** 차례 지시가 없어도 되는 검사용. 세션은 늘 차례를 싣고 열린다. */
+const openDiscussionSession = (discussionId: string, agentId: string, options: { turn?: string; focus?: boolean } = {}) =>
+  openWithTurn(discussionId, agentId, { turn: "Speak.", ...options });
 function lastRequest(): DiscussionSessionRequest { const calls = api.openDiscussionSession.mock.calls; return calls[calls.length - 1][0]; }
 
 beforeEach(() => {

@@ -102,6 +102,20 @@ impl ControlContext {
     }
 }
 
+/// 상태 응답에 내용이 바뀔 때만 달라지는 짧은 지문(`rev`)을 붙인다. `--wait --since`가 놓친 변화 없이 기다리게 한다.
+fn with_rev(mut status: serde_json::Value) -> serde_json::Value {
+    use std::hash::{Hash, Hasher};
+    let mut h = std::collections::hash_map::DefaultHasher::new();
+    status.to_string().hash(&mut h);
+    status["rev"] = serde_json::json!(format!("{:016x}", h.finish()));
+    status
+}
+
+/// 문자열로 직렬화되는 enum의 serde 이름. 아니면 빈 문자열.
+fn enum_str<T: serde::Serialize>(value: &T) -> String {
+    serde_json::to_value(value).ok().and_then(|v| v.as_str().map(String::from)).unwrap_or_default()
+}
+
 fn router(ctx: Arc<ControlContext>) -> Router {
     Router::new()
         .route("/v1/ping", post(ping))

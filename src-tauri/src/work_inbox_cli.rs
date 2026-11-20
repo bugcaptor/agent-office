@@ -233,6 +233,24 @@ fn render(id: &str, title: &str, body: &str, assignee: Option<&str>, after: &[St
     text
 }
 
+/// 팀원 id 또는 (하나뿐인) 이름 → id. 앱의 담당 해석(`resolveAssignee`)과 같은 규칙이다.
+/// 찾지 못하면 그 이름을 가진 팀원 수(0 또는 2 이상).
+pub(crate) fn member_id<'a, I>(query: &str, members: I) -> Result<&'a str, usize>
+where
+    I: IntoIterator<Item = (&'a str, &'a str)>,
+    I::IntoIter: Clone,
+{
+    let query = query.trim();
+    let members = members.into_iter();
+    if let Some((id, _)) = members.clone().find(|(id, _)| *id == query) { return Ok(id); }
+    let mut named = members.filter(|(_, name)| name.trim() == query).map(|(id, _)| id);
+    match (named.next(), named.next()) {
+        (Some(id), None) => Ok(id),
+        (None, _) => Err(0),
+        _ => Err(2),
+    }
+}
+
 /// `profiles.json`의 (id, 이름). 없거나 읽을 수 없으면 None.
 fn load_profiles(dir: &Path) -> Option<Vec<(String, String)>> {
     let state: serde_json::Value = serde_json::from_slice(&std::fs::read(dir.join("profiles.json")).ok()?).ok()?;
@@ -254,9 +272,8 @@ fn pending_ids(inbox: &Path) -> Vec<String> {
 fn warn_unknown_references(env: &TaskEnv, to: Option<&str>, after: &[String], err: &mut dyn Write) {
     let Some(dir) = env.data_dir() else { return };
     if let (Some(to), Some(profiles)) = (to, load_profiles(&dir)) {
-        let by_name = profiles.iter().filter(|(_, name)| name.trim() == to).count();
-        if !profiles.iter().any(|(id, _)| id == to) && by_name != 1 {
-            let why = if by_name == 0 { "no character has this name or id" } else { "several characters share this name; use the id" };
+        if let Err(named) = member_id(to, profiles.iter().map(|(id, name)| (id.as_str(), name.as_str()))) {
+            let why = if named == 0 { "no character has this name or id" } else { "several characters share this name; use the id" };
             let _ = writeln!(err, "office-task: warning: --to {to:?}: {why}; the task will be unassigned");
         }
     }

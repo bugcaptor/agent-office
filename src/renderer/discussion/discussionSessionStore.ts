@@ -21,9 +21,11 @@ import { t } from "../i18n";
 import { tauriApi } from "../ipc/tauriApi";
 import { useAppStore } from "../store/appStore";
 import { terminalRegistry } from "../terminal/TerminalRegistry";
+import { closeSideTab, isLiveStatus as isLive, leaveSideTab, sideTabInitialSize, sideTabStatus } from "../terminal/sideTabs";
 import { sendErrorText } from "../workpanels/sendErrorText";
 import { useDiscussionStore } from "./discussionStore";
 import { useRoleStore } from "./roleStore";
+import { participantRoleLabel } from "./discussionModel";
 
 /**
  * 참가자 세션의 턴 단계. 캐릭터의 workMonitor·Rust TurnTracker와 같은 신호·규칙이다.
@@ -60,7 +62,6 @@ interface DiscussionSessionState {
 }
 export const useDiscussionSessionStore = create<DiscussionSessionState>(() => ({ sessions: {}, order: [], opening: {} }));
 
-function isLive(status: SessionStatus | undefined): boolean { return status === "starting" || status === "running"; }
 export function liveDiscussionSessions(): DiscussionSession[] {
   const { sessions, order } = useDiscussionSessionStore.getState();
   return order.map((id) => sessions[id]).filter((s) => s && isLive(s.status));
@@ -98,14 +99,15 @@ export function discussionSessionErrorText(error: string): string {
   return key ? t(`discussion:session.errors.${key}`) : sendErrorText(error);
 }
 
-/** 탭 이름: 캐릭터 이름 · 역할 이름. 역할이 없으면 사회자는 "사회자", 토론자는 "역할 없음"을 쓴다. */
+/** 탭 이름: 캐릭터 이름 · 역할 이름. 역할이 없는 사회자는 "사회자"를 쓰고, 그 밖은 카드와 같은 역할 표시다. */
 export function discussionSessionTitle(session: Pick<DiscussionSession, "discussionId" | "participantAgentId">): string {
   const name = useAppStore.getState().agents[session.participantAgentId]?.name || t("discussion:board.missingAgent");
   const discussion = useDiscussionStore.getState().discussions.find((d) => d.id === session.discussionId);
   const roleId = discussion?.participants.find((p) => p.agentId === session.participantAgentId)?.roleId;
-  const role = roleId ? useRoleStore.getState().roles.find((r) => r.id === roleId)?.name.trim() : undefined;
-  const fallback = discussion?.moderatorAgentId === session.participantAgentId ? t("discussion:detail.moderator") : t("discussion:board.noRole");
-  return `${name} · ${role || fallback}`;
+  const role = !roleId && discussion?.moderatorAgentId === session.participantAgentId
+    ? t("discussion:detail.moderator")
+    : participantRoleLabel(roleId, useRoleStore.getState().roles);
+  return `${name} · ${role}`;
 }
 /** 탭 툴팁: 주제와 사회자 여부. */
 export function discussionSessionTooltip(session: Pick<DiscussionSession, "discussionId" | "participantAgentId">): string {
@@ -114,15 +116,6 @@ export function discussionSessionTooltip(session: Pick<DiscussionSession, "discu
   return discussion?.moderatorAgentId === session.participantAgentId
     ? t("discussion:session.tooltipModerator", { topic })
     : t("discussion:session.tooltip", { topic });
-}
-
-/** 새 세션의 첫 크기. 지금 보이는(또는 최근) 터미널 크기를 빌린다. 탭을 열면 다시 맞춘다. */
-function initialSize(): { cols?: number; rows?: number } {
-  const { activeTerminalAgentId, recentAgentIds, sessions } = useAppStore.getState();
-  const fitted = activeTerminalAgentId && terminalRegistry.get(activeTerminalAgentId)?.term;
-  if (fitted && fitted.cols > 0 && fitted.rows > 0) return { cols: fitted.cols, rows: fitted.rows };
-  const source = sessions[recentAgentIds[0] ?? ""];
-  return source ? { cols: source.cols, rows: source.rows } : {};
 }
 
 function forget(agentId: string): void {
@@ -137,7 +130,7 @@ function forget(agentId: string): void {
 
 export interface OpenDiscussionSessionOptions {
   /** 첫 프롬프트 끝에 붙일 이번 차례 지시. */
-  turn?: string;
+  turn: string;
   /** 연 뒤 그 탭을 보여 줄지. 실행기가 여러 명을 한꺼번에 열 때는 끈다. 기본 true. */
   focus?: boolean;
 }
@@ -149,7 +142,7 @@ export interface OpenDiscussionSessionOptions {
 export async function openDiscussionSession(
   discussionId: string,
   participantAgentId: string,
-  options: OpenDiscussionSessionOptions = {},
+  options: OpenDiscussionSessionOptions,
 ): Promise<string | undefined> {
   const agentId = discussionSessionAgentId(discussionId, participantAgentId);
   if (!agentId) return "discussion-session-invalid-id";
@@ -171,8 +164,8 @@ export async function openDiscussionSession(
   terminalRegistry.ensure(agentId);
   try {
     const result = await tauriApi.openDiscussionSession({
-      discussionId, agentId: participantAgentId, ...initialSize(),
-      ...(options.turn ? { turn: options.turn } : {}),
+      discussionId, agentId: participantAgentId, ...sideTabInitialSize(),
+      turn: options.turn,
     });
     const seen = latest.get(agentId);
     const status = seen?.sessionId === result.sessionId ? seen.status : "running";
@@ -189,6 +182,8 @@ export async function openDiscussionSession(
     return undefined;
   } catch (error) {
     terminalRegistry.destroy(agentId);
+    // 끝난 탭을 보던 중 다시 열다 실패하면 그 탭은 이미 사라졌다. 빈 터미널 영역에 두지 않는다.
+    leaveSideTab(agentId, []);
     return error instanceof Error ? error.message : String(error);
   } finally {
     useDiscussionSessionStore.setState((s) => { const opening = { ...s.opening }; delete opening[agentId]; return { opening }; });
@@ -208,17 +203,7 @@ export async function closeDiscussionSession(agentId: string): Promise<void> {
   const { sessions, order } = useDiscussionSessionStore.getState();
   const session = sessions[agentId];
   if (!session) return;
-  const app = useAppStore.getState();
-  if (app.activeTerminalAgentId === agentId) {
-    const idx = order.indexOf(agentId);
-    const next = order[idx + 1] ?? order[idx - 1] ?? app.recentAgentIds[0];
-    if (next) app.openTerminal(next);
-    else app.closeTerminal();
-  }
-  forget(agentId);
-  if (isLive(session.status)) {
-    try { await tauriApi.disposeSession(agentId); } catch (err) { console.warn(`discussion: dispose failed for ${agentId}`, err); }
-  }
+  await closeSideTab(agentId, { order, live: isLive(session.status), forget, logTag: "discussion" });
 }
 
 /** 한 토의의 참가자 세션을 모두 끝낸다(토의를 마칠 때). */
@@ -246,8 +231,11 @@ export async function collectDiscussionUtterance(agentId: string, since: number)
 const latest = new Map<string, { sessionId: string; status: SessionStatus; turn?: DiscussionSession["turn"] }>();
 
 export function applyDiscussionSessionState(e: SessionStateEvent): void {
-  const status: SessionStatus = e.state === "disposed" ? "exited" : e.state;
+  const status = sideTabStatus(e);
   const prev = latest.get(e.agentId);
+  const { sessions, opening } = useDiscussionSessionStore.getState();
+  // 닫은 탭의 세션을 버릴 때 오는 끝 신호는 붙일 곳이 없다. 기억하면 닫을 때마다 항목이 남는다.
+  if (!prev && !sessions[e.agentId] && !opening[e.agentId] && status === "exited") return;
   latest.set(e.agentId, { ...(prev?.sessionId === e.sessionId ? prev : {}), sessionId: e.sessionId, status });
   useDiscussionSessionStore.setState((s) => {
     const session = s.sessions[e.agentId];

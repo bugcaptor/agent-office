@@ -247,12 +247,13 @@ describe("사용자 질문", () => {
     expect(api.sendDiscussionTurn).not.toHaveBeenCalled();
     expect(answerDiscussion("d1", "  ")).toBe(false);
 
-    expect(answerDiscussion("d1", "Yes, it is free.")).toBe(true);
+    // 색 제어열·CR이 섞인 답(예: ctl discuss answer "$(git log --color)")은 걸러 기록한다. 그대로 두면 이후 차례 보내기가 모두 거절된다.
+    expect(answerDiscussion("d1", "\u001b[33mYes\u001b[0m,\r\nit is free.\u0007")).toBe(true);
     await settle();
     expect(d1()).toMatchObject({ state: "running", run: { phase: "moderator" } });
     expect(d1().run!.question).toBeUndefined();
-    expect(d1().transcript.slice(-1)[0]).toMatchObject({ kind: "answer", text: "Yes, it is free." });
-    expect(sentTurns("m").slice(-1)[0]).toContain("Yes, it is free.");
+    expect(d1().transcript.slice(-1)[0]).toMatchObject({ kind: "answer", text: "Yes,\nit is free." });
+    expect(sentTurns("m").slice(-1)[0]).toContain("Yes,\nit is free.");
   });
 });
 

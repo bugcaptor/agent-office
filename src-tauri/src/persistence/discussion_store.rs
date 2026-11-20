@@ -157,6 +157,22 @@ impl DiscussionStore {
         self.write(&file)
     }
 
+    /// 같은 id가 없을 때만 끝에 붙인다. 붙였으면 true. 확인과 쓰기를 한 잠금 안에서 한다.
+    pub fn insert_if_absent(&self, discussion: &Discussion) -> Result<bool, String> {
+        if discussion_problem(discussion).is_some() {
+            return Err("invalid-discussion".into());
+        }
+        let _guard = self.lock.lock().map_err(|e| e.to_string())?;
+        let mut file = self.read()?;
+        if file.discussions.iter().any(|d| d.id == discussion.id) {
+            return Ok(false);
+        }
+        file.version = DISCUSSIONS_SCHEMA_VERSION;
+        file.discussions.push(discussion.clone());
+        self.write(&file)?;
+        Ok(true)
+    }
+
     /// 없는 id면 아무것도 하지 않는다.
     pub fn delete(&self, id: &str) -> Result<(), String> {
         let _guard = self.lock.lock().map_err(|e| e.to_string())?;

@@ -80,7 +80,7 @@ agent-office ctl autorun status "$R" --wait --timeout 3600 --json > status.json
 case $? in
   0)  echo "끝남" ;;            # steps[].report 에 단계별 보고
   10) echo "조치 필요" ;;        # attention.reason / attention.actions 를 본다
-  11) echo "아직 진행 중" ;;     # 다시 기다린다
+  11) echo "아직 진행 중" ;;   # running·wrapping_up·waiting-usage(사용량 대기, 스스로 이어 감)     # 다시 기다린다
 esac
 ```
 
@@ -106,7 +106,7 @@ agent-office ctl discuss status "$D" --wait --timeout 3600
 case $? in
   0)  agent-office ctl discuss memo "$D" ;;   # 결론 확인 대기(review)·끝남
   10) echo "조치 필요" ;;   # ready(시작 전)·waiting_user(사회자 질문)·paused
-  11) echo "아직 진행 중" ;;
+  11) echo "아직 진행 중" ;;   # running·wrapping_up·waiting-usage(사용량 대기, 스스로 이어 감)
 esac
 ```
 

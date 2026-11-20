@@ -132,6 +132,11 @@ export function draftToProfile(d: DraftProfile, deskIndex: number): AgentProfile
   };
 }
 
+/** CLI·모델·추론 강도 한 줄 표시(`claude · opus · high`). 비어 있는 칸은 뺀다. */
+export function workAgentLabel(agent: Pick<WorkAgent, "cli" | "model" | "effort">): string {
+  return [agent.cli, agent.model, agent.effort].filter(Boolean).join(" · ");
+}
+
 /** 공백은 CLI 기본값으로 되돌린다. CLI 변경 시 모델/effort 초기화는 편집 UI가 맡는다. */
 export function normalizeWorkAgent(agent: WorkAgent): WorkAgent {
   return { cli: agent.cli, ...(agent.model?.trim() ? { model: agent.model.trim() } : {}), ...(agent.effort?.trim() ? { effort: agent.effort.trim() } : {}) };

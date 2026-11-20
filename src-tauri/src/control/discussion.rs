@@ -16,10 +16,11 @@ use serde_json::{json, Value};
 use crate::httpapi::{fail, ok};
 use crate::persistence::discussion_inbox;
 use crate::persistence::discussion_store::DiscussionStore;
+use crate::persistence::work_inbox::{forbidden_control, MAX_BYTES};
 use crate::types::{Discussion, DiscussionPauseReason, DiscussionState};
 
 use super::autorun::MAX_WAIT_SECS;
-use super::ControlContext;
+use super::{enum_str, with_rev, ControlContext};
 
 /// 방금 만든 토의를 앱이 수신함에서 가져갈 때까지 시작·답하기가 기다리는 시간.
 const IMPORT_WAIT: Duration = Duration::from_secs(10);
@@ -27,20 +28,14 @@ const LAST_TEXT_CHARS: usize = 400;
 
 // ── 상태 조립(순수) ───────────────────────────────────────────────────
 
-fn state_str(state: DiscussionState) -> &'static str {
-    match state {
-        DiscussionState::Ready => "ready",
-        DiscussionState::Running => "running",
-        DiscussionState::WaitingUser => "waiting_user",
-        DiscussionState::WrappingUp => "wrapping_up",
-        DiscussionState::Review => "review",
-        DiscussionState::Finished => "finished",
-        DiscussionState::Paused => "paused",
-    }
+fn usage_waiting(d: &Discussion) -> bool {
+    d.state == DiscussionState::Paused
+        && d.run.as_ref().is_some_and(|r| r.pause_reason == Some(DiscussionPauseReason::UsageWait))
 }
 
-fn enum_str<T: serde::Serialize>(value: &T) -> String {
-    serde_json::to_value(value).ok().and_then(|v| v.as_str().map(String::from)).unwrap_or_default()
+/// 응답의 `state`. 저장 상태의 serde 이름이고, 사용량 대기로 멈춘 것만 `waiting-usage`다(스스로 이어 간다).
+fn state_label(d: &Discussion) -> String {
+    if usage_waiting(d) { "waiting-usage".into() } else { enum_str(&d.state) }
 }
 
 fn clip(text: &str) -> String {
@@ -70,11 +65,8 @@ pub fn build_status(
         return Err("discussion-not-found".into());
     };
     let run = d.run.as_ref();
-    let usage_wait = run.is_some_and(|r| r.pause_reason == Some(DiscussionPauseReason::UsageWait));
-    let state = match d.state {
-        DiscussionState::Paused if usage_wait => "waiting-usage",
-        other => state_str(other),
-    };
+    let usage_wait = usage_waiting(d);
+    let state = state_label(d);
     let writes = |actions: &[&'static str]| -> Vec<&'static str> {
         actions.iter().copied().filter(|a| can_write || !matches!(*a, "start" | "answer")).collect()
     };
@@ -165,13 +157,17 @@ pub fn build_status(
     Ok(with_rev(out))
 }
 
-/// 내용이 바뀔 때만 달라지는 짧은 지문. `--wait --since`가 놓친 변화 없이 기다리게 한다.
-fn with_rev(mut status: Value) -> Value {
-    use std::hash::{Hash, Hasher};
-    let mut h = std::collections::hash_map::DefaultHasher::new();
-    status.to_string().hash(&mut h);
-    status["rev"] = json!(format!("{:016x}", h.finish()));
-    status
+/// 사람(CLI)이 사회자에게 주는 답. CRLF·CR은 LF로 바꾸고, 탭·줄바꿈 밖의 제어 문자나 수신함 상한을
+/// 넘는 답은 거절한다 — 기록에 들어가면 이후 사회자 프롬프트가 모두 보내기 검사(`work_prompt`)에 막힌다.
+pub fn normalize_answer(text: &str) -> Result<String, &'static str> {
+    let text = text.replace("\r\n", "\n").replace('\r', "\n");
+    if text.trim().is_empty() {
+        return Err("discussion-answer-empty");
+    }
+    if text.len() > MAX_BYTES || forbidden_control(&text).is_some() {
+        return Err("discussion-answer-invalid");
+    }
+    Ok(text)
 }
 
 /// 기다림을 끝낼 상태: 결론이 났거나 누군가 손을 써야 한다(시작·답·계속).
@@ -220,13 +216,27 @@ fn writes_allowed(ctx: &ControlContext) -> bool {
     ctx.settings.read().unwrap().cli_auto_run_enabled
 }
 
+/// 수신함을 먼저, 저장소를 나중에 읽는다. 가져오기는 저장한 뒤 파일을 지우므로 이 순서여야 그 사이에
+/// 가져간 토의가 둘 중 어디에도 없는 순간(`discussion-not-found`)을 보지 않는다.
+fn read_both(
+    pending: impl FnOnce() -> Vec<String>,
+    load: impl FnOnce() -> Result<Vec<Discussion>, String>,
+) -> Result<(Vec<String>, Vec<Discussion>), String> {
+    let pending = pending();
+    Ok((pending, load()?))
+}
+
+fn snapshot(ctx: &ControlContext, store: &DiscussionStore) -> Result<(Vec<String>, Vec<Discussion>), String> {
+    read_both(|| pending(ctx), || store.load())
+}
+
 fn current_status(ctx: &ControlContext, id: &str) -> Result<Value, String> {
     let store = store(ctx);
-    let discussions = store.load()?;
+    let (pending, discussions) = snapshot(ctx, &store)?;
     let profiles = ctx.store.load();
     build_status(
         &discussions,
-        &pending(ctx),
+        &pending,
         id,
         &|agent_id| profiles.agents.iter().find(|a| a.id == agent_id).map(|a| a.name.clone()),
         &|id| store.existing_memo_path(id).ok().map(|p| p.to_string_lossy().into_owned()),
@@ -235,16 +245,16 @@ fn current_status(ctx: &ControlContext, id: &str) -> Result<Value, String> {
 }
 
 pub(super) async fn list(State(ctx): State<Arc<ControlContext>>) -> Json<Value> {
-    let discussions = match store(&ctx).load() {
-        Ok(d) => d,
+    let (pending, discussions) = match snapshot(&ctx, &store(&ctx)) {
+        Ok(both) => both,
         Err(e) => return fail(e),
     };
-    let mut rows: Vec<Value> = pending(&ctx)
+    let mut rows: Vec<Value> = pending
         .into_iter()
         .filter(|id| !discussions.iter().any(|d| &d.id == id))
         .map(|id| json!({ "id": id, "state": "pending" }))
         .collect();
-    rows.extend(discussions.iter().map(|d| json!({ "id": d.id, "topic": d.topic, "state": state_str(d.state), "updatedAt": d.updated_at })));
+    rows.extend(discussions.iter().map(|d| json!({ "id": d.id, "topic": d.topic, "state": state_label(d), "updatedAt": d.updated_at })));
     ok(rows)
 }
 
@@ -273,17 +283,17 @@ pub(super) async fn status(State(ctx): State<Arc<ControlContext>>, Json(p): Json
 
 pub(super) async fn memo(State(ctx): State<Arc<ControlContext>>, Json(p): Json<IdParams>) -> Json<Value> {
     let store = store(&ctx);
-    let discussions = match store.load() {
-        Ok(d) => d,
+    let (pending, discussions) = match snapshot(&ctx, &store) {
+        Ok(both) => both,
         Err(e) => return fail(e),
     };
     let Some(d) = discussions.iter().find(|d| d.id == p.id) else {
-        return fail(if pending(&ctx).contains(&p.id) { "discussion-pending" } else { "discussion-not-found" });
+        return fail(if pending.contains(&p.id) { "discussion-pending" } else { "discussion-not-found" });
     };
     match store.read_memo(&d.id) {
         Ok(Some(markdown)) => {
             let path = store.existing_memo_path(&d.id).ok().map(|p| p.to_string_lossy().into_owned());
-            ok(json!({ "id": d.id, "state": state_str(d.state), "path": path, "markdown": markdown }))
+            ok(json!({ "id": d.id, "state": state_label(d), "path": path, "markdown": markdown }))
         }
         Ok(None) => fail("discussion-memo-not-found"),
         Err(e) => fail(e),
@@ -293,11 +303,13 @@ pub(super) async fn memo(State(ctx): State<Arc<ControlContext>>, Json(p): Json<I
 /// 방금 만든 토의를 앱이 가져갈 때까지 기다린다. 없거나 끝내 가져가지 않으면 이유 코드.
 async fn await_imported(ctx: &ControlContext, id: &str) -> Result<(), &'static str> {
     let deadline = Instant::now() + IMPORT_WAIT;
+    let store = store(ctx);
     loop {
-        if store(ctx).load().map_err(|_| "discussion-store-unreadable")?.iter().any(|d| d.id == id) {
+        let (pending, discussions) = snapshot(ctx, &store).map_err(|_| "discussion-store-unreadable")?;
+        if discussions.iter().any(|d| d.id == id) {
             return Ok(());
         }
-        if !pending(ctx).iter().any(|p| p == id) {
+        if !pending.iter().any(|p| p == id) {
             return Err("discussion-not-found");
         }
         if Instant::now() >= deadline {
@@ -329,10 +341,12 @@ pub(super) async fn start(State(ctx): State<Arc<ControlContext>>, Json(p): Json<
 }
 
 pub(super) async fn answer(State(ctx): State<Arc<ControlContext>>, Json(p): Json<AnswerParams>) -> Json<Value> {
-    if p.text.trim().is_empty() {
-        return fail("discuss answer: 답할 내용이 필요합니다");
-    }
-    forward(&ctx, "answer", &p.id, json!({ "text": p.text })).await
+    let text = match normalize_answer(&p.text) {
+        Ok(text) => text,
+        Err("discussion-answer-empty") => return fail("discuss answer: 답할 내용이 필요합니다"),
+        Err(code) => return fail(code),
+    };
+    forward(&ctx, "answer", &p.id, json!({ "text": text })).await
 }
 
 #[cfg(test)]
@@ -408,5 +422,51 @@ mod tests {
         let c = status(&[discussion(DiscussionState::Review)], &[], true).unwrap();
         assert_eq!(a["rev"], b["rev"]);
         assert_ne!(a["rev"], c["rev"]);
+    }
+
+    #[test]
+    fn a_discussion_imported_between_the_two_reads_is_still_found() {
+        let tmp = tempfile::tempdir().unwrap();
+        let inbox = tmp.path().join("work-inbox");
+        let store = DiscussionStore::new(tmp.path().to_path_buf());
+        let d = discussion(DiscussionState::Ready);
+        let request = discussion_inbox::DiscussionRequest {
+            version: discussion_inbox::REQUEST_VERSION, id: d.id.clone(), topic: d.topic.clone(), context: String::new(), cwd: None,
+            moderator_agent_id: d.moderator_agent_id.clone(), participants: d.participants.clone(), limits: d.limits.clone(), requested_by: None,
+        };
+        let dir = discussion_inbox::inbox_dir(&inbox);
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("1-a.json"), serde_json::to_vec(&request).unwrap()).unwrap();
+        // 앱이 두 읽기 사이에 가져간다(저장 → 파일 삭제).
+        let (pending, discussions) = read_both(
+            || discussion_inbox::pending_ids(&inbox),
+            || {
+                assert_eq!(discussion_inbox::import(&inbox, &store, &|_| true, 5).unwrap().len(), 1);
+                store.load()
+            },
+        )
+        .unwrap();
+        assert_eq!(status(&discussions, &pending, true).unwrap()["state"], "ready");
+    }
+
+    #[test]
+    fn answers_are_normalized_and_control_characters_rejected() {
+        assert_eq!(normalize_answer("a\r\nb\rc\td").unwrap(), "a\nb\nc\td");
+        assert_eq!(normalize_answer(" \r\n ").unwrap_err(), "discussion-answer-empty");
+        // `git log --color` 같은 출력이 기록에 들어가면 이후 사회자 프롬프트가 모두 막힌다.
+        assert_eq!(normalize_answer("\x1b[33mabc\x1b[0m").unwrap_err(), "discussion-answer-invalid");
+        assert_eq!(normalize_answer("a\0b").unwrap_err(), "discussion-answer-invalid");
+        assert!(normalize_answer(&"x".repeat(MAX_BYTES)).is_ok());
+        assert_eq!(normalize_answer(&"x".repeat(MAX_BYTES + 1)).unwrap_err(), "discussion-answer-invalid");
+    }
+
+    #[test]
+    fn list_and_status_report_a_usage_wait_the_same_way() {
+        let mut waiting = discussion(DiscussionState::Paused);
+        waiting.run = Some(DiscussionRun { pause_reason: Some(DiscussionPauseReason::UsageWait), ..run(DiscussionPhase::Speakers) });
+        assert_eq!(state_label(&waiting), "waiting-usage");
+        assert_eq!(status(&[waiting], &[], true).unwrap()["state"], "waiting-usage");
+        assert_eq!(state_label(&discussion(DiscussionState::WaitingUser)), "waiting_user");
+        assert_eq!(state_label(&discussion(DiscussionState::Paused)), "paused");
     }
 }

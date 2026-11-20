@@ -468,7 +468,7 @@ fn open_discussion_session_request_deserializes_from_fixture() {
     assert_eq!(value.discussion_id, "Xk3pQ9aB");
     assert_eq!(value.agent_id, "V1StGXR8_Z5jdHi6B-myT");
     assert_eq!((value.cols, value.rows), (Some(120), Some(32)));
-    assert!(value.turn.unwrap().starts_with("첫 라운드"));
+    assert!(value.turn.starts_with("첫 라운드"));
 }
 
 #[test]

@@ -20,6 +20,7 @@ import {
   type WorkAgent,
 } from "@shared/types";
 import { normalizeWorkAgent } from "../profile/generate";
+import { t } from "../i18n";
 
 export interface ParticipantDraft {
   agentId: string;
@@ -132,6 +133,39 @@ export function validDiscussionCwd(cwd?: string, windows = IS_WINDOWS): boolean 
   if (!cwd) return true;
   if (!windows) return cwd.startsWith("/");
   return /^[A-Za-z]:[\\/]/.test(cwd) || /^[\\/]{2}[^\\/]+[\\/][^\\/]+/.test(cwd);
+}
+
+// ESC로 시작하는 터미널 제어열(CSI·OSC)과 그 밖의 C0·C1 제어 문자(줄바꿈·탭 제외).
+// eslint-disable-next-line no-control-regex
+const TERMINAL_SEQUENCE = /\x1b(?:\[[0-?]*[ -/]*[@-~]|\][^\x07\x1b]*(?:\x07|\x1b\\)?|[@-_])/g;
+// eslint-disable-next-line no-control-regex
+const CONTROL = /[\x00-\x08\x0b-\x1f\x7f-\x9f]/g;
+
+/**
+ * 토의 기록에 넣을 글. 기록은 다음 차례 프롬프트로 CLI에 다시 들어가는데, 보내기는 줄바꿈·탭 말고 제어 문자를
+ * 거절한다(`work_prompt`). 한 번 들어가면 그 뒤 차례가 모두 실패하므로 기록에 넣기 전에 걸러 낸다.
+ */
+export function cleanDiscussionText(text: string): string {
+  return text.replace(/\r\n?/g, "\n").replace(TERMINAL_SEQUENCE, "").replace(CONTROL, "");
+}
+
+/**
+ * 끝나지 않은 토의(동시 토의는 하나만). 준비·결론 확인·끝남이 아니면 진행 중으로 본다. 결론 확인은 탭을 모두 닫은
+ * 뒤라 다음 토의를 막지 않는다. 오피스 회의실 연출도 이 기준을 쓴다.
+ */
+export function isActiveDiscussion(d: Pick<Discussion, "state">): boolean {
+  return d.state !== "ready" && d.state !== "review" && d.state !== "finished";
+}
+
+/** 사회자 먼저, 이어서 토론자(저장 순서). 카드·메모·회의실 의자가 같은 순서를 쓴다. */
+export function participantsModeratorFirst(d: Pick<Discussion, "participants" | "moderatorAgentId">): DiscussionParticipant[] {
+  return [...d.participants].sort((a, b) => Number(b.agentId === d.moderatorAgentId) - Number(a.agentId === d.moderatorAgentId));
+}
+
+/** 참가자의 역할 표시. 역할이 없으면 "역할 없음", 지워진 역할이면 "지워진 역할". */
+export function participantRoleLabel(roleId: string | undefined, roles: readonly DiscussionRole[]): string {
+  if (!roleId) return t("discussion:board.noRole");
+  return roles.find((r) => r.id === roleId)?.name.trim() || t("discussion:board.missingRole");
 }
 
 /** 사람이 고칠 수 있는 상태. 실행 중인 토의는 3·4단계 실행기가 쥐고 있다. */

@@ -16,12 +16,17 @@ import { WorkDialog } from "../workpanels/WorkDialog";
 import { AgentFace } from "../workpanels/AgentFace";
 import { useRoleStore } from "./roleStore";
 import { sortDiscussions, useDiscussionStore } from "./discussionStore";
-import { discussionDeletable, discussionEditable, discussionElapsedMs, discussionReadOnlySummary, discussionTicking } from "./discussionModel";
+import {
+  discussionDeletable, discussionEditable, discussionElapsedMs, discussionReadOnlySummary, discussionTicking, isActiveDiscussion,
+  participantRoleLabel, participantsModeratorFirst,
+} from "./discussionModel";
+import { useDiscussionSessionStore } from "./discussionSessionStore";
+import { workAgentLabel } from "../profile/generate";
 import { usageBlockText, useNow } from "../workpanels/AutoRunUsage";
 import { discussionReadOnlyMode } from "@shared/types";
 import { DiscussionEditor } from "./DiscussionEditor";
 import {
-  answerDiscussion, confirmDiscussion, discussionStartBlockedReason, endDiscussion, isActiveDiscussion, pauseDiscussion, resumeDiscussion,
+  answerDiscussion, confirmDiscussion, discussionStartBlockedReason, endDiscussion, pauseDiscussion, resumeDiscussion,
   startDiscussion,
 } from "./discussionRun";
 import "./discussion.css";
@@ -51,7 +56,7 @@ export function DiscussionSection() {
       {sortDiscussions(discussions).map((d) => <DiscussionCard key={d.id} discussion={d} selected={target?.id === d.id} onOpen={() => openDialog({ kind: "view", id: d.id })} />)}
     </details>}
     {dialog?.kind === "new" && <DiscussionEditor onClose={close} />}
-    {dialog?.kind === "edit" && target && <DiscussionEditor key={target.id} base={target} onClose={() => openDialog({ kind: "view", id: target.id })} />}
+    {dialog?.kind === "edit" && target && discussionEditable(target) && <DiscussionEditor key={target.id} base={target} onClose={() => openDialog({ kind: "view", id: target.id })} />}
     {dialog?.kind === "view" && target && <DiscussionDetail key={target.id} discussion={target} onClose={close} />}
   </>;
 }
@@ -127,12 +132,12 @@ function DiscussionDetail({ discussion: d, onClose }: { discussion: Discussion; 
   const openDialog = useDiscussionStore((s) => s.openDialog);
   const [confirming, setConfirming] = useState(false);
   const [failed, setFailed] = useState(false);
-  const roleName = (roleId?: string) => !roleId ? t("board.noRole") : roles.find((r) => r.id === roleId)?.name ?? t("board.missingRole");
+  // 준비 상태에서 눌러 둔 삭제 확인이 진행을 지나 끝난 뒤 한 번의 클릭으로 지우지 않게, 상태가 바뀌면 되돌린다.
+  useEffect(() => { setConfirming(false); }, [d.state]);
   const remove = async () => {
     setFailed(false);
     try { await useDiscussionStore.getState().remove(d.id); } catch { setFailed(true); }
   };
-  const ordered = [...d.participants].sort((a, b) => Number(b.agentId === d.moderatorAgentId) - Number(a.agentId === d.moderatorAgentId));
   return <WorkDialog title={d.topic} id={d.id} onClose={onClose} className="discussion-detail">
     <p><span className={`work-status-chip discussion-state-chip state-${d.state}`}>{t(`states.${d.state}`)}</span>
       {d.state !== "ready" && <RunMeter discussion={d} />}</p>
@@ -149,11 +154,11 @@ function DiscussionDetail({ discussion: d, onClose }: { discussion: Discussion; 
     </dl>
     <h3 className="discussion-subtitle">{t("detail.participants")}</h3>
     <ul className="discussion-people">
-      {ordered.map((p) => <li key={p.agentId}>
+      {participantsModeratorFirst(d).map((p) => <li key={p.agentId}>
         <AgentFace agentId={p.agentId} />
         <span><strong>{agents[p.agentId]?.name ?? t("board.missingAgent")}</strong>
           {p.agentId === d.moderatorAgentId && <small className="discussion-moderator-badge">{t("detail.moderator")}</small>}
-          <small>{roleName(p.roleId)} · {[p.agent.cli, p.agent.model, p.agent.effort].filter(Boolean).join(" · ")}
+          <small>{participantRoleLabel(p.roleId, roles)} · {workAgentLabel(p.agent)}
             {" · "}<span className={`discussion-readonly readonly-${discussionReadOnlyMode(p.agent.cli)}`}>{t(`readOnly.mode.${discussionReadOnlyMode(p.agent.cli)}`)}</span></small></span>
       </li>)}
     </ul>
@@ -174,6 +179,8 @@ function RunPanel({ discussion: d }: { discussion: Discussion }) {
   const agents = useAppStore((s) => s.agents);
   const observerEnabled = useAppStore((s) => s.appSettings.observerEnabled);
   const discussions = useDiscussionStore((s) => s.discussions);
+  // 시작 막힘 판정이 살아 있는 토의 탭을 본다. 앞 토의를 끝낸 뒤 탭이 닫히면 다시 그린다.
+  useDiscussionSessionStore((s) => s.sessions);
   const [answer, setAnswer] = useState("");
   const [ending, setEnding] = useState(false);
   const [error, setError] = useState<string>();

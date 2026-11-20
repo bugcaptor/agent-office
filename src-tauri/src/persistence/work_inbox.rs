@@ -346,7 +346,8 @@ fn valid_code(code: &str) -> bool {
 fn field(value: &str) -> String {
     value.chars().map(|c| if c.is_control() { ' ' } else { c }).take(512).collect()
 }
-fn reject(root: &Path, name: &str, code: &str, detail: Option<&str>) -> std::io::Result<()> {
+/// `root/name`을 `root/rejected/`로 옮기고 이유를 `<name>.error`에 남긴다. 토의 수신함도 쓴다.
+pub(super) fn reject(root: &Path, name: &str, code: &str, detail: Option<&str>) -> std::io::Result<()> {
     let dir = root.join("rejected");
     fs::create_dir_all(&dir)?;
     // 같은 생산자가 이름을 재사용해도 이전 거부 파일을 보존한다.

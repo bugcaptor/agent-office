@@ -4,6 +4,7 @@
 //! 파일은 참가자마다 하나(`discussions/turns/<세션 agentId>.md`)이고 다시 쓰면 바뀐다.
 //! 앱은 그 차례를 보낸 뒤에 쓰인 것만 읽는다(`discussion_session::collect`).
 
+use crate::persistence::durable::write_atomic;
 use crate::persistence::work_inbox::{forbidden_control, MAX_BYTES};
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
@@ -47,17 +48,17 @@ pub fn run_with(args: &[String], env: &DiscussEnv, stdin: &mut dyn Read, err: &m
 fn say(args: &[String], env: &DiscussEnv, stdin: &mut dyn Read, err: &mut dyn Write) -> i32 {
     let source = match args {
         [] => "-",
+        [flag] if matches!(flag.as_str(), "--help" | "-h") => {
+            let _ = write!(err, "{USAGE}");
+            return 0;
+        }
         [text] => text.as_str(),
         _ => return usage_error(err, "say takes one argument: [text | -]"),
     };
     let body = if source == "-" {
-        let mut bytes = vec![];
-        if let Err(e) = stdin.take((MAX_BYTES + 1) as u64).read_to_end(&mut bytes) {
-            return fail(err, &format!("failed to read stdin: {e}"));
-        }
-        match String::from_utf8(bytes) {
+        match read_stdin(stdin, "utterance") {
             Ok(text) => text,
-            Err(_) => return fail(err, "stdin is not UTF-8"),
+            Err(message) => return fail(err, &message),
         }
     } else {
         source.to_string()
@@ -75,11 +76,7 @@ fn say(args: &[String], env: &DiscussEnv, stdin: &mut dyn Read, err: &mut dyn Wr
     let Some(path) = crate::discussion_session::turn_file(app_data, session) else {
         return fail(err, &format!("invalid discussion session id: {session:?}"));
     };
-    let written = path
-        .parent()
-        .map_or(Ok(()), std::fs::create_dir_all)
-        .and_then(|()| crate::office_instructions::write_atomic(&path, format!("{body}\n").as_bytes()));
-    match written {
+    match write_atomic(&path, format!("{body}\n").as_bytes()) {
         Ok(()) => 0,
         Err(e) => fail(err, &format!("failed to write {}: {e}", path.display())),
     }
@@ -180,11 +177,10 @@ pub fn create(
     if topic.is_empty() { return create_fail(err, "the topic is empty"); }
     let context = match positional.get(1).map(String::as_str) {
         None => String::new(),
-        Some("-") => {
-            let mut bytes = vec![];
-            if let Err(e) = stdin.take((MAX_BYTES + 1) as u64).read_to_end(&mut bytes) { return create_fail(err, &format!("failed to read stdin: {e}")); }
-            match String::from_utf8(bytes) { Ok(t) => t, Err(_) => return create_fail(err, "stdin is not UTF-8") }
-        }
+        Some("-") => match read_stdin(stdin, "context") {
+            Ok(text) => text,
+            Err(message) => return create_fail(err, &message),
+        },
         Some(text) => text.to_string(),
     };
     let context = context.replace("\r\n", "\n").trim().to_string();
@@ -275,10 +271,14 @@ pub fn create(
     };
     let bytes = serde_json::to_vec_pretty(&request).expect("discussion request serializes");
     if bytes.len() > MAX_BYTES { return create_fail(err, &format!("discussion exceeds {MAX_BYTES} bytes")); }
+    // 앱 수신함과 같은 검사. 여기서 통과하면(rc 0) 앱이 거부하지 않는다.
+    let known = |id: &str| profiles.iter().any(|p| p.id == id);
+    if let Err(code) = crate::persistence::discussion_inbox::discussion_from_request(request.clone(), &known, now.timestamp_millis()) {
+        return create_fail(err, &format!("the app would reject this discussion ({code})"));
+    }
     let dir = crate::persistence::discussion_inbox::inbox_dir(inbox);
     let path = dir.join(format!("{}-{}.json", now.format("%Y%m%dT%H%M%S%3fZ"), &random[8..16]));
-    let written = std::fs::create_dir_all(&dir).and_then(|()| crate::office_instructions::write_atomic(&path, &bytes));
-    match written {
+    match write_atomic(&path, &bytes) {
         Ok(()) => {
             let _ = writeln!(err, "office-task: the discussion is ready; a person starts it from its card in the app");
             let _ = writeln!(out, "{}", request.id);
@@ -314,14 +314,22 @@ fn parse_in(value: &str, flag: &str, (lo, hi): (u32, u32)) -> Result<u32, String
 
 /// 팀원 id 또는 (하나뿐인) 이름.
 fn resolve_member(query: &str, profiles: &[crate::types::AgentProfile]) -> Result<String, String> {
-    let query = query.trim();
-    if let Some(p) = profiles.iter().find(|p| p.id == query) { return Ok(p.id.clone()); }
-    let named: Vec<_> = profiles.iter().filter(|p| p.name.trim() == query).collect();
-    match named.as_slice() {
-        [one] => Ok(one.id.clone()),
-        [] => Err(format!("no team member named {query:?}; use a team member name or id as shown in the app")),
-        _ => Err(format!("several team members are named {query:?}; use the member id")),
+    match crate::work_inbox_cli::member_id(query, profiles.iter().map(|p| (p.id.as_str(), p.name.as_str()))) {
+        Ok(id) => Ok(id.to_string()),
+        Err(0) => Err(format!("no team member named {:?}; use a team member name or id as shown in the app", query.trim())),
+        Err(_) => Err(format!("several team members are named {:?}; use the member id", query.trim())),
     }
+}
+
+/// stdin을 상한까지 읽는다. 넘으면 UTF-8로 풀기 전에 알린다 — 잘린 자리에서 글자가 갈라져
+/// "UTF-8이 아님"으로 보이지 않게.
+fn read_stdin(stdin: &mut dyn Read, what: &str) -> Result<String, String> {
+    let mut bytes = vec![];
+    stdin.take((MAX_BYTES + 1) as u64).read_to_end(&mut bytes).map_err(|e| format!("failed to read stdin: {e}"))?;
+    if bytes.len() > MAX_BYTES {
+        return Err(format!("{what} exceeds {MAX_BYTES} bytes"));
+    }
+    String::from_utf8(bytes).map_err(|_| "stdin is not UTF-8".into())
 }
 
 fn position_of(query: &str, profiles: &[crate::types::AgentProfile], ids: &[String]) -> Option<usize> {
@@ -423,6 +431,31 @@ mod tests {
         let bad = DiscussEnv { app_data: Some(tmp.path().into()), session: Some("task-chat-t1".into()) };
         assert_eq!(call(&["say", "hi"], &bad, "").0, 1);
         assert!(!tmp.path().join("discussions").exists());
+    }
+
+    #[test]
+    fn say_help_prints_usage_instead_of_submitting_it() {
+        let tmp = tempfile::tempdir().unwrap();
+        for flag in ["--help", "-h"] {
+            let (code, err) = call(&["say", flag], &env(tmp.path()), "");
+            assert_eq!(code, 0, "{flag}");
+            assert!(err.starts_with("usage: office-discuss"), "{flag}: {err}");
+        }
+        assert!(!file(tmp.path()).exists());
+    }
+
+    #[test]
+    fn oversized_stdin_reports_the_size_even_when_the_cut_splits_a_character() {
+        let tmp = tempfile::tempdir().unwrap();
+        // 3바이트 글자라 상한+1에서 잘리면 글자 중간이다.
+        let big = "가".repeat(MAX_BYTES / 3 + 1);
+        let (code, err) = call(&["say", "-"], &env(tmp.path()), &big);
+        assert_eq!(code, 1);
+        assert!(err.contains("exceeds"), "{err}");
+        let team = team(true);
+        let (code, _, err) = create_call(&["--moderator", "Mo", "--with", "Ada", "주제", "-"], &create_env(team.path()), &big);
+        assert_eq!(code, 1);
+        assert!(err.contains("exceeds"), "{err}");
     }
 
     fn profile(id: &str, name: &str, extra: serde_json::Value) -> serde_json::Value {
@@ -547,6 +580,14 @@ mod tests {
             assert_eq!(code, 1, "{args:?}");
             assert!(err.contains(message), "{args:?}: {err}");
         }
+        assert!(requests(tmp.path()).is_empty());
+        // 앱 수신함이 거부할 요청(여기서는 수신함 id 규칙에 맞지 않는 팀원 id)은 쓰지 않는다.
+        let mut state: serde_json::Value = serde_json::from_slice(&std::fs::read(tmp.path().join("profiles.json")).unwrap()).unwrap();
+        state["agents"].as_array_mut().unwrap().push(profile("p.dot", "Dot", serde_json::json!({})));
+        std::fs::write(tmp.path().join("profiles.json"), state.to_string()).unwrap();
+        let (code, _, err) = create_call(&["--moderator", "Mo", "--with", "Dot", "주제"], &env, "");
+        assert_eq!(code, 1);
+        assert!(err.contains("invalid-member"), "{err}");
         assert!(requests(tmp.path()).is_empty());
         // 프로필 파일이 없으면 만들 수 없다.
         let empty = tempfile::tempdir().unwrap();

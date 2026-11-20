@@ -8,6 +8,7 @@ import { tauriApi } from "../ipc/tauriApi";
 import { useAppStore } from "../store/appStore";
 import { normalizeWorkAgent } from "../profile/generate";
 import { terminalRegistry } from "../terminal/TerminalRegistry";
+import { closeSideTab, isLiveStatus as isLive, leaveSideTab, sideTabInitialSize, sideTabStatus } from "../terminal/sideTabs";
 import { useWorkItemStore } from "./workItemStore";
 import { useSessionSummaryStore } from "./sessionSummaryStore";
 import { workItemTitle } from "./workItemDraft";
@@ -41,7 +42,6 @@ export const useTaskChatStore = create<TaskChatState>(() => ({ chats: {}, order:
 
 export { isTaskChatId };
 export function taskChatId(taskId: string): string { return `${TASK_CHAT_PREFIX}${taskId}`; }
-function isLive(status: SessionStatus | undefined): boolean { return status === "starting" || status === "running"; }
 export function liveTaskChats(): TaskChat[] {
   const { chats, order } = useTaskChatStore.getState();
   return order.map((id) => chats[id]).filter((chat) => chat && isLive(chat.status));
@@ -152,16 +152,6 @@ export function buildTaskChatContext(item: WorkItem): TaskChatContext {
   return context;
 }
 
-/** 새 세션의 첫 크기. 지금 보이는(또는 최근) 캐릭터 터미널 크기를 빌린다. 탭을 열면 다시 맞춘다. */
-function initialSize(): { cols?: number; rows?: number } {
-  const { activeTerminalAgentId, recentAgentIds, sessions } = useAppStore.getState();
-  const chat = activeTerminalAgentId ? useTaskChatStore.getState().chats[activeTerminalAgentId] : undefined;
-  const source = chat ? undefined : sessions[activeTerminalAgentId ?? recentAgentIds[0] ?? ""];
-  const fitted = activeTerminalAgentId && terminalRegistry.get(activeTerminalAgentId)?.term;
-  if (fitted && fitted.cols > 0 && fitted.rows > 0) return { cols: fitted.cols, rows: fitted.rows };
-  return source ? { cols: source.cols, rows: source.rows } : {};
-}
-
 function forget(agentId: string): void {
   terminalRegistry.destroy(agentId);
   latest.delete(agentId);
@@ -193,7 +183,7 @@ export async function openTaskChat(taskId: string): Promise<string | undefined> 
     taskId, agent: normalizeWorkAgent(item.agent ?? profile?.defaultAgent ?? { cli: "claude" }),
     ...(cwd ? { cwd } : {}),
     ...(profile?.shell ? { shell: profile.shell } : {}),
-    ...initialSize(),
+    ...sideTabInitialSize(),
     context: buildTaskChatContext(item),
   };
   useTaskChatStore.setState((s) => ({ opening: { ...s.opening, [taskId]: true } }));
@@ -210,6 +200,8 @@ export async function openTaskChat(taskId: string): Promise<string | undefined> 
     return undefined;
   } catch (error) {
     terminalRegistry.destroy(agentId);
+    // 끝난 탭을 보던 중 다시 열다 실패하면 그 탭은 이미 사라졌다. 빈 터미널 영역에 두지 않는다.
+    leaveSideTab(agentId, []);
     return error instanceof Error ? error.message : String(error);
   } finally {
     useTaskChatStore.setState((s) => { const opening = { ...s.opening }; delete opening[taskId]; return { opening }; });
@@ -229,23 +221,16 @@ export async function closeTaskChat(agentId: string): Promise<void> {
   const { chats, order } = useTaskChatStore.getState();
   const chat = chats[agentId];
   if (!chat) return;
-  const app = useAppStore.getState();
-  if (app.activeTerminalAgentId === agentId) {
-    const idx = order.indexOf(agentId);
-    const next = order[idx + 1] ?? order[idx - 1] ?? app.recentAgentIds[0];
-    if (next) app.openTerminal(next);
-    else app.closeTerminal();
-  }
-  forget(agentId);
-  if (isLive(chat.status)) {
-    try { await tauriApi.disposeSession(agentId); } catch (err) { console.warn(`task-chat: dispose failed for ${agentId}`, err); }
-  }
+  await closeSideTab(agentId, { order, live: isLive(chat.status), forget, logTag: "task-chat" });
 }
 
 /** 마지막 세션 상태(탭이 생기기 전에 온 것도). 열기 결과의 sessionId와 맞으면 그 상태로 시작한다. */
 const latest = new Map<string, { sessionId: string; status: SessionStatus }>();
 export function applyTaskChatState(e: SessionStateEvent): void {
-  const status: SessionStatus = e.state === "disposed" ? "exited" : e.state;
+  const status = sideTabStatus(e);
+  const { chats, opening } = useTaskChatStore.getState();
+  // 닫은 탭의 세션을 버릴 때 오는 끝 신호는 붙일 곳이 없다. 기억하면 닫을 때마다 항목이 남는다.
+  if (!latest.has(e.agentId) && !chats[e.agentId] && !opening[e.agentId.slice(TASK_CHAT_PREFIX.length)] && status === "exited") return;
   latest.set(e.agentId, { sessionId: e.sessionId, status });
   useTaskChatStore.setState((s) => {
     const chat = s.chats[e.agentId];

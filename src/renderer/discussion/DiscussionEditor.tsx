@@ -9,6 +9,7 @@ import { DISCUSSION_LIMIT_RANGES, DISCUSSION_MAX_DEBATERS, discussionProblem, ty
 import { useAppStore } from "../store/appStore";
 import { WorkDialog } from "../workpanels/WorkDialog";
 import { WorkAgentFields } from "../workpanels/WorkAgentFields";
+import { workAgentLabel } from "../profile/generate";
 import { useRoleStore } from "./roleStore";
 import { useDiscussionStore } from "./discussionStore";
 import {
@@ -88,7 +89,7 @@ export function DiscussionEditor({ base, onClose }: { base?: Discussion; onClose
         </select></label>
       {onRemove && <button type="button" className="pixel-btn discussion-row-remove" aria-label={t("editor.removeDebater", { name: name(value.agentId) })} title={t("editor.removeDebater", { name: name(value.agentId) })} onClick={onRemove}>×</button>}
       <details className="discussion-agent-options">
-        <summary>{[value.agent.cli, value.agent.model, value.agent.effort].filter(Boolean).join(" · ")}</summary>
+        <summary>{workAgentLabel(value.agent)}</summary>
         <WorkAgentFields value={value.agent} labels={{ field: t("editor.agent"), empty: t("editor.agentDefault") }}
           onChange={(agent) => onChange(agent
             ? { ...value, agent, agentTouched: true }

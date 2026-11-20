@@ -29,7 +29,8 @@ import {
   useDiscussionSessionStore,
 } from "./discussionSessionStore";
 import { useRoleStore } from "./roleStore";
-import { discussionElapsedMs, discussionTicking, validDiscussionCwd } from "./discussionModel";
+import { cleanDiscussionText, discussionElapsedMs, discussionTicking, isActiveDiscussion, validDiscussionCwd } from "./discussionModel";
+import { isLiveStatus as isLive } from "../terminal/sideTabs";
 import { tokensCost } from "../usage/usageForecast";
 import { assessTurn, refreshUsage, workerProvider } from "../usage/usageForecastStore";
 import { composeDecisionMemo, parseWrapMemo, wrapMemoEmpty, type MemoInput, type WrapMemo } from "./discussionMemo";
@@ -48,15 +49,10 @@ export const MODERATOR_FORMAT = [
   WRAP_FORMAT,
 ].join("\n");
 
+/** 사람 답 상한(문자). */
+const MAX_ANSWER_CHARS = 32_000;
 /** 강제 정리 차례의 유예(진행 시간 기준). 넘기면 요약 없이 끝낸다. 정리가 상한을 크게 넘기지 않게 한다. */
 export const WRAP_GRACE_MS = 5 * 60_000;
-/**
- * 끝나지 않은 토의(동시 토의는 하나만). 준비·결론 확인·끝남이 아니면 진행 중으로 본다. 결론 확인은 탭을 모두 닫은
- * 뒤라 다음 토의를 막지 않는다.
- */
-export function isActiveDiscussion(d: Pick<Discussion, "state">): boolean {
-  return d.state !== "ready" && d.state !== "review" && d.state !== "finished";
-}
 
 // ── 사회자 지시 ────────────────────────────────────────────────────────
 
@@ -95,7 +91,7 @@ function jsonObjects(text: string): unknown[] {
   }
   return out;
 }
-const str = (v: unknown) => (typeof v === "string" ? v.trim() : "");
+const str = (v: unknown) => (typeof v === "string" ? cleanDiscussionText(v).trim() : "");
 
 /**
  * 사회자 발언에서 지시를 뽑는다. 산문 안이나 코드 블록 안의 JSON 객체 하나를 읽는다(마지막 응답 경로는
@@ -232,7 +228,7 @@ function patchTurn(id: string, agentId: string, patch: Partial<DiscussionTurn>):
   updateRun(id, (run) => ({ ...run, turns: run.turns.map((turn) => (turn.agentId === agentId ? { ...turn, ...patch } : turn)) }));
 }
 function utterance(d: Discussion, kind: DiscussionUtterance["kind"], text: string, agentId?: string): DiscussionUtterance {
-  return { at: Date.now(), round: d.round, kind, ...(agentId ? { agentId } : {}), text };
+  return { at: Date.now(), round: d.round, kind, ...(agentId ? { agentId } : {}), text: cleanDiscussionText(text) };
 }
 function pause(id: string, reason: DiscussionPauseReason, detail?: string): void {
   update(id, (d) => (d.run ? { ...d, state: "paused", run: { ...d.run, pauseReason: reason, pauseDetail: detail, usageWait: undefined } } : d));
@@ -305,7 +301,8 @@ export function resumeDiscussion(id: string, options: { auto?: boolean } = {}): 
 /** 사회자 질문에 사람이 답한다. 답은 기록에 남고 다시 사회자 차례가 된다. */
 export function answerDiscussion(id: string, text: string): boolean {
   const d = find(id);
-  const answer = text.trim();
+  // 발언과 같은 상한(Rust `MAX_UTTERANCE_CHARS`). 기록 전체가 새 세션의 첫 프롬프트로 다시 들어간다.
+  const answer = cleanDiscussionText(text).trim().slice(0, MAX_ANSWER_CHARS).trim();
   if (!d?.run || d.state !== "waiting_user" || d.run.phase !== "user" || !answer) return false;
   update(id, (latest) => ({
     ...latest, state: "running", transcript: [...latest.transcript, utterance(latest, "answer", answer)],
@@ -499,7 +496,6 @@ function sessionOf(d: Discussion, agentId: string) {
   const key = discussionSessionAgentId(d.id, agentId);
   return key ? useDiscussionSessionStore.getState().sessions[key] : undefined;
 }
-const isLive = (status: string | undefined) => status === "starting" || status === "running";
 
 /**
  * 차례를 넣는다. 살아 있는 세션이면 델타와 함께 보내고(턴이 도는 중이면 기다린다), 없으면 첫 프롬프트에 실어 연다.

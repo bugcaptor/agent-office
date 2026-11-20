@@ -9,6 +9,8 @@ import { useDiscussionStore } from "./discussionStore";
 export async function receiveDiscussionInbox(): Promise<void> {
   const store = useDiscussionStore.getState();
   // 읽는 중에 가져오면 로드 결과가 붙인 것을 덮을 수 있다. 다 읽은 뒤에 가져온다. 손상 파일이면 저장도 거부된다.
+  // 손상 파일이면 사람이 다시 읽기를 누를 때까지 두드리지 않는다(주기마다 읽으면 오류 알림이 깜빡인다).
+  if (store.status === "error") return;
   if (store.status !== "ready") {
     await store.ensureLoaded();
     if (useDiscussionStore.getState().status !== "ready") return;

@@ -87,5 +87,37 @@ describe("토의 수신함", () => {
     api.loadDiscussions.mockRejectedValue(new Error("discussions-corrupt"));
     await receiveDiscussionInbox();
     expect(api.scanDiscussionInbox).not.toHaveBeenCalled();
+
+    // 손상으로 멈춘 뒤에는 주기마다 다시 읽지 않는다(오류 알림이 깜빡이지 않게). 다시 읽기는 사람이 누른다.
+    api.loadDiscussions.mockClear();
+    await receiveDiscussionInbox();
+    expect(useDiscussionStore.getState().status).toBe("error");
+    expect(api.loadDiscussions).not.toHaveBeenCalled();
+    expect(api.scanDiscussionInbox).not.toHaveBeenCalled();
+  });
+});
+
+describe("토의 고치기 저장", () => {
+  it("고치는 사이 시작된 토의는 덮지 않는다", async () => {
+    const running = discussion("d1", { state: "running", round: 2 });
+    useDiscussionStore.setState({ discussions: [running], status: "ready" });
+    await expect(useDiscussionStore.getState().save(discussion("d1"))).rejects.toThrow("discussion-not-editable");
+    expect(api.saveDiscussion).not.toHaveBeenCalled();
+    expect(useDiscussionStore.getState().discussions).toEqual([running]);
+  });
+
+  it("저장을 기다리는 사이 시작되면 디스크에는 실행기 저장이 뒤에 쓰이고 스토어는 진행 상태를 지킨다", async () => {
+    useDiscussionStore.setState({ discussions: [discussion("d1")], status: "ready" });
+    let release: (() => void) | undefined;
+    api.saveDiscussion.mockImplementationOnce(() => new Promise<void>((resolve) => { release = resolve; })).mockResolvedValue(undefined);
+    const saving = useDiscussionStore.getState().save(discussion("d1", { topic: "edited" }));
+    const started = discussion("d1", { state: "running", round: 1 });
+    void useDiscussionStore.getState().commit(started);
+    await vi.waitFor(() => expect(release).toBeTypeOf("function"));
+    release!();
+    await saving;
+    await useDiscussionStore.getState().commit(started);
+    expect(useDiscussionStore.getState().discussions).toEqual([started]);
+    expect(api.saveDiscussion.mock.calls.map(([d]) => (d as Discussion).state)).toEqual(["ready", "running", "running"]);
   });
 });

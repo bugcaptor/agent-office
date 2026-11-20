@@ -396,11 +396,11 @@ pub async fn save_discussion_memo(app_state: State<'_, AppState>, id: String, ma
 /// 늘 준비 상태로 들어오고 사람이 카드에서 시작한다. 없는 팀원을 넣은 요청은 `rejected/`로 옮긴다.
 #[tauri::command(rename_all = "camelCase")]
 pub async fn scan_discussion_inbox(app_state: State<'_, AppState>) -> Result<Vec<Discussion>, String> {
-    let agents: std::collections::HashSet<String> = app_state.store.load().agents.into_iter().map(|a| a.id).collect();
-    crate::persistence::discussion_inbox::import(
+    // 팀원 목록을 읽지 못하면 가져오지 않는다(빈 목록이면 모든 요청이 거부된다).
+    crate::persistence::discussion_inbox::import_for_profiles(
         &app_state.app_data_dir.join("work-inbox"),
         &app_state.discussion_store,
-        &|id| agents.contains(id),
+        &app_state.store,
         chrono::Utc::now().timestamp_millis(),
     )
 }

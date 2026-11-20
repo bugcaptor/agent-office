@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import fixture from "@shared/contract-fixtures/discussions-file.json";
 import { discussionProblem, type AgentProfile, type Discussion, type DiscussionRole, type DiscussionsFile } from "@shared/types";
 import {
-  defaultDiscussionLimits, discussionFromDraft, draftFromDiscussion, newDiscussionDraft, participantDraft, validDiscussionCwd, withRole,
+  cleanDiscussionText, defaultDiscussionLimits, discussionFromDraft, isActiveDiscussion, participantRoleLabel, participantsModeratorFirst, draftFromDiscussion, newDiscussionDraft, participantDraft, validDiscussionCwd, withRole,
 } from "../discussionModel";
 
 const file = fixture as DiscussionsFile;
@@ -99,5 +99,25 @@ describe("작업 폴더", () => {
       expect(validDiscussionCwd("C:work", windows)).toBe(false);
     }
     expect(validDiscussionCwd("\\\\server\\share", true)).toBe(true);
+  });
+});
+
+describe("기록 글과 표시", () => {
+  it("터미널 제어열과 제어 문자를 지우고 CR은 줄바꿈으로 바꾼다", () => {
+    expect(cleanDiscussionText("\u001b[1;31mred\u001b[0m\r\nnext\rline\ttab\u0000\u007f\u009b")).toBe("red\nnext\nline\ttab");
+    expect(cleanDiscussionText("\u001b]0;title\u0007body")).toBe("body");
+    expect(cleanDiscussionText("한글 그대로")).toBe("한글 그대로");
+  });
+
+  it("준비·결론 확인·끝남만 끝나지 않은 토의가 아니다", () => {
+    const active = (["ready", "running", "waiting_user", "wrapping_up", "review", "finished", "paused"] as const).filter((state) => isActiveDiscussion({ state }));
+    expect(active).toEqual(["running", "waiting_user", "wrapping_up", "paused"]);
+  });
+
+  it("사회자 먼저 정렬하고, 역할 표시는 없음·지워짐을 구분한다", () => {
+    const d = { moderatorAgentId: "m", participants: [{ agentId: "a", agent: { cli: "claude" as const } }, { agentId: "m", agent: { cli: "claude" as const } }] };
+    expect(participantsModeratorFirst(d).map((p) => p.agentId)).toEqual(["m", "a"]);
+    expect(participantRoleLabel("critic", roles)).toBe("비판자");
+    expect(participantRoleLabel(undefined, roles)).not.toBe(participantRoleLabel("gone", roles));
   });
 });

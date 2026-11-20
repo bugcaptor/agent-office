@@ -19,7 +19,7 @@ use crate::httpapi::{fail, ok};
 use crate::types::{WorkFollowUpRequest, WorkItem, WorkStatus};
 
 use super::turns::{TurnObservation, TurnPhase};
-use super::ControlContext;
+use super::{enum_str, with_rev, ControlContext};
 
 /// 같은 단계에서 CLI가 재개할 수 있는 횟수. 넘으면 사람에게 넘겨야 한다.
 pub const MAX_CTL_RESUMES: usize = 2;
@@ -219,15 +219,6 @@ pub fn build_status(
         out["log"] = json!(log[log.len().saturating_sub(LOG_TAIL)..]);
     }
     Ok(with_rev(out))
-}
-
-/// 내용이 바뀔 때만 달라지는 짧은 지문. `--wait --since`가 놓친 변화 없이 기다리게 한다.
-fn with_rev(mut status: Value) -> Value {
-    use std::hash::{Hash, Hasher};
-    let mut h = std::collections::hash_map::DefaultHasher::new();
-    status.to_string().hash(&mut h);
-    status["rev"] = json!(format!("{:016x}", h.finish()));
-    status
 }
 
 /// 기다림을 끝낼 상태: 끝났거나 누군가 손을 써야 한다.
@@ -494,7 +485,8 @@ fn default_cli(ctx: &ControlContext, agent_id: &str) -> String {
         .into_iter()
         .find(|a| a.id == agent_id)
         .and_then(|a| a.default_agent)
-        .map(|w| serde_json::to_value(w.cli).ok().and_then(|v| v.as_str().map(str::to_string)).unwrap_or_else(|| "claude".into()))
+        .map(|w| enum_str(&w.cli))
+        .filter(|cli| !cli.is_empty())
         .unwrap_or_else(|| "claude".into())
 }
 

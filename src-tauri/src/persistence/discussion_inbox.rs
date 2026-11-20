@@ -9,6 +9,7 @@
 // - 이미 있는 id는 덮지 않는다. 앞서 가져갔는데 파일 삭제만 실패한 것으로 보고 파일만 지운다.
 // - 읽을 수 없거나 규칙에 어긋나는 파일은 `rejected/`로 옮기고 이유를 `.error`에 남긴다.
 
+use std::collections::HashSet;
 use std::fs;
 use std::io::Read;
 use std::path::{Path, PathBuf};
@@ -16,7 +17,8 @@ use std::path::{Path, PathBuf};
 use serde::{Deserialize, Serialize};
 
 use super::discussion_store::{discussion_problem, DiscussionStore};
-use super::work_inbox::{forbidden_control, valid_task_id, MAX_BYTES};
+use super::profile_store::ProfileStore;
+use super::work_inbox::{forbidden_control, reject, valid_task_id, MAX_BYTES};
 use crate::types::{Discussion, DiscussionLimits, DiscussionParticipant, DiscussionState};
 
 /// 요청 파일 형식 버전.
@@ -39,7 +41,7 @@ pub struct DiscussionRequest {
     pub participants: Vec<DiscussionParticipant>,
     #[serde(default)]
     pub limits: DiscussionLimits,
-    /// 만든 에이전트(세션 env). 기록용.
+    /// 만든 에이전트(세션 env). 앱은 저장하지 않는다 — 수신함·`rejected/` 파일을 보는 사람을 위한 기록.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub requested_by: Option<String>,
 }
@@ -121,10 +123,13 @@ pub fn discussion_from_request(
     Ok(discussion)
 }
 
-/// 아직 가져가지 않은 요청들의 토의 id(읽을 수 있는 것만).
-pub fn pending_ids(work_inbox: &Path) -> Vec<String> {
-    let dir = inbox_dir(work_inbox);
-    let Ok(entries) = fs::read_dir(&dir) else { return vec![] };
+/// 수신함의 요청 파일 이름. 파일 이름(시각) 순. 폴더가 없으면 빈 목록.
+fn request_names(dir: &Path) -> std::io::Result<Vec<String>> {
+    let entries = match fs::read_dir(dir) {
+        Ok(entries) => entries,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(vec![]),
+        Err(e) => return Err(e),
+    };
     let mut names: Vec<String> = entries
         .flatten()
         .filter(|e| e.file_type().map(|t| t.is_file()).unwrap_or(false))
@@ -132,7 +137,14 @@ pub fn pending_ids(work_inbox: &Path) -> Vec<String> {
         .filter(|n| accepted_name(n))
         .collect();
     names.sort();
-    names
+    Ok(names)
+}
+
+/// 아직 가져가지 않은 요청들의 토의 id(읽을 수 있는 것만).
+pub fn pending_ids(work_inbox: &Path) -> Vec<String> {
+    let dir = inbox_dir(work_inbox);
+    request_names(&dir)
+        .unwrap_or_default()
         .into_iter()
         .filter_map(|name| read_request(&dir.join(name)).ok())
         .map(|r| r.id)
@@ -149,19 +161,6 @@ fn read_request(path: &Path) -> Result<DiscussionRequest, &'static str> {
     serde_json::from_slice(&bytes).map_err(|_| "invalid-json")
 }
 
-fn reject(dir: &Path, name: &str, code: &str) -> std::io::Result<()> {
-    let rejected = dir.join("rejected");
-    fs::create_dir_all(&rejected)?;
-    let target = if rejected.join(name).exists() {
-        rejected.join(format!("{}-{name}", uuid::Uuid::new_v4().simple()))
-    } else {
-        rejected.join(name)
-    };
-    fs::rename(dir.join(name), &target)?;
-    let error = target.with_file_name(format!("{}.error", target.file_name().unwrap().to_string_lossy()));
-    fs::write(error, format!("{code}\n"))
-}
-
 fn remove(path: &Path) -> Result<(), String> {
     match fs::remove_file(path) {
         Ok(()) => Ok(()),
@@ -171,6 +170,8 @@ fn remove(path: &Path) -> Result<(), String> {
 }
 
 /// 수신함을 읽어 새 토의를 저장하고, 저장한 것만 돌려준다. 파일 이름(시각) 순.
+/// 렌더러는 돌려받은 것만 붙이므로, 파일 하나의 실패(거부·삭제)는 기록만 하고 나머지를 계속한다.
+/// 저장소를 쓰지 못하면 거기서 멈추고 파일은 그대로 둔다(요청 탓이 아니다). 아무것도 못 가져왔을 때만 Err.
 pub fn import(
     work_inbox: &Path,
     store: &DiscussionStore,
@@ -178,18 +179,7 @@ pub fn import(
     now: i64,
 ) -> Result<Vec<Discussion>, String> {
     let dir = inbox_dir(work_inbox);
-    let entries = match fs::read_dir(&dir) {
-        Ok(entries) => entries,
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(vec![]),
-        Err(e) => return Err(e.to_string()),
-    };
-    let mut names: Vec<String> = entries
-        .flatten()
-        .filter(|e| e.file_type().map(|t| t.is_file()).unwrap_or(false))
-        .filter_map(|e| e.file_name().into_string().ok())
-        .filter(|n| accepted_name(n))
-        .collect();
-    names.sort();
+    let names = request_names(&dir).map_err(|e| e.to_string())?;
     let mut imported = vec![];
     for name in names.into_iter().take(MAX_BATCH) {
         let path = dir.join(&name);
@@ -197,19 +187,39 @@ pub fn import(
             Ok(d) => d,
             Err("unreadable") => continue,
             Err(code) => {
-                reject(&dir, &name, code).map_err(|e| e.to_string())?;
+                if let Err(e) = reject(&dir, &name, code, None) {
+                    eprintln!("agent-office: 토의 수신함 {name} 거부 실패({code}): {e}");
+                }
                 continue;
             }
         };
-        if store.load()?.iter().any(|d| d.id == discussion.id) {
-            remove(&path)?;
-            continue;
+        // 이미 있는 id면 앞서 가져갔는데 파일 삭제만 실패한 것이다. 파일만 지운다.
+        match store.insert_if_absent(&discussion) {
+            Ok(true) => imported.push(discussion),
+            Ok(false) => {}
+            Err(e) if imported.is_empty() => return Err(e),
+            Err(e) => {
+                eprintln!("agent-office: 토의 수신함 {name} 저장 실패: {e}");
+                break;
+            }
         }
-        store.save(&discussion)?;
-        remove(&path)?;
-        imported.push(discussion);
+        if let Err(e) = remove(&path) {
+            eprintln!("agent-office: 토의 수신함 {name} 삭제 실패: {e}");
+        }
     }
     Ok(imported)
+}
+
+/// 팀원 목록(`profiles.json`)으로 `import`한다. 목록을 읽지 못하면 가져오지 않는다 — 빈 목록으로 보면
+/// 모든 요청이 `unknown-member`로 거부된다.
+pub fn import_for_profiles(
+    work_inbox: &Path,
+    store: &DiscussionStore,
+    profiles: &ProfileStore,
+    now: i64,
+) -> Result<Vec<Discussion>, String> {
+    let agents: HashSet<String> = profiles.try_load().map_err(|e| e.to_string())?.agents.into_iter().map(|a| a.id).collect();
+    import(work_inbox, store, &|id| agents.contains(id), now)
 }
 
 #[cfg(test)]
@@ -282,6 +292,66 @@ mod tests {
         assert!(import(tmp.path(), &store, &known, 99).unwrap().is_empty());
         assert_eq!(store.load().unwrap(), vec![first]);
         assert!(pending_ids(tmp.path()).is_empty());
+    }
+
+    #[test]
+    fn a_failed_reject_does_not_drop_the_rest_of_the_batch() {
+        let tmp = tempfile::tempdir().unwrap();
+        let store = DiscussionStore::new(tmp.path().to_path_buf());
+        write(tmp.path(), "1-bad.json", "{not json");
+        write(tmp.path(), "2-ok.json", &serde_json::to_string(&request("disc-8")).unwrap());
+        // `rejected/`를 만들 수 없게 한다.
+        fs::write(inbox_dir(tmp.path()).join("rejected"), "").unwrap();
+        let got = import(tmp.path(), &store, &known, 1).unwrap();
+        assert_eq!(got.iter().map(|d| d.id.as_str()).collect::<Vec<_>>(), vec!["disc-8"]);
+        assert!(inbox_dir(tmp.path()).join("1-bad.json").exists());
+        assert!(!inbox_dir(tmp.path()).join("2-ok.json").exists());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn saved_discussions_are_returned_even_when_their_files_cannot_be_removed() {
+        use std::os::unix::fs::PermissionsExt;
+        let tmp = tempfile::tempdir().unwrap();
+        let store = DiscussionStore::new(tmp.path().to_path_buf());
+        write(tmp.path(), "1-a.json", &serde_json::to_string(&request("disc-9")).unwrap());
+        write(tmp.path(), "2-b.json", &serde_json::to_string(&request("disc-10")).unwrap());
+        let dir = inbox_dir(tmp.path());
+        fs::set_permissions(&dir, fs::Permissions::from_mode(0o555)).unwrap();
+        let got = import(tmp.path(), &store, &known, 1);
+        fs::set_permissions(&dir, fs::Permissions::from_mode(0o755)).unwrap();
+        assert_eq!(got.unwrap().len(), 2);
+        assert_eq!(store.load().unwrap().len(), 2);
+        // 다음 주기는 이미 있는 id로 보고 파일만 지운다.
+        assert!(import(tmp.path(), &store, &known, 2).unwrap().is_empty());
+        assert!(pending_ids(tmp.path()).is_empty());
+    }
+
+    #[test]
+    fn an_unreadable_store_keeps_the_request_in_the_inbox() {
+        let tmp = tempfile::tempdir().unwrap();
+        let store = DiscussionStore::new(tmp.path().to_path_buf());
+        fs::write(tmp.path().join("discussions.json"), "{broken").unwrap();
+        write(tmp.path(), "1-a.json", &serde_json::to_string(&request("disc-11")).unwrap());
+        assert!(import(tmp.path(), &store, &known, 1).is_err());
+        assert_eq!(pending_ids(tmp.path()), vec!["disc-11"]);
+        assert!(!inbox_dir(tmp.path()).join("rejected").exists());
+    }
+
+    #[test]
+    fn unreadable_profiles_skip_the_scan_instead_of_rejecting_everyone() {
+        let tmp = tempfile::tempdir().unwrap();
+        let store = DiscussionStore::new(tmp.path().to_path_buf());
+        let profiles = ProfileStore::new(tmp.path().join("profiles.json"));
+        fs::write(tmp.path().join("profiles.json"), "{broken").unwrap();
+        write(tmp.path(), "1-a.json", &serde_json::to_string(&request("disc-12")).unwrap());
+        assert!(import_for_profiles(tmp.path(), &store, &profiles, 1).is_err());
+        assert_eq!(pending_ids(tmp.path()), vec!["disc-12"]);
+        assert!(!inbox_dir(tmp.path()).join("rejected").exists());
+
+        let agents: Vec<_> = ["mod", "a1"].iter().map(|id| serde_json::json!({ "id": id, "name": id, "role": "dev", "seed": "s", "createdAt": 1, "deskIndex": 0 })).collect();
+        fs::write(tmp.path().join("profiles.json"), serde_json::json!({ "version": 1, "agents": agents }).to_string()).unwrap();
+        assert_eq!(import_for_profiles(tmp.path(), &store, &profiles, 1).unwrap().len(), 1);
     }
 
     fn import_one(dir: &Path, store: &DiscussionStore, r: DiscussionRequest) -> Discussion {

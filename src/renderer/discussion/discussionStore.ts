@@ -60,7 +60,13 @@ export const useDiscussionStore = create<DiscussionStoreState>((set, get) => ({
     return inflight;
   },
   save: async (discussion) => {
-    await tauriApi.saveDiscussion(discussion);
+    // 고치기는 준비 상태에서만. 창을 연 사이 시작됐으면(ctl discuss start) 진행 상태를 덮지 않는다.
+    const known = get().discussions.find((d) => d.id === discussion.id);
+    if (known && known.state !== "ready") throw new Error("discussion-not-editable");
+    const write = saving.catch(() => {}).then(() => tauriApi.saveDiscussion(discussion));
+    saving = write.catch(() => {});
+    await write;
+    if ((get().discussions.find((d) => d.id === discussion.id)?.state ?? "ready") !== "ready") return;
     set((s) => ({
       discussions: s.discussions.some((d) => d.id === discussion.id)
         ? s.discussions.map((d) => (d.id === discussion.id ? discussion : d))

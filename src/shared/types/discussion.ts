@@ -245,8 +245,8 @@ export interface DiscussionSessionRequest {
   agentId: string;
   cols?: number;
   rows?: number;
-  /** 첫 프롬프트 끝에 붙일 이번 차례 지시. 없으면 대기 지시로 끝난다. */
-  turn?: string;
+  /** 첫 프롬프트 끝에 붙일 이번 차례 지시. 차례를 받을 때만 세션을 연다. */
+  turn: string;
 }
 export interface DiscussionSessionResult {
   /** 토의 세션 agentId. */

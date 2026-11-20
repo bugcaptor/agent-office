@@ -168,7 +168,6 @@ struct Text {
     persona: &'static str,
     persona_hint: &'static str,
     turn: &'static str,
-    wait: &'static str,
     truncated: &'static str,
 }
 
@@ -218,7 +217,6 @@ const KO: Text = Text {
     persona: "## 말투",
     persona_hint: "아래는 이 캐릭터의 성격·말투입니다. 말투에만 반영하고, 무엇을 말할지는 역할 카드와 토의 규칙을 따르세요.",
     turn: "## 이번 차례",
-    wait: "## 지금\n\n아직 발언하지 마세요. 위 내용을 읽었으면 제출하지 말고 \"준비됐습니다\" 한 줄로만 답한 뒤 차례 지시를 기다리세요.",
     truncated: "…(길어서 잘림)",
 };
 
@@ -268,7 +266,6 @@ const EN: Text = Text {
     persona: "## Voice",
     persona_hint: "Below is this character's personality and way of speaking. Use it only for your tone; what you say follows the role card and the discussion rules.",
     turn: "## This turn",
-    wait: "## Now\n\nDo not speak yet. Once you have read the above, do not submit anything; reply with the single line \"Ready\" and wait for a turn instruction.",
     truncated: "…(truncated)",
 };
 
@@ -308,8 +305,8 @@ pub struct Briefing<'a> {
     pub roles: &'a [DiscussionRole],
     /// `office-discuss` shim 경로. 제출 방식 안내에 쓴다.
     pub shim: &'a Path,
-    /// 실행기가 붙인 이번 차례 지시. 없으면 대기 지시로 끝난다.
-    pub turn: Option<&'a str>,
+    /// 실행기가 붙인 이번 차례 지시.
+    pub turn: &'a str,
 }
 
 fn member_name<'a>(t: &'a Text, members: &'a HashMap<String, Member>, agent_id: &str) -> &'a str {
@@ -415,10 +412,7 @@ pub fn build_briefing(input: &Briefing, lang: Lang) -> String {
         sections.push(format!("{}\n\n{}\n\n{persona}", t.persona, t.persona_hint));
     }
 
-    sections.push(match input.turn.map(str::trim).filter(|s| !s.is_empty()) {
-        Some(turn) => format!("{}\n\n{turn}", t.turn),
-        None => t.wait.to_string(),
-    });
+    sections.push(format!("{}\n\n{}", t.turn, input.turn.trim()));
 
     let out = crate::task_chat::sanitize(&sections.join("\n\n"));
     if out.len() <= MAX_PROMPT_BYTES {
@@ -604,7 +598,7 @@ pub async fn open(app_state: &crate::state::AppState, request: DiscussionSession
             members: &members,
             roles: &roles,
             shim: &shim,
-            turn: request.turn.as_deref(),
+            turn: &request.turn,
         },
         lang,
     );
@@ -759,7 +753,7 @@ mod tests {
             ("jun".to_string(), Member { name: "Jun".into(), personality: None }),
         ])
     }
-    fn brief(participant: &str, turn: Option<&str>, lang: Lang) -> String {
+    fn brief(participant: &str, turn: &str, lang: Lang) -> String {
         let (d, m, r) = (discussion(), members(), roles());
         build_briefing(&Briefing { discussion: &d, participant, members: &m, roles: &r, shim: Path::new("/tmp/ao/office-discuss"), turn }, lang)
     }
@@ -821,9 +815,9 @@ mod tests {
 
     #[test]
     fn debater_briefing_has_role_card_rules_submit_command_topic_and_voice_in_order() {
-        let out = brief("hana", None, Lang::En);
+        let out = brief("hana", "Speak.", Lang::En);
         let at = |needle: &str| out.find(needle).unwrap_or_else(|| panic!("missing {needle:?} in\n{out}"));
-        let order = [at("# Team discussion"), at("## Role card"), at("## Discussion rules"), at("## How to speak"), at("## Topic"), at("## Participants"), at("## Voice"), at("## Now")];
+        let order = [at("# Team discussion"), at("## Role card"), at("## Discussion rules"), at("## How to speak"), at("## Topic"), at("## Participants"), at("## Voice"), at("## This turn")];
         assert!(order.windows(2).all(|w| w[0] < w[1]), "{order:?}");
         assert!(out.contains("**Hana**") && out.contains("**debater**"));
         assert!(out.contains("- Role: Critic") && out.contains("Critical —") && out.contains("Find risks."));
@@ -840,16 +834,16 @@ mod tests {
 
     #[test]
     fn moderator_briefing_is_neutral_and_codex_speaks_by_final_reply() {
-        let out = brief("mod", Some("Open the discussion."), Lang::En);
+        let out = brief("mod", "Open the discussion.", Lang::En);
         assert!(out.contains("**moderator**") && out.contains(EN.moderator_rules));
         assert!(out.ends_with("## This turn\n\nOpen the discussion."));
         assert!(!out.contains("## Voice"));
 
-        let codex = brief("jun", None, Lang::En);
+        let codex = brief("jun", "Speak.", Lang::En);
         assert!(codex.contains(EN.last_reply) && !codex.contains("office-discuss say"));
         assert!(codex.contains(EN.enforced[0]), "codex sandbox blocks writes");
         assert!(codex.contains(EN.no_role));
-        let kilo = brief("gone", None, Lang::En);
+        let kilo = brief("gone", "Speak.", Lang::En);
         assert!(kilo.contains(EN.enforced[2]), "kilo is prompt-only");
         assert!(kilo.contains(EN.no_role), "a deleted role reads as no role");
     }
@@ -859,7 +853,7 @@ mod tests {
         let mut d = discussion();
         d.context = "line\r\nnext \x1b[201~echo injected\0".into();
         let (m, r) = (members(), roles());
-        let out = build_briefing(&Briefing { discussion: &d, participant: "hana", members: &m, roles: &r, shim: Path::new("/s"), turn: None }, Lang::Ko);
+        let out = build_briefing(&Briefing { discussion: &d, participant: "hana", members: &m, roles: &r, shim: Path::new("/s"), turn: "Speak." }, Lang::Ko);
         assert!(out.starts_with("# 팀 토의"));
         assert!(out.contains("비판 —") && out.contains("## 말투"));
         assert!(out.contains("line\nnext [201~echo injected"));
@@ -871,7 +865,7 @@ mod tests {
         let mut d = discussion();
         d.context = "가".repeat(MAX_CONTEXT_CHARS * 2);
         let (m, r) = (members(), roles());
-        let out = build_briefing(&Briefing { discussion: &d, participant: "hana", members: &m, roles: &r, shim: Path::new("/s"), turn: None }, Lang::En);
+        let out = build_briefing(&Briefing { discussion: &d, participant: "hana", members: &m, roles: &r, shim: Path::new("/s"), turn: "Speak." }, Lang::En);
         assert!(out.len() <= MAX_PROMPT_BYTES);
         assert!(out.contains(EN.truncated) && out.contains("## Participants"));
     }
@@ -929,7 +923,7 @@ mod tests {
     }
 
     fn request(discussion_id: &str, agent_id: &str) -> DiscussionSessionRequest {
-        serde_json::from_value(serde_json::json!({ "discussionId": discussion_id, "agentId": agent_id })).unwrap()
+        serde_json::from_value(serde_json::json!({ "discussionId": discussion_id, "agentId": agent_id, "turn": "Speak." })).unwrap()
     }
 
     #[test]
@@ -953,8 +947,9 @@ mod tests {
         let mut bad_model = discussion();
         bad_model.participants[1].agent.model = Some("x\ny".into());
         assert_eq!(validate(&request("d1", "hana"), vec![bad_model]).unwrap_err(), "work-send-model-invalid");
-        // 렌더러가 모르는 칸을 보내면 거절한다.
-        assert!(serde_json::from_value::<DiscussionSessionRequest>(serde_json::json!({ "discussionId": "d1", "agentId": "a", "prompt": "raw" })).is_err());
+        // 렌더러가 모르는 칸을 보내거나 차례 지시를 빼면 거절한다.
+        assert!(serde_json::from_value::<DiscussionSessionRequest>(serde_json::json!({ "discussionId": "d1", "agentId": "a", "turn": "t", "prompt": "raw" })).is_err());
+        assert!(serde_json::from_value::<DiscussionSessionRequest>(serde_json::json!({ "discussionId": "d1", "agentId": "a" })).is_err());
     }
 
     #[test]
