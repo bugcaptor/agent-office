@@ -408,7 +408,7 @@ agent-office ctl — 실행 중인 Agent Office를 조종하는 CLI (이슈 #55)
                                   waiting-usage(사용량 대기)는 스스로 이어 가므로 계속 기다린다
   discuss watch <id> [--timeout S]
                                   상태가 바뀔 때마다 status와 같은 data를 한 줄 JSON으로 출력한다
-                                  (참가자별 speaking·speakingSince·last 포함). 결론이 나면(review·finished)
+                                  (참가자별 speaking·speakingSince·last 포함, 비용만 바뀌어도 나온다). 결론이 나면(review·finished)
                                   0으로 끝나고, --timeout을 넘기면 11로 끝난다(없으면 끝까지 본다)
   discuss start <id>              준비된 토의를 시작한다(카드의 시작과 같다)
   discuss answer <id> <답>        사회자가 사용자에게 한 질문에 답한다
