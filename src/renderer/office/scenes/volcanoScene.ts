@@ -14,10 +14,11 @@
 //
 // 팔레트는 "낮의 원색" 한 벌만 두고, 어두운/모노크롬 테마에서는
 // sceneColor.ts가 자동 변환한다.
-import type { TileRect } from "../map/mapData";
-import { L, Tile, buildSceneMap } from "../map/mapData";
+import type { OfficeMap, TileRect } from "../map/mapData";
+import { L, Tile, buildSceneMap, meetingRoomAt } from "../map/mapData";
 import type { QuietGroup } from "./sceneColor";
 import { defineScene } from "./defineScene";
+import { drawMeetingTile } from "./meetingTiles";
 import type { SceneDef, TileDrawFn } from "./sceneTypes";
 
 const GRID: Tile[][] = [
@@ -29,9 +30,9 @@ const GRID: Tile[][] = [
   L('WFFFFFFFFFFFFFFFFFFW'), // ty5  - 좌석 행 2
   L('WFFDDFDDFDDFDDFFFFFW'), // ty6  - 모루 작업대 4쌍(위 행과 한 칸 엇갈림)
   L('WFFFFFFFFFFFFFFFFFPW'), // ty7  - 통로 + 용암꽃(tx18)
-  L('WPFFFFFFFFFBFFFFFFFW'), // ty8  - 관목(tx1) + 용암 왕좌 상단(tx11)
-  L('WFFFFFFFFFFBFFFFFFFW'), // ty9  - 왕좌 하단 + 줄서기 레인(서쪽)
-  L('WFRRRRRRRRRRFFFFFFFW'), // ty10 - 흑요석 판 라운지
+  L('WPFFFFFFFFFBFMMMMMFW'), // ty8  - 관목(tx1) + 용암 왕좌 상단(tx11) + 회의실
+  L('WFFFFFFFFFFBFMTTTMFW'), // ty9  - 왕좌 하단 + 줄서기 레인(서쪽) + 회의실
+  L('WFRRRRRRRRRRFMMMMMFW'), // ty10 - 흑요석 판 라운지 + 회의실
   L('WFRRTTRRRRRRFFFFFFFW'), // ty11 - 라운지 + 바위 테이블(2칸)
   L('WFFFFFFFFFFFFCCCCCFW'), // ty12 - 용암석 바
   L('WWWWWWWWWWWWWWWWWWWW'), // ty13 - 화산 암벽
@@ -42,7 +43,10 @@ const GRID: Tile[][] = [
  * 걸을 수 있어야 한다는 계약). */
 const BREAK_ROOM: TileRect = { x: 6, y: 10, w: 5, h: 2 };
 
-export const VOLCANO_MAP = buildSceneMap(GRID, BREAK_ROOM);
+export const VOLCANO_MAP: OfficeMap = {
+  ...buildSceneMap(GRID, BREAK_ROOM),
+  meetingRoom: meetingRoomAt(13, 8),
+};
 
 /** 용암 호수가 차지하는 행 수 — 이 위(포함)의 Wall은 호수로, 아래는 암벽으로 그린다. */
 const LAVA_ROWS = 2;
@@ -88,6 +92,17 @@ const VOLCANO_PALETTE_RAW = {
   throneHi: 0x5e4c4d,
   throneLava: 0xf05a1a,
   throneCore: 0xffd06a,
+  // 토의 회의실(meetingTiles.ts): 흑요석 판(용암빛 테두리) + 무쇠 의자.
+  meetFloor: 0x3d3550,
+  meetEdge: 0xf2a03c,
+  meetGrain: 0x332c44,
+  meetChair: 0x3a3438,
+  meetChairHi: 0x6e646a,
+  meetTableTop: 0x786964,
+  meetTable: 0x554a48,
+  meetTableShade: 0x2a2222,
+  meetPaper: 0xe8d8b0,
+  meetCup: 0x9aa2ad,
 };
 
 // 화산지대 잔무늬 죽이기 — 현무암 체커·잔금·화산재를 암반 바탕으로 당긴다.
@@ -126,6 +141,7 @@ const scatter = (tx: number, ty: number, mod: number): number => (tx * 53 + ty *
 
 function volcanoTileDraw(pal: VolcanoPalette): TileDrawFn {
   return (g, { t, tx, ty, s, map }) => {
+    if (drawMeetingTile(g, { t, tx, ty, s, map }, pal)) return;
     const basalt = ty % 4 === 0 ? pal.basaltB : pal.basaltA;
     switch (t) {
       case Tile.Floor: {

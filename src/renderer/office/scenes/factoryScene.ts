@@ -13,10 +13,11 @@
 // 안전구역 라운지는 좌측 하단·공구 카운터는 우측 하단에 둔다.
 import type { Graphics } from "pixi.js";
 
-import type { TileRect } from "../map/mapData";
-import { L, Tile, buildSceneMap } from "../map/mapData";
+import type { OfficeMap, TileRect } from "../map/mapData";
+import { L, Tile, buildSceneMap, meetingRoomAt } from "../map/mapData";
 import type { QuietGroup } from "./sceneColor";
 import { defineScene } from "./defineScene";
+import { drawMeetingTile } from "./meetingTiles";
 import type { SceneDef, TileDrawFn } from "./sceneTypes";
 
 const GRID: Tile[][] = [
@@ -28,9 +29,9 @@ const GRID: Tile[][] = [
   L('WFFFFFFFFFFFFFFFFFFW'), // ty5  - 좌석 행 2
   L('WPFDDFDDFDDFDDFDDFFW'), // ty6  - 드럼통 화분(tx1) + 벤치 라인 B 5쌍(반 칸 어긋남)
   L('WFFFFFFFFFFFFFFFFFFW'), // ty7  - 통로
-  L('WFTTFFFFFFFBFFFFFFFW'), // ty8  - 검수 테이블(tx2·3) + 관리실 제어반 상단(tx11)
-  L('WFFFFFFFFFFBFFFFFFFW'), // ty9  - 제어반 하단 + 줄서기 레인(서쪽)
-  L('WRRRRRRRRRFFFFFFFFFW'), // ty10 - 노란 빗금 안전구역(휴게 존)
+  L('WFTTFFFFFFFBFMMMMMFW'), // ty8  - 검수 테이블(tx2·3) + 관리실 제어반 상단(tx11) + 회의실
+  L('WFFFFFFFFFFBFMTTTMFW'), // ty9  - 제어반 하단 + 줄서기 레인(서쪽) + 회의실
+  L('WRRRRRRRRRFFFMMMMMFW'), // ty10 - 노란 빗금 안전구역(휴게 존) + 회의실
   L('WRRRRRRRRRFFFFFFFFPW'), // ty11 - 안전구역 + 드럼통 화분(tx18)
   L('WFFFFFFFFFFFCCCCCCFW'), // ty12 - 공구 대여 카운터
   L('WWWWWWWWWWWWWWWWWWWW'), // ty13 - 하단 벽 + 셔터 문
@@ -39,7 +40,10 @@ const GRID: Tile[][] = [
 /** 노란 빗금 안전구역 안의 쉼터 — 오피스 러그 라운지와 같은 역할. */
 const BREAK_ROOM: TileRect = { x: 2, y: 10, w: 5, h: 2 };
 
-export const FACTORY_MAP = buildSceneMap(GRID, BREAK_ROOM);
+export const FACTORY_MAP: OfficeMap = {
+  ...buildSceneMap(GRID, BREAK_ROOM),
+  meetingRoom: meetingRoomAt(13, 8),
+};
 
 const FACTORY_PALETTE_RAW = {
   concreteA: 0x9a9a94,
@@ -91,6 +95,17 @@ const FACTORY_PALETTE_RAW = {
   buttonRed: 0xe0503f,
   buttonGreen: 0x5fd07a,
   beacon: 0xf2803a,
+  // 토의 회의실(meetingTiles.ts): 고무 매트(안전선 테두리) + 플라스틱 의자.
+  meetFloor: 0x6f767e,
+  meetEdge: 0xf2c437,
+  meetGrain: 0x656c74,
+  meetChair: 0x3f7fb0,
+  meetChairHi: 0x63a4d2,
+  meetTableTop: 0xb6bcc2,
+  meetTable: 0x7e858d,
+  meetTableShade: 0x525860,
+  meetPaper: 0xe6f6fb,
+  meetCup: 0xd2402f,
 };
 
 // 작업장 잔무늬 죽이기 — 슬래브 체커·이음매·균열·기름때·볼트를 콘크리트
@@ -148,6 +163,7 @@ function brickBase(g: Graphics, s: number, pal: FactoryPalette, ty: number): voi
 
 function factoryTileDraw(pal: FactoryPalette): TileDrawFn {
   return (g, { t, tx, ty, s, map }) => {
+    if (drawMeetingTile(g, { t, tx, ty, s, map }, pal)) return;
     const concrete = (Math.floor(tx / 2) + Math.floor(ty / 2)) % 2 === 0 ? pal.concreteA : pal.concreteB;
     switch (t) {
       case Tile.Floor: {

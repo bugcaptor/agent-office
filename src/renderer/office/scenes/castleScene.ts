@@ -13,10 +13,11 @@
 // 오피스와 동일). 알현 줄은 왕좌 하단 행을 따라 서쪽으로 늘어선다
 // (줄 슬롯 방향은 `buildSceneMap`이 보스 위치에서 유도한다 — 왕좌가 맵
 // 오른쪽 절반의 첫 칸 tx10이라 서쪽으로 뻗는다).
-import type { TileRect } from "../map/mapData";
-import { L, Tile, buildSceneMap } from "../map/mapData";
+import type { OfficeMap, TileRect } from "../map/mapData";
+import { L, Tile, buildSceneMap, meetingRoomAt } from "../map/mapData";
 import type { QuietGroup } from "./sceneColor";
 import { defineScene } from "./defineScene";
+import { drawMeetingTile } from "./meetingTiles";
 import type { SceneDef, TileDrawFn } from "./sceneTypes";
 
 const GRID: Tile[][] = [
@@ -30,16 +31,19 @@ const GRID: Tile[][] = [
   L('WPFFFFFFFRRFFFFFFFPW'), // ty7  - 좌석 행 2 + 횃불·관목(tx1/tx18)
   L('WFDDFDDFFRRFFDDFDDFW'), // ty8  - 필경대 4쌍
   L('WFFFFFFFFRRFFFFFFFFW'), // ty9
-  L('WFRRRRRRRRRRRRRRRRFW'), // ty10 - 카펫이 펼쳐진 연회장
-  L('WFRRRRTTRRRRRRTTRRFW'), // ty11 - 카펫 + 연회 테이블 2벌
-  L('WFCCCCCCFFFFFFFFFFFW'), // ty12 - 술통 카운터
+  L('WFRRRRRRRRRRRRMMMMMW'), // ty10 - 카펫이 펼쳐진 연회장 + 회의실(동쪽 끝)
+  L('WFRRRRTTRRRRRRMTTTMW'), // ty11 - 카펫 + 연회 테이블 + 회의실(tx14..18)
+  L('WFCCCCCCFFFFFFMMMMMW'), // ty12 - 술통 카운터 + 회의실
   L('WWWWWWWWWWWWWWWWWWWW'), // ty13 - 대전당 안쪽 벽
 ];
 
 /** 카펫 위에서 잔을 드는 자리 — 오피스 러그 라운지와 같은 역할. */
 const BREAK_ROOM: TileRect = { x: 9, y: 10, w: 5, h: 2 };
 
-export const CASTLE_MAP = buildSceneMap(GRID, BREAK_ROOM);
+export const CASTLE_MAP: OfficeMap = {
+  ...buildSceneMap(GRID, BREAK_ROOM),
+  meetingRoom: meetingRoomAt(14, 10),
+};
 
 /** 성가퀴(총안)가 서는 행. 이 위는 하늘, 그 아래 행은 창이 뚫린 석축. */
 const CRENEL_ROW = 0;
@@ -101,6 +105,17 @@ const CASTLE_PALETTE_RAW = {
   throneCushion: 0x9c2730,
   daisStone: 0x9a948b,
   daisStep: 0xb4ada2,
+  // 토의 회의실(meetingTiles.ts): 작전실 융단(금실 테두리) + 붉은 방석 의자.
+  meetFloor: 0x34508a,
+  meetEdge: 0xe0b957,
+  meetGrain: 0x2c4476,
+  meetChair: 0x8c2a33,
+  meetChairHi: 0xe0b957,
+  meetTableTop: 0xac7844,
+  meetTable: 0x8a5c33,
+  meetTableShade: 0x4a3120,
+  meetPaper: 0xece0c0,
+  meetCup: 0xd9ac4c,
 };
 
 // 대전당 잔무늬 죽이기 — 플래그스톤 체커·줄눈·그늘·균열·물때를 돌 바탕으로,
@@ -135,6 +150,7 @@ const scatter = (tx: number, ty: number, mod: number): number => (tx * 61 + ty *
 
 function castleTileDraw(pal: CastlePalette): TileDrawFn {
   return (g, { t, tx, ty, s, map }) => {
+    if (drawMeetingTile(g, { t, tx, ty, s, map }, pal)) return;
     const stone = (Math.floor(tx / 2) + Math.floor(ty / 2)) % 2 === 0 ? pal.stoneA : pal.stoneB;
     switch (t) {
       case Tile.Floor: {

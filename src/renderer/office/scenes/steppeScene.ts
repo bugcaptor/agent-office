@@ -10,10 +10,11 @@
 // 가운데(tx15)에 서고 그 앞(남쪽)으로 펠트 깔개 마당이 펼쳐지며, 좌탁은
 // 북쪽 풀밭 두 줄(4쌍+3쌍)과 깔개 위(2쌍)에 흩어져 총 9쌍이다. 줄서기 레인은
 // 게르 하단 행을 따라 서쪽으로 뻗는다(방향은 `buildSceneMap`이 유도한다).
-import type { TileRect } from "../map/mapData";
-import { L, Tile, buildSceneMap } from "../map/mapData";
+import type { OfficeMap, TileRect } from "../map/mapData";
+import { L, Tile, buildSceneMap, meetingRoomAt } from "../map/mapData";
 import type { QuietGroup } from "./sceneColor";
 import { defineScene } from "./defineScene";
+import { drawMeetingTile } from "./meetingTiles";
 import type { SceneDef, TileDrawFn } from "./sceneTypes";
 
 const GRID: Tile[][] = [
@@ -25,9 +26,9 @@ const GRID: Tile[][] = [
   L('WFFFFFFFFFFFFFFFFFFW'), // ty5  - 좌석 행 2
   L('WFDDFFDDFFDDFFFBFFPW'), // ty6  - 좌탁 3쌍 + 게르 상단(tx15) + 관목(tx18)
   L('WFFFFFFFFFFFFFFBFFFW'), // ty7  - 게르 하단 + 줄서기 레인(서쪽)
-  L('WFFFFFFFFFFFFRRTTRRW'), // ty8  - 깔개 마당 + 화로 2칸
-  L('WFFFFFFFFFFFFRRRRRRW'), // ty9  - 펠트 깔개(휴게)
-  L('WFFFFFFFFFFFFRRRRRRW'), // ty10 - 펠트 깔개 + 깔개 좌탁의 좌석 행
+  L('WFFMMMMMFFFFFRRTTRRW'), // ty8  - 깔개 마당 + 화로 2칸 + 회의실
+  L('WFFMTTTMFFFFFRRRRRRW'), // ty9  - 펠트 깔개(휴게) + 회의실
+  L('WFFMMMMMFFFFFRRRRRRW'), // ty10 - 펠트 깔개 + 깔개 좌탁의 좌석 행 + 회의실
   L('WFFPFFFFFFFFFRDDRDDW'), // ty11 - 깔개 위 좌탁 2쌍 + 야생화 덤불(tx3)
   L('WFFCCCCCCFFFFFFFFFPW'), // ty12 - 마유주 카운터 + 관목(tx18)
   L('WWWWWWWWWWWWWWWWWWWW'), // ty13 - 완만한 언덕 능선
@@ -37,7 +38,10 @@ const GRID: Tile[][] = [
  * 화로(ty8)는 통행 불가라 일부러 한 줄 아래에서 시작한다. */
 const BREAK_ROOM: TileRect = { x: 13, y: 9, w: 6, h: 2 };
 
-export const STEPPE_MAP = buildSceneMap(GRID, BREAK_ROOM);
+export const STEPPE_MAP: OfficeMap = {
+  ...buildSceneMap(GRID, BREAK_ROOM),
+  meetingRoom: meetingRoomAt(3, 8),
+};
 
 /** 하늘·먼 산이 차지하는 위쪽 Wall 줄 수 — 그 아래 Wall은 언덕 능선으로 그린다. */
 const SKY_ROWS = 2;
@@ -108,6 +112,17 @@ const STEPPE_PALETTE_RAW = {
   gerDoorFrame: 0xb8452f,
   gerRope: 0xb59a6a,
   gerShade: 0x6c7a44,
+  // 토의 회의실(meetingTiles.ts): 펠트 깔개 + 방석.
+  meetFloor: 0xe8dcc0,
+  meetEdge: 0xb8452f,
+  meetGrain: 0xd8c9a8,
+  meetChair: 0x2f6ba8,
+  meetChairHi: 0x5a8fc8,
+  meetTableTop: 0xd7a460,
+  meetTable: 0xb5813f,
+  meetTableShade: 0x7d5426,
+  meetPaper: 0xf7f2e4,
+  meetCup: 0xd9b075,
 };
 
 // 초원 잔무늬 죽이기 — 체커 두 톤과 바람결(풀날)을 풀 바탕으로 당긴다.
@@ -133,6 +148,7 @@ const scatter = (tx: number, ty: number, mod: number): number => (tx * 61 + ty *
 
 function steppeTileDraw(pal: SteppePalette): TileDrawFn {
   return (g, { t, tx, ty, s, map }) => {
+    if (drawMeetingTile(g, { t, tx, ty, s, map }, pal)) return;
     const grass = ty % 4 === 0 ? pal.grassB : pal.grassA;
     switch (t) {
       case Tile.Floor: {

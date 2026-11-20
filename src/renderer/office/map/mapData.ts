@@ -43,8 +43,8 @@ export interface OfficeMap {
   /** 줄서기 슬롯(0 = 맨 앞). 미지정 시 QUEUE_SLOTS 폴백. */
   queueSlots?: readonly { tx: number; ty: number }[];
   /**
-   * 토의 회의실. 오피스 씬에만 있다 — 다른 풍경은 폴백 없이 비워 두고, 토의 참가자는 제자리에서
-   * 말풍선만 띄운다(새 풍경 아트가 없는 곳에 회의실을 억지로 끼우지 않는다).
+   * 토의 회의실. 모든 풍경이 하나씩 둔다(`meetingRoomAt`). 미지정이면(구 테스트 픽스처) 토의 참가자는
+   * 제자리에서 말풍선만 띄운다.
    */
   meetingRoom?: MeetingRoom;
 }
@@ -182,23 +182,26 @@ export function buildSceneMap(grid: Tile[][], breakRoom: TileRect): OfficeMap {
 }
 
 /**
- * 오피스 회의실. 0번(사회자)은 테이블 서쪽 끝에서 동쪽을 보고, 토론자는 북쪽 세 자리(정면이 보이게
- * 아래를 본다 — 책상 좌석과 같은 구도) 다음 동쪽 끝 순서다. 남쪽 줄은 비워 등만 보이는 자리를 피한다.
+ * 5×3 회의실의 표준 배치. GRID에는 같은 자리에 `MMMMM / MTTTM / MMMMM`을 그린다.
+ * 0번(사회자)은 테이블 서쪽 끝에서 동쪽을 보고, 토론자는 북쪽 세 자리(정면이 보이게 아래를 본다 —
+ * 책상 좌석과 같은 구도) 다음 동쪽 끝 순서다. 남쪽 줄은 비워 등만 보이는 자리를 피한다.
  */
-const OFFICE_MEETING_ROOM: MeetingRoom = {
-  rect: { x: 3, y: 7, w: 5, h: 3 },
-  seats: [
-    { tx: 3, ty: 8, facing: 'right' },
-    { tx: 4, ty: 7, facing: 'down' },
-    { tx: 5, ty: 7, facing: 'down' },
-    { tx: 6, ty: 7, facing: 'down' },
-    { tx: 7, ty: 8, facing: 'left' },
-  ],
-};
+export function meetingRoomAt(x: number, y: number): MeetingRoom {
+  return {
+    rect: { x, y, w: 5, h: 3 },
+    seats: [
+      { tx: x, ty: y + 1, facing: 'right' },
+      { tx: x + 1, ty: y, facing: 'down' },
+      { tx: x + 2, ty: y, facing: 'down' },
+      { tx: x + 3, ty: y, facing: 'down' },
+      { tx: x + 4, ty: y + 1, facing: 'left' },
+    ],
+  };
+}
 
 export const OFFICE_MAP: OfficeMap = {
   ...buildSceneMap(GRID, { x: 11, y: 10, w: 5, h: 2 }),
-  meetingRoom: OFFICE_MEETING_ROOM,
+  meetingRoom: meetingRoomAt(3, 7),
 };
 
 /** 휴게 공간(탕비실) 내부의 걸을 수 있는 러그 라운지 사각형(타일 좌표).

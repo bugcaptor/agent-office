@@ -1,10 +1,10 @@
 // src/renderer/discussion/MeetingBoard.tsx
 //
 // 회의록 보드: 토의가 이어지는 동안 오피스 회의실 옆에 참가자마다 한 줄씩 최근 발언과 "N분 전"을 보여 준다.
-// 말하는 중인 참가자는 "말하는 중 · N분째". 위치는 씬이 알려 주는 회의실 화면 사각형의 오른쪽이고, 회의실이 없는
-// 풍경이면 오피스 화면 왼쪽 위에 붙는다. 경과 표기는 30초마다 다시 센다(저장 상태는 건드리지 않는다).
+// 말하는 중인 참가자는 "말하는 중 · N분째". 위치는 씬이 알려 주는 회의실 화면 사각형의 오른쪽이고, 오른쪽에 자리가
+// 모자라면(회의실이 맵 동쪽에 있는 풍경) 왼쪽이다. 회의실이 없는 맵이면 오피스 화면 왼쪽 위에 붙는다. 경과 표기는 30초마다 다시 센다(저장 상태는 건드리지 않는다).
 // 접힘 여부는 이 기기에만 기억한다.
-import { useEffect, useMemo, useState, type CSSProperties } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { useTranslation } from "react-i18next";
 
 import type { OfficeBus, ScreenRect } from "../office/bus";
@@ -16,8 +16,10 @@ import { stagedDiscussion } from "./officeStage";
 import "./discussion.css";
 
 const COLLAPSED_KEY = "agent-office.meetingBoard.collapsed";
-/** 회의실 오른쪽 변과 보드 사이 간격(px). */
+/** 회의실 변과 보드 사이 간격(px). */
 const ROOM_GAP_PX = 8;
+/** 보드 폭(px) — discussion.css의 .meeting-board width와 같다. */
+const BOARD_W_PX = 280;
 const TICK_MS = 30_000;
 
 function readCollapsed(): boolean {
@@ -46,9 +48,14 @@ export function MeetingBoard({ bus }: { bus: OfficeBus }) {
   const [rect, setRect] = useState<ScreenRect | null>(null);
   const [collapsed, setCollapsed] = useState(readCollapsed);
   useEffect(() => bus.onMeetingRoomRectChanged(setRect), [bus]);
+  // 보드를 어느 쪽에 붙일지는 레이어 폭을 알아야 정한다. 회의실 사각형은 창 크기가 바뀌면 다시 오므로 그때 다시 잰다.
+  const layerRef = useRef<HTMLDivElement>(null);
+  const [layerW, setLayerW] = useState(0);
+  const staged = discussion !== null;
+  useLayoutEffect(() => setLayerW(layerRef.current?.clientWidth ?? 0), [rect, staged]);
 
   if (!discussion) return null;
-  const style: CSSProperties | undefined = rect ? { left: Math.round(rect.x + rect.w + ROOM_GAP_PX), top: Math.round(rect.y) } : undefined;
+  const style: CSSProperties | undefined = rect ? { left: Math.round(boardLeft(rect, layerW)), top: Math.round(rect.y) } : undefined;
   const age = (a: BoardAge) =>
     a.unit === "now" ? t("meetingBoard.ageNow") : t(a.unit === "minutes" ? "meetingBoard.ageMinutes" : "meetingBoard.ageHours", { count: a.count });
   const toggle = () => {
@@ -59,7 +66,7 @@ export function MeetingBoard({ bus }: { bus: OfficeBus }) {
   };
 
   return (
-    <div className="meeting-board-layer">
+    <div className="meeting-board-layer" ref={layerRef}>
       <section
         className={`meeting-board${rect ? "" : " docked"}${collapsed ? " collapsed" : ""}`}
         style={style}
@@ -83,6 +90,14 @@ export function MeetingBoard({ bus }: { bus: OfficeBus }) {
       </section>
     </div>
   );
+}
+
+/** 회의실 오른쪽에 들어가면 오른쪽, 아니고 왼쪽에 들어가면 왼쪽. 폭을 모르면(0) 오른쪽. */
+export function boardLeft(rect: ScreenRect, layerW: number): number {
+  const right = rect.x + rect.w + ROOM_GAP_PX;
+  if (layerW <= 0 || right + BOARD_W_PX <= layerW) return right;
+  const left = rect.x - ROOM_GAP_PX - BOARD_W_PX;
+  return left >= 0 ? left : right;
 }
 
 function BoardRow({ row, name, now, age }: { row: MeetingBoardRow; name: string; now: number; age: (a: BoardAge) => string }) {

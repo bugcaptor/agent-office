@@ -14,10 +14,11 @@
 // 레이아웃도 해변/계곡과 일부러 다르게 잡았다 — 감시탑(보스 자리)이 정문 쪽인
 // 위쪽 좌측에 서고 배급 줄이 그 아래 행을 따라 동쪽으로 뻗으며, 작업대 두 줄은
 // 기지 한가운데, 매트 라운지와 드럼통 모닥불은 아래쪽, 보급소는 우측 하단이다.
-import type { TileRect } from "../map/mapData";
-import { L, Tile, buildSceneMap } from "../map/mapData";
+import type { OfficeMap, TileRect } from "../map/mapData";
+import { L, Tile, buildSceneMap, meetingRoomAt } from "../map/mapData";
 import type { QuietGroup } from "./sceneColor";
 import { defineScene } from "./defineScene";
+import { drawMeetingTile } from "./meetingTiles";
 import type { SceneDef, TileDrawFn } from "./sceneTypes";
 
 const GRID: Tile[][] = [
@@ -31,16 +32,19 @@ const GRID: Tile[][] = [
   L('WPDDFFDDFFDDFFDDFFFW'), // ty7  - 말라죽은 나무(tx1) + 판자 작업대 4쌍
   L('WFFFFFFFFFFFFFFFFFFW'), // ty8
   L('WFFFFFFFFFFFFFCCCCCW'), // ty9  - 보급소 카운터(우측)
-  L('WFRRRRRRRRRRFFFFFFFW'), // ty10 - 낡은 캠핑 매트 라운지
-  L('WFRRRRTTRRRRFFFFFFFW'), // ty11 - 매트 + 드럼통 모닥불(2칸)
-  L('WFFFFFFFFFFFFFFFFFFW'), // ty12
+  L('WFRRRRRRRRRRFMMMMMFW'), // ty10 - 낡은 캠핑 매트 라운지 + 회의실
+  L('WFRRRRTTRRRRFMTTTMFW'), // ty11 - 매트 + 드럼통 모닥불(2칸) + 회의실
+  L('WFFFFFFFFFFFFMMMMMFW'), // ty12 + 회의실
   L('WWWWWWWWWWWWWWWWWWWW'), // ty13 - 바리케이드(뒤쪽 담장)
 ];
 
 /** 모닥불 옆에 깔개를 펴 둔 쉼터 — 오피스 러그 라운지와 같은 역할. */
 const BREAK_ROOM: TileRect = { x: 8, y: 10, w: 4, h: 2 };
 
-export const ZOMBIE_MAP = buildSceneMap(GRID, BREAK_ROOM);
+export const ZOMBIE_MAP: OfficeMap = {
+  ...buildSceneMap(GRID, BREAK_ROOM),
+  meetingRoom: meetingRoomAt(13, 10),
+};
 
 const ZOMBIE_PALETTE_RAW = {
   asphaltA: 0x5c584f,
@@ -104,6 +108,17 @@ const ZOMBIE_PALETTE_RAW = {
   towerBeam: 0x7a5733,
   towerWood: 0xa87b47,
   towerDark: 0x2b2419,
+  // 토의 회의실(meetingTiles.ts): 판자 마루 + 녹슨 접이의자.
+  meetFloor: 0x8f6a41,
+  meetEdge: 0x5a3f24,
+  meetGrain: 0x74522f,
+  meetChair: 0x9c5537,
+  meetChairHi: 0xc07a4d,
+  meetTableTop: 0xc19660,
+  meetTable: 0x9a7040,
+  meetTableShade: 0x503722,
+  meetPaper: 0xd6d0c1,
+  meetCup: 0xb9b3a3,
 };
 
 // 폐허 노면 잔무늬 죽이기 — 아스팔트 체커와 금 간 자국을 노면 바탕으로 당긴다.
@@ -128,6 +143,7 @@ const scatter = (tx: number, ty: number, mod: number): number => (tx * 59 + ty *
 
 function zombieTileDraw(pal: ZombiePalette): TileDrawFn {
   return (g, { t, tx, ty, s, map }) => {
+    if (drawMeetingTile(g, { t, tx, ty, s, map }, pal)) return;
     const ground = (Math.floor(tx / 2) + Math.floor(ty / 2)) % 2 === 0 ? pal.asphaltA : pal.asphaltB;
     switch (t) {
       case Tile.Floor: {

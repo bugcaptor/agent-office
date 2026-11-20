@@ -511,7 +511,7 @@ describe("award trophy + frame (이 달의 우수사원)", () => {
     return { officeScene, bus };
   }
 
-  it("회의실 화면 사각형은 바뀔 때만 알리고, 회의실 없는 풍경이면 null을 알린다", async () => {
+  it("회의실 화면 사각형은 바뀔 때만 알리고, 풍경을 바꾸면 그 풍경의 회의실로, 회의실 없는 맵이면 null을 알린다", async () => {
     const { OFFICE_MAP, TILE_SIZE } = await import("../map/mapData");
     const { SCENES } = await import("../scenes/scenes");
     const bus = createMockOfficeBus();
@@ -528,6 +528,12 @@ describe("award trophy + frame (이 달의 우수사원)", () => {
     expect(rect.w / rect.h).toBe(room.w / room.h);
     expect(rect.w % (room.w * TILE_SIZE)).toBe(0); // 정수 배율
     officeScene.setScene(SCENES.valley);
+    tick({ deltaMS: 16 });
+    expect(rects).toHaveLength(2);
+    const valley = rects[1] as { x: number; w: number };
+    expect(valley.w).toBe(rect.w); // 같은 5×3 회의실
+    expect(valley.x).toBeGreaterThan((rects[0] as { x: number }).x); // 계곡 회의실은 오피스보다 동쪽
+    officeScene.setScene({ ...SCENES.valley, map: { ...SCENES.valley.map, meetingRoom: undefined } });
     tick({ deltaMS: 16 });
     expect(rects[rects.length - 1]).toBeNull();
     officeScene.destroy();

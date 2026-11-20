@@ -14,10 +14,11 @@
 //
 // 팔레트는 "한낮의 원색" 한 벌만 두고, 어두운/모노크롬 테마에서는
 // sceneColor.ts가 자동 변환한다.
-import type { TileRect } from "../map/mapData";
-import { L, Tile, buildSceneMap } from "../map/mapData";
+import type { OfficeMap, TileRect } from "../map/mapData";
+import { L, Tile, buildSceneMap, meetingRoomAt } from "../map/mapData";
 import type { QuietGroup } from "./sceneColor";
 import { defineScene } from "./defineScene";
+import { drawMeetingTile } from "./meetingTiles";
 import type { SceneDef, TileDrawFn } from "./sceneTypes";
 
 // 작업대는 ty3(4쌍)·ty10(4쌍) = 좌석 8개로 오피스와 같다. 두 줄의 열 위상을
@@ -29,9 +30,9 @@ const GRID: Tile[][] = [
   L('WFFFFFFFFFFFFFFFFFFW'), // ty2  - 선수 프롬나드(좌석 행 1)
   L('WPDDFFDDFFDDFFDDFFPW'), // ty3  - 차양 작업대 4쌍 + 야자 화분(tx1/tx18)
   L('WFFFFFFFFFFFFFFFFFFW'), // ty4  - 산책로
-  L('WFFTFFRRRRRRRRFFTFFW'), // ty5  - 라운드 테이블 + 수영장 상단
-  L('WCFFFFRRRRRRRRFFFFCW'), // ty6  - 칵테일 바(양 현측) + 수영장
-  L('WCFFFFRRRRRRRRFFFFCW'), // ty7  - 칵테일 바 + 수영장
+  L('WFFTFFRRRRRRRRMMMMMW'), // ty5  - 라운드 테이블(좌현) + 수영장 상단 + 회의실
+  L('WCFFFFRRRRRRRRMTTTMW'), // ty6  - 칵테일 바(좌현) + 수영장 + 회의실(우현 갑판)
+  L('WCFFFFRRRRRRRRMMMMMW'), // ty7  - 칵테일 바 + 수영장 + 회의실
   L('WFFTFFRRRRRRRRFFTFFW'), // ty8  - 라운드 테이블 + 수영장 하단
   L('WFFFFFFFFFFFFFFFFFFW'), // ty9  - 산책로(좌석 행 2)
   L('WFFDDFFDDFFDDFFDDFFW'), // ty10 - 차양 작업대 4쌍(한 칸 어긋난 위상)
@@ -43,7 +44,10 @@ const GRID: Tile[][] = [
 /** 수영장 = 이 씬의 라운지. 물 타일이 walkable이라 사각형 전체가 계약을 만족한다. */
 const BREAK_ROOM: TileRect = { x: 6, y: 5, w: 8, h: 4 };
 
-export const CRUISE_MAP = buildSceneMap(GRID, BREAK_ROOM);
+export const CRUISE_MAP: OfficeMap = {
+  ...buildSceneMap(GRID, BREAK_ROOM),
+  meetingRoom: meetingRoomAt(14, 5),
+};
 
 /** 바다가 보이는 행 — 이 위(포함)는 Wall을 바다·난간으로, 아래는 선체 벽으로 그린다. */
 const SEA_ROWS = 2;
@@ -100,6 +104,17 @@ const CRUISE_PALETTE_RAW = {
   mast: 0xa9b3bb,
   helm: 0x8a5a30,
   helmHi: 0xc08a52,
+  // 토의 회의실(meetingTiles.ts): 선상 라운지 카펫(황동 테두리) + 흰 갑판 의자.
+  meetFloor: 0x2f5f96,
+  meetEdge: 0xd9a83f,
+  meetGrain: 0x285487,
+  meetChair: 0xf4f6f8,
+  meetChairHi: 0xffffff,
+  meetTableTop: 0xf4f2ea,
+  meetTable: 0xd0c9b8,
+  meetTableShade: 0x8a6236,
+  meetPaper: 0xdcf1fb,
+  meetCup: 0xf0d27a,
 };
 
 // 티크 갑판 잔무늬 죽이기 — 널 두 톤·코킹·옹이를 갑판 바탕으로 당긴다.
@@ -137,6 +152,7 @@ function cruiseTileDraw(pal: CruisePalette): TileDrawFn {
   };
 
   return (g, { t, tx, ty, s, map }) => {
+    if (drawMeetingTile(g, { t, tx, ty, s, map }, pal)) return;
     switch (t) {
       case Tile.Floor: {
         deck(g, s, tx, ty);

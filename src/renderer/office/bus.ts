@@ -93,7 +93,7 @@ export interface OfficeBus {
   /** B가 진행 중인 토의를 구독 — 회의실 이동·발언 말풍선·사회자 표시. 없으면 null.
    * 구독 즉시 현재값을 1회 재생(replay)한다 — 늦게 마운트된 씬도 초기값 수신. */
   onDiscussionStageChanged(cb: (stage: OfficeDiscussionStage | null) => void): () => void;
-  /** B가 회의실의 화면 사각형을 알림(카메라·풍경이 바뀔 때만). 회의실이 없는 풍경이면 null. */
+  /** B가 회의실의 화면 사각형을 알림(카메라·풍경이 바뀔 때만). 회의실이 없는 맵이면 null. */
   emitMeetingRoomRectChanged(rect: ScreenRect | null): void;
   /** C(회의록 보드)가 회의실 사각형을 구독. 구독 즉시 마지막 값을 1회 재생(replay)한다. */
   onMeetingRoomRectChanged(cb: (rect: ScreenRect | null) => void): () => void;

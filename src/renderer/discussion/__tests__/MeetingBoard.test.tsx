@@ -8,7 +8,7 @@ vi.mock("../../ipc/tauriApi", () => ({ tauriApi: {} }));
 import { createMockOfficeBus } from "../../office/bus";
 import { useAppStore } from "../../store/appStore";
 import { resetDiscussionStoreForTest, useDiscussionStore } from "../discussionStore";
-import { MeetingBoard } from "../MeetingBoard";
+import { MeetingBoard, boardLeft } from "../MeetingBoard";
 
 const now = 1_800_000_000_000;
 const agent = (id: string, name: string) => ({ id, name, role: "", seed: id, createdAt: 0, deskIndex: 0 });
@@ -78,6 +78,14 @@ describe("MeetingBoard", () => {
     expect([board.style.left, board.style.top, board.classList.contains("docked")]).toEqual(["348px", "50px", false]);
     act(() => bus.emitMeetingRoomRectChanged(null));
     expect([board.style.left, board.classList.contains("docked")]).toEqual(["", true]);
+  });
+
+  it("회의실 오른쪽에 자리가 모자라면 왼쪽에 붙고, 양쪽 다 모자라면 오른쪽이다", () => {
+    const room = { x: 700, y: 50, w: 240, h: 144 };
+    expect(boardLeft(room, 1000)).toBe(700 - 8 - 280);
+    expect(boardLeft(room, 2000)).toBe(948);
+    expect(boardLeft(room, 0)).toBe(948); // 폭을 모르면 오른쪽
+    expect(boardLeft({ ...room, x: 100 }, 400)).toBe(348); // 왼쪽도 모자라다
   });
 
   it("머리를 누르면 접히고, 접힘을 기억한다", () => {

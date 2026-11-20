@@ -14,10 +14,11 @@
 //
 // 팔레트는 "강철 + 청록 발광" 한 벌만 두고, 어두운/모노크롬 테마에서는
 // sceneColor.ts가 자동 변환한다.
-import type { TileRect } from "../map/mapData";
-import { L, Tile, buildSceneMap } from "../map/mapData";
+import type { OfficeMap, TileRect } from "../map/mapData";
+import { L, Tile, buildSceneMap, meetingRoomAt } from "../map/mapData";
 import type { QuietGroup } from "./sceneColor";
 import { defineScene } from "./defineScene";
+import { drawMeetingTile } from "./meetingTiles";
 import type { SceneDef, TileDrawFn } from "./sceneTypes";
 
 // 위 2줄은 뷰포트(창밖 우주), ty4/ty7이 좌석 행, ty5/ty8이 콘솔 스테이션
@@ -34,17 +35,20 @@ const GRID: Tile[][] = [
   L('WFFFFFFFFFFFFFFFFFFW'), // ty7  - 좌석 행 2
   L('WFFDDFFDDFFDDFFDDFFW'), // ty8  - 콘솔 스테이션 4쌍(위 행과 한 칸 엇갈림)
   L('WFPFFFFFFFFFFFFFFPFW'), // ty9  - 라운지 진입부 + 수경 포드
-  L('WFRRRRRRRRRRRRRRRRFW'), // ty10 - 홀로그램 라운지 패드
-  L('WFRRRTTRRRRRRRRRRRFW'), // ty11 - 패드 + 홀로테이블(2칸)
-  L('WFFFFFFFFFFCCCCCCFFW'), // ty12 - 보급·급식 카운터
+  L('WFMMMMMRRRRRRRRRRRFW'), // ty10 - 홀로그램 라운지 패드 + 회의실
+  L('WFMTTTMRRTTRRRRRRRFW'), // ty11 - 회의실 + 패드 + 홀로테이블(2칸, tx9·10)
+  L('WFMMMMMFFFFCCCCCCFFW'), // ty12 - 보급·급식 카운터 + 회의실
   L('WWWWWWWWWWWWWWWWWWWW'), // ty13 - 선미 격벽
 ];
 
 /** 홀로그램 패드를 깐 승무원 라운지 — 오피스 러그 라운지와 같은 역할.
- * 홀로테이블(tx5~6)을 피해 패드 오른쪽에 잡는다. */
+ * 회의실(tx2..6)과 홀로테이블(tx9·10)을 피해 패드 오른쪽에 잡는다. */
 const BREAK_ROOM: TileRect = { x: 12, y: 10, w: 5, h: 2 };
 
-export const SPACESHIP_MAP = buildSceneMap(GRID, BREAK_ROOM);
+export const SPACESHIP_MAP: OfficeMap = {
+  ...buildSceneMap(GRID, BREAK_ROOM),
+  meetingRoom: meetingRoomAt(2, 10),
+};
 
 /** 뷰포트(창밖 우주)로 그리는 위쪽 행 수. 그보다 아래의 Wall은 선체 격벽. */
 const VIEW_ROWS = 2;
@@ -119,6 +123,17 @@ const SPACESHIP_PALETTE_RAW = {
   captainSeatHi: 0x59647a,
   captainRail: 0x7d8797,
   captainScreen: 0x23262a, // 함장석 콘솔도 같은 무채색 화면
+  // 토의 회의실(meetingTiles.ts): 브리핑룸 패드(유도등 테두리) + 승무원 의자.
+  meetFloor: 0x4b525c,
+  meetEdge: 0x4fd8d0,
+  meetGrain: 0x424954,
+  meetChair: 0x2f3743,
+  meetChairHi: 0x6c7788,
+  meetTableTop: 0x6a7484,
+  meetTable: 0x4a5464,
+  meetTableShade: 0x2f3743,
+  meetPaper: 0x7ff0e4,
+  meetCup: 0x8f9294,
 };
 
 // 데크 잔무늬 죽이기 — 패널 체커·이음선·리벳·얼룩을 데크 바탕으로 당긴다.
@@ -151,6 +166,7 @@ const scatter = (tx: number, ty: number, mod: number): number => (tx * 131 + ty 
 
 function spaceshipTileDraw(pal: SpaceshipPalette): TileDrawFn {
   return (g, { t, tx, ty, s, map }) => {
+    if (drawMeetingTile(g, { t, tx, ty, s, map }, pal)) return;
     // 32px 단위의 넓은 데크 패널. 타일마다 색·리벳을 반복하지 않는다.
     const deck = (Math.floor(tx / 2) + Math.floor(ty / 2)) % 2 === 0 ? pal.deckA : pal.deckB;
     switch (t) {

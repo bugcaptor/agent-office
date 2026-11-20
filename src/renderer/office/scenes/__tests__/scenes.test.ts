@@ -25,7 +25,8 @@ import {
   quietPalette,
   sceneColorMode,
 } from "../sceneColor";
-import { OFFICE_MAP, Tile } from "../../map/mapData";
+import { MEETING_MAX_SEATS, OFFICE_MAP, Tile } from "../../map/mapData";
+import type { OfficeMap } from "../../map/mapData";
 import { isWalkable } from "../../world/pathing";
 import { THEMES, THEME_ORDER } from "../../../theme/themes";
 import type { SceneDef } from "../sceneTypes";
@@ -161,6 +162,70 @@ describe("SCENES 레지스트리 무결성", () => {
   });
 
 
+});
+
+describe("풍경별 토의 회의실", () => {
+  const inRect = (r: { x: number; y: number; w: number; h: number }, tx: number, ty: number) =>
+    tx >= r.x && tx < r.x + r.w && ty >= r.y && ty < r.y + r.h;
+  const key = (p: { tx: number; ty: number }) => `${p.tx},${p.ty}`;
+  const cases = ALL_SCENES.map((s) => [s.id, s.map] as const);
+
+  it.each(cases)("[%s] 회의실이 있고, 사각형 안은 회의실 바닥과 테이블뿐이며 바닥은 사각형 밖에 없다", (_id, map) => {
+    const room = map.meetingRoom!;
+    expect(room).toBeDefined();
+    for (let ty = 0; ty < map.height; ty++) {
+      for (let tx = 0; tx < map.width; tx++) {
+        const t = map.tiles[ty][tx];
+        if (inRect(room.rect, tx, ty)) expect([Tile.MeetingFloor, Tile.Table], `(${tx},${ty})`).toContain(t);
+        else expect(t, `(${tx},${ty})`).not.toBe(Tile.MeetingFloor);
+      }
+    }
+  });
+
+  it.each(cases)("[%s] 의자 5개가 서로 다른 걸을 수 있는 칸이고 바라보는 쪽에 테이블이 있다", (_id, map) => {
+    const room = map.meetingRoom!;
+    expect(room.seats).toHaveLength(MEETING_MAX_SEATS);
+    expect(new Set(room.seats.map(key)).size).toBe(room.seats.length);
+    for (const seat of room.seats) {
+      expect(isWalkable(map, seat.tx, seat.ty)).toBe(true);
+      const [dx, dy] = seat.facing === "down" ? [0, 1] : seat.facing === "left" ? [-1, 0] : [1, 0];
+      expect(map.tiles[seat.ty + dy][seat.tx + dx], key(seat)).toBe(Tile.Table);
+    }
+  });
+
+  it.each(cases)("[%s] 데스크 좌석·줄서기 슬롯·휴게 공간·보스 자리와 겹치지 않는다", (_id, map) => {
+    const room = map.meetingRoom!.rect;
+    const deskSeats = new Set(map.desks.map((d) => key(d.seat)));
+    const queue = new Set(map.queueSlots!.map(key));
+    for (let ty = room.y; ty < room.y + room.h; ty++) {
+      for (let tx = room.x; tx < room.x + room.w; tx++) {
+        expect(deskSeats.has(`${tx},${ty}`), `(${tx},${ty})`).toBe(false);
+        expect(queue.has(`${tx},${ty}`), `(${tx},${ty})`).toBe(false);
+        expect(inRect(map.breakRoom!, tx, ty), `(${tx},${ty})`).toBe(false);
+        expect(inRect(map.bossDesk!, tx, ty), `(${tx},${ty})`).toBe(false);
+      }
+    }
+  });
+
+  it.each(cases)("[%s] 데스크 좌석·줄 슬롯·휴게 공간·회의실 의자가 모두 한 동선으로 이어진다", (_id, map: OfficeMap) => {
+    const start = map.desks[0].seat;
+    const seen = new Set([key(start)]);
+    const queue = [start];
+    while (queue.length) {
+      const { tx, ty } = queue.shift()!;
+      for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+        const n = { tx: tx + dx, ty: ty + dy };
+        if (!seen.has(key(n)) && isWalkable(map, n.tx, n.ty)) {
+          seen.add(key(n));
+          queue.push(n);
+        }
+      }
+    }
+    const targets = [...map.desks.map((d) => d.seat), ...map.queueSlots!, ...map.meetingRoom!.seats];
+    const br = map.breakRoom!;
+    for (let ty = br.y; ty < br.y + br.h; ty++) for (let tx = br.x; tx < br.x + br.w; tx++) targets.push({ tx, ty });
+    for (const p of targets) expect(seen.has(key(p)), key(p)).toBe(true);
+  });
 });
 
 describe("sceneColor", () => {

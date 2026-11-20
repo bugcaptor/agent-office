@@ -8,10 +8,11 @@
 // 레이아웃은 해변과 일부러 다르게 잡았다 — 오두막(보스 자리)이 좌측에 서고
 // 줄서기 레인이 동쪽으로 뻗으며, 라운지는 우측에 있다(줄 슬롯 방향은
 // `buildSceneMap`이 보스 위치에서 유도한다).
-import type { TileRect } from "../map/mapData";
-import { L, Tile, buildSceneMap } from "../map/mapData";
+import type { OfficeMap, TileRect } from "../map/mapData";
+import { L, Tile, buildSceneMap, meetingRoomAt } from "../map/mapData";
 import type { QuietGroup } from "./sceneColor";
 import { defineScene } from "./defineScene";
+import { drawMeetingTile } from "./meetingTiles";
 import type { SceneDef, TileDrawFn } from "./sceneTypes";
 
 const GRID: Tile[][] = [
@@ -22,9 +23,9 @@ const GRID: Tile[][] = [
   L('WFFFFFFFFFFFFFFFFFFW'), // ty4
   L('WFFFFFFFFFFFFFFFFFFW'), // ty5  - 좌석 행 2
   L('WPDDFFDDFFDDFFDDFFFW'), // ty6  - 바위(tx1) + 캠핑 테이블 4쌍
-  L('WFFFFFFFFFFFFFFFFFFW'), // ty7
-  L('WFBFFFFFFFFFFFFFFFFW'), // ty8  - 통나무 오두막 상단(tx2)
-  L('WFBFFFFFFFFFFFFFFFFW'), // ty9  - 오두막 하단 + 줄서기 레인(동쪽)
+  L('WFFFFFFFFFFFMMMMMFFW'), // ty7 + 회의실
+  L('WFBFFFFFFFFFMTTTMFFW'), // ty8  - 통나무 오두막 상단(tx2) + 회의실
+  L('WFBFFFFFFFFFMMMMMFFW'), // ty9  - 오두막 하단 + 줄서기 레인(동쪽) + 회의실
   L('WFFFFFFRRRRRRRRRRRFW'), // ty10 - 캠핑 돗자리
   L('WFFFFFFRRRRTTRRRRRFW'), // ty11 - 돗자리 + 평상(2칸)
   L('WFFCCCCCFFFFFFFFFFFW'), // ty12 - 모닥불·주전자
@@ -34,7 +35,10 @@ const GRID: Tile[][] = [
 /** 돗자리를 편 쉼터 — 오피스 러그 라운지와 같은 역할. */
 const BREAK_ROOM: TileRect = { x: 13, y: 10, w: 5, h: 2 };
 
-export const VALLEY_MAP = buildSceneMap(GRID, BREAK_ROOM);
+export const VALLEY_MAP: OfficeMap = {
+  ...buildSceneMap(GRID, BREAK_ROOM),
+  meetingRoom: meetingRoomAt(12, 7),
+};
 
 const VALLEY_PALETTE_RAW = {
   grassA: 0x6faf57,
@@ -81,6 +85,17 @@ const VALLEY_PALETTE_RAW = {
   cabinDoor: 0x3f2c1e,
   cabinWindow: 0xf2d05a,
   smoke: 0xc3c7c9,
+  // 토의 회의실(meetingTiles.ts): 평상 마루 + 통나무 의자.
+  meetFloor: 0xa97a48,
+  meetEdge: 0x7a5530,
+  meetGrain: 0x946a3c,
+  meetChair: 0x6b4a2c,
+  meetChairHi: 0x8f6335,
+  meetTableTop: 0xe0b47c,
+  meetTable: 0xc0894f,
+  meetTableShade: 0x8f6335,
+  meetPaper: 0xe4e0d0,
+  meetCup: 0x3f6ea8,
 };
 
 // 풀밭 잔무늬 죽이기 — 체커 두 톤과 풀포기 점을 풀 바탕으로 당긴다.
@@ -105,6 +120,7 @@ const scatter = (tx: number, ty: number, mod: number): number => (tx * 97 + ty *
 
 function valleyTileDraw(pal: ValleyPalette): TileDrawFn {
   return (g, { t, tx, ty, s, map }) => {
+    if (drawMeetingTile(g, { t, tx, ty, s, map }, pal)) return;
     const grass = ty % 4 === 0 ? pal.grassB : pal.grassA;
     switch (t) {
       case Tile.Floor: {

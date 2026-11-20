@@ -168,7 +168,7 @@ export class OfficeWorld {
 
   /**
    * 토의 참가자의 연출 역할. 회의실 의자는 `members` 순서(0번 = 사회자)로 고정 배정해, 본업이 쉬었다
-   * 일했다 해도 같은 의자로 돌아온다. 회의실이 없는 풍경이면 의자 없이 말풍선·사회자 표시만 한다.
+   * 일했다 해도 같은 의자로 돌아온다. 회의실이 없는 맵이면 의자 없이 말풍선·사회자 표시만 한다.
    */
   private discussionRoleFor(agentId: string): CharacterDiscussionRole | null {
     const members = this.discussionStage?.members ?? [];
@@ -179,7 +179,7 @@ export class OfficeWorld {
   }
 
   /**
-   * 회의실 분신을 토의 참가자·의자·외형에 맞춘다. 회의실이 없는 풍경이면 분신이 없다(본체가 제자리에서 말풍선을
+   * 회의실 분신을 토의 참가자·의자·외형에 맞춘다. 회의실이 없는 맵이면 분신이 없다(본체가 제자리에서 말풍선을
    * 띄운다). 책상이 모자라 본체가 없는 참가자도 분신으로 회의실에 앉는다. 프로필이 없는(삭제된) 참가자는 건너뛴다.
    */
   private syncMeetingAvatars(): void {

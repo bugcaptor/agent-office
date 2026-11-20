@@ -664,7 +664,7 @@ export class OfficeScene {
     this.publishMeetingRoomRect(scale, ox, oy);
   }
 
-  /** 회의실의 화면 사각형을 바뀔 때만 알린다(회의록 보드가 그 옆에 붙는다). 회의실 없는 풍경이면 null. */
+  /** 회의실의 화면 사각형을 바뀔 때만 알린다(회의록 보드가 그 옆에 붙는다). 회의실 없는 맵(구 픽스처)이면 null. */
   private publishMeetingRoomRect(scale: number, ox: number, oy: number): void {
     const room = this.map.meetingRoom?.rect;
     let rect: ScreenRect | null = null;

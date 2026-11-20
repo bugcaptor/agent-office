@@ -8,10 +8,11 @@
 //
 // 팔레트는 "한낮의 원색" 한 벌만 두고, 어두운/모노크롬 테마에서는
 // sceneColor.ts가 자동 변환한다.
-import type { TileRect } from "../map/mapData";
-import { L, Tile, buildSceneMap } from "../map/mapData";
+import type { OfficeMap, TileRect } from "../map/mapData";
+import { L, Tile, buildSceneMap, meetingRoomAt } from "../map/mapData";
 import type { QuietGroup } from "./sceneColor";
 import { defineScene } from "./defineScene";
+import { drawMeetingTile } from "./meetingTiles";
 import type { SceneDef, TileDrawFn } from "./sceneTypes";
 
 // 위 2줄은 바다(수평선+파도), ty2/ty5는 좌석 행, ty3/ty6은 파라솔 작업대
@@ -25,9 +26,9 @@ const GRID: Tile[][] = [
   L('WFFFFFFFFFFFFFFFFFFW'), // ty4
   L('WFFFFFFFFFFFFFFFFFFW'), // ty5  - 좌석 행 2
   L('WPDDFFDDFFDDFFDDFFFW'), // ty6  - 야자수(tx1) + 파라솔 작업대 4쌍
-  L('WFFFFFFFFFFFFFFFFFFW'), // ty7
-  L('WFFFFFFFFFFFFFFFFBFW'), // ty8  - 라이프가드 타워 상단(tx17)
-  L('WFFFFFFFFFFFFFFFFBFW'), // ty9  - 타워 하단 + 줄서기 레인
+  L('WFMMMMMFFFFFFFFFFFFW'), // ty7 + 회의실
+  L('WFMTTTMFFFFFFFFFFBFW'), // ty8  - 라이프가드 타워 상단(tx17) + 회의실
+  L('WFMMMMMFFFFFFFFFFBFW'), // ty9  - 타워 하단 + 줄서기 레인 + 회의실
   L('WFRRRRRRRRRRRRRRRRFW'), // ty10 - 비치타월 라운지
   L('WFRRRRRRRTTRRRRRRRPW'), // ty11 - 비치타월 + 비치 테이블 + 야자수(tx18)
   L('WFFCCCCCCFFFFFFFFFFW'), // ty12 - 티키 바
@@ -37,7 +38,10 @@ const GRID: Tile[][] = [
 /** 파라솔 그늘 아래 쉬는 자리 — 오피스 러그 라운지와 같은 역할. */
 const BREAK_ROOM: TileRect = { x: 11, y: 10, w: 5, h: 2 };
 
-export const BEACH_MAP = buildSceneMap(GRID, BREAK_ROOM);
+export const BEACH_MAP: OfficeMap = {
+  ...buildSceneMap(GRID, BREAK_ROOM),
+  meetingRoom: meetingRoomAt(2, 7),
+};
 
 /** 바다가 시작되는 행 — 이 위(포함)는 Wall을 바다로, 아래는 모래언덕으로 그린다. */
 const SEA_ROWS = 2;
@@ -83,6 +87,17 @@ const BEACH_PALETTE_RAW = {
   towerBeam: 0xa9743f,
   towerFlag: 0xe8524f,
   towerWindow: 0x2f4a63,
+  // 토의 회의실(meetingTiles.ts): 대나무 돗자리 + 접이식 비치체어.
+  meetFloor: 0xe3c88e,
+  meetEdge: 0xb8955a,
+  meetGrain: 0xd3b77c,
+  meetChair: 0x2f86c0,
+  meetChairHi: 0x6fb6e0,
+  meetTableTop: 0xe8be86,
+  meetTable: 0xc98f57,
+  meetTableShade: 0xa87742,
+  meetPaper: 0xfff4e0,
+  meetCup: 0xef6f6c,
 };
 
 // 모래사장 잔무늬 죽이기 — 체커 두 톤과 잔물결 자국을 모래 바탕으로 당긴다.
@@ -107,6 +122,7 @@ const scatter = (tx: number, ty: number, mod: number): number => (tx * 73 + ty *
 
 function beachTileDraw(pal: BeachPalette): TileDrawFn {
   return (g, { t, tx, ty, s, map }) => {
+    if (drawMeetingTile(g, { t, tx, ty, s, map }, pal)) return;
     // 타일 체커 대신 넓은 모래 결을 쓴다. 가구가 있는 칸도 같은 바탕을 받아
     // 해변이 잘린 격자가 아니라 한 장의 백사장으로 읽힌다.
     const sand = ty % 5 === 0 ? pal.sandB : pal.sandA;

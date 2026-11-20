@@ -156,7 +156,7 @@
   color: #e8e8f0;
 }
 
-/* 회의실이 없는 풍경: 오피스 화면 왼쪽 위 */
+/* 회의실이 없는 맵: 오피스 화면 왼쪽 위 */
 .meeting-board.docked {
   left: 12px;
   top: 52px;
