@@ -1771,24 +1771,13 @@ pub struct DiscussionSessionRequest {
     /// 첫 프롬프트 언어(`ko`·`en`). 실행기가 차례 지시와 같은 언어를 싣는다. 없으면 화면 언어 설정을 따른다.
     #[serde(default)] pub lang: Option<String>,
 }
-/// 읽기 전용을 어떻게 지키는가. CLI에서 정해진다(`discussion_session::read_only_mode`).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "lowercase")]
-pub enum DiscussionReadOnly {
-    /// CLI 플래그가 파일 수정 도구·명령을 막는다.
-    Flags,
-    /// 플래그가 일부(편집 도구)만 막고 나머지는 프롬프트로 제한한다.
-    Partial,
-    /// 강제할 플래그가 없어 프롬프트로만 제한한다.
-    Prompt,
-}
 /// 발언을 어떻게 받는가. CLI에서 정해진다(`discussion_session::collection_mode`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum DiscussionCollection {
     /// `office-discuss say`로 제출한다.
     Submit,
-    /// 턴의 마지막 응답이 발언이다(제출 명령을 쓸 수 없는 샌드박스).
+    /// 턴의 마지막 응답이 발언이다(Claude 전사·Codex Stop 훅).
     LastReply,
 }
 #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -1799,7 +1788,6 @@ pub struct DiscussionSessionResult {
     pub session_id: String,
     /// 첫 프롬프트를 넣은 시각(epoch ms). 첫 프롬프트에 차례 지시를 실었다면 그 발언 수집의 `since`다.
     pub submitted_at: u64,
-    pub read_only: DiscussionReadOnly,
     pub collection: DiscussionCollection,
     /// 관찰 훅이 붙었는가. 거짓이면 턴 종료 신호가 오지 않는다.
     pub observed: bool,

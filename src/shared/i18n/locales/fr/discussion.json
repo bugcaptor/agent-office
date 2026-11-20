@@ -130,7 +130,7 @@
     "maxCostUsd": "Coût max. (USD)",
     "usageGuard": "Attendre la réinitialisation si l’usage de l’abonnement est presque épuisé",
     "limitsHint": "Quand une limite est atteinte, l’animateur rédige la note de décision avec les avis exprimés jusque-là.",
-    "readOnlyHint": "Les participants sont en lecture seule. Ils peuvent lire le code et les docs et chercher sur le web, mais ne modifient pas de fichiers et ne commitent pas.",
+    "readOnlyHint": "Les participants sont en lecture seule. Ils peuvent lire le code et les docs et chercher sur le web, mais ne modifient pas de fichiers et ne commitent pas. Les permissions CLI restent inchangées ; une règle de consigne s'en charge.",
     "cancel": "Annuler",
     "save": "Enregistrer",
     "create": "Créer",
@@ -167,21 +167,8 @@
     "reviewHint": "Les onglets de la discussion sont fermés. Lisez la note de décision et validez la conclusion pour terminer."
   },
   "readOnly": {
-    "summary": {
-      "flags": "Lecture seule · imposée par la CLI",
-      "partial": "Lecture seule · en partie par consigne seulement",
-      "prompt": "Lecture seule · en partie par consigne seulement"
-    },
-    "hint": {
-      "flags": "Les réglages CLI de chaque participant bloquent les outils et commandes de modification.",
-      "partial": "Pour certains participants, la CLI ne bloque que les outils d'édition et pas toutes les commandes shell, limitées par la consigne (Claude peut encore lancer les commandes déjà autorisées dans vos réglages).",
-      "prompt": "Certaines CLI ne peuvent pas être verrouillées : la modification n'est interdite que par la consigne."
-    },
-    "mode": {
-      "flags": "lecture seule imposée par la CLI",
-      "partial": "la CLI bloque seulement l'édition",
-      "prompt": "limité par la consigne seulement"
-    }
+    "label": "Lecture seule · règle de consigne",
+    "hint": "Les CLI des participants gardent leurs permissions habituelles ; les règles de la première consigne interdisent de modifier des fichiers, de commiter et de changer des tâches. Des options de permission bloqueraient aussi l'envoi des interventions et figeraient la discussion."
   },
   "session": {
     "errors": {

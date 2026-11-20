@@ -10,7 +10,7 @@
 // `@tauri-apps/api/event`를 직접 구독하는 모듈이 같은 경로로 받는다.
 import { listen } from "@tauri-apps/api/event";
 import { Events } from "@shared/ipc";
-import { discussionCollectionMode, discussionReadOnlyMode, discussionSessionAgentId } from "@shared/types";
+import { discussionCollectionMode, discussionSessionAgentId } from "@shared/types";
 import type {
   AgentOfficeApi,
   AppSettings,
@@ -253,7 +253,7 @@ const impl: Partial<AgentOfficeApi> = {
     discussionSessionRequests.push(request);
     emitSessionState(agentId, "running");
     pushOutput(agentId, `\x1b[1;35m# ${discussion?.topic ?? request.discussionId}\x1b[0m\r\n${discussion?.cwd ?? "~"} · ${cli}\r\n`);
-    return { agentId, sessionId, submittedAt: Date.now(), readOnly: discussionReadOnlyMode(cli), collection: discussionCollectionMode(cli), observed: true };
+    return { agentId, sessionId, submittedAt: Date.now(), collection: discussionCollectionMode(cli), observed: true };
   },
   async sendDiscussionTurn(request) {
     pushOutput(request.agentId, `\r\n> ${request.text}\r\n`);

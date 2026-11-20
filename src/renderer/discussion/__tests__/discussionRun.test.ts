@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { CollectedUtterance, Discussion, DiscussionCollectRequest, DiscussionSessionRequest, UsageSnapshot } from "@shared/types";
-import { discussionCollectionMode, discussionReadOnlyMode, discussionSessionAgentId } from "@shared/types";
+import { discussionCollectionMode, discussionSessionAgentId } from "@shared/types";
 
 const { api, notify } = vi.hoisted(() => ({
   api: {
@@ -72,7 +72,7 @@ beforeEach(() => {
   clock = now; seq = 0; replies = {};
   api.openDiscussionSession.mockImplementation(async (r: DiscussionSessionRequest) => {
     const cli = r.agentId === "b" ? "codex" : "claude";
-    return { agentId: sid(r.agentId), sessionId: `s${++seq}`, submittedAt: ++clock, readOnly: discussionReadOnlyMode(cli), collection: discussionCollectionMode(cli), observed: true };
+    return { agentId: sid(r.agentId), sessionId: `s${++seq}`, submittedAt: ++clock, collection: discussionCollectionMode(cli), observed: true };
   });
   api.sendDiscussionTurn.mockImplementation(async (r: { sessionId: string }) => ({ sessionId: r.sessionId, submittedAt: ++clock }));
   api.collectDiscussionUtterance.mockImplementation(async (r: DiscussionCollectRequest): Promise<CollectedUtterance | null> => {

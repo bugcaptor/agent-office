@@ -1,14 +1,14 @@
 //! 토의 참가자 세션: 참가자마다 캐릭터 본 터미널이 아닌 토의 전용 탭을 열고 첫 프롬프트
 //! (역할 카드 + 토의 규칙 + 주제·맥락)를 넣는다. 태스크 대화와 달리 관찰 훅을 붙여 턴 종료를
-//! 받고(`control::turns::TurnTracker`, 렌더러의 알림·사용량 이벤트), 읽기 전용은 CLI가
-//! 강제할 수 있는 만큼 플래그로 건다. 발언은 `office-discuss say`로 제출받고, 제출 명령을
-//! 못 쓰는 Codex(읽기 전용 샌드박스)는 Stop 훅의 마지막 응답을 받는다.
+//! 받고(`control::turns::TurnTracker`, 렌더러의 알림·사용량 이벤트), 읽기 전용은 프롬프트 규칙으로만
+//! 지킨다. 권한 플래그로 막으면 제출 명령까지 막혀 진행이 멈추기 때문이다(아래 `session_args`).
+//! Claude·Codex는 턴의 마지막 응답을 발언으로 받고, 나머지는 `office-discuss say`로 제출받는다.
 //! 진행(누가 언제 말하나)은 실행기가 쥔다. 여기는 열기·차례 보내기·발언 수집까지다.
 
 use crate::i18n::Lang;
 use crate::observer::WrapperArg;
 use crate::types::{
-    CollectedUtterance, Discussion, DiscussionCollection, DiscussionReadOnly, DiscussionRole, DiscussionSessionRequest,
+    CollectedUtterance, Discussion, DiscussionCollection, DiscussionRole, DiscussionSessionRequest,
     DiscussionSessionResult, DiscussionStance, DiscussionUtteranceSource, WorkCli, WorkSendRequest,
     DISCUSSION_SESSION_PREFIX,
 };
@@ -62,61 +62,21 @@ pub fn turn_file(app_data: &Path, agent_id: &str) -> Option<PathBuf> {
     Some(turns_dir(app_data).join(format!("{agent_id}.md")))
 }
 
-/// 읽기 전용을 어떻게 지키는가. 근거는 각 CLI의 `--help`(2026-11-20, claude 2.1.329 ·
-/// codex-cli 0.170.0 · agy · kilo 7.8.3 · pi 1.5.0)와 `-p`·`exec` 실측이다.
-pub fn read_only_mode(cli: &WorkCli) -> DiscussionReadOnly {
-    match cli {
-        // `--disallowed-tools Edit Write NotebookEdit`(거절이 허용보다 앞선다) + `dontAsk`(허용 안 된
-        // 도구는 묻지 않고 거절). 다만 사용자·프로젝트 설정과 `--settings`의 allow 규칙은 dontAsk를
-        // 통과한다(실측: `Bash(touch:*)` 허용 시 touch 성공). 그래서 셸 명령은 완전히 막히지 않는다.
-        WorkCli::Claude => DiscussionReadOnly::Partial,
-        // `--sandbox read-only`: 셸 명령의 파일 쓰기를 OS 샌드박스가 막는다(실측: Operation not permitted).
-        WorkCli::Codex => DiscussionReadOnly::Flags,
-        // `--exclude-tools edit,write`: 편집 도구만 뺀다(실측: 대신 bash로 파일을 만들었다). bash는
-        // 제출 명령에 필요해 남긴다.
-        WorkCli::Pi => DiscussionReadOnly::Partial,
-        // agy는 업무 보내기가 `--dangerously-skip-permissions`로 띄우고 `--mode plan`은 쓰기 차단이
-        // 아니다. kilo는 `--auto`로 띄우며 `--agent ask`(edit·write 거절)는 이 환경에서 실행 검증을
-        // 못 했다. 둘 다 프롬프트로만 제한한다.
-        WorkCli::Agy | WorkCli::Kilo => DiscussionReadOnly::Prompt,
-    }
-}
-
-/// 발언을 어떻게 받는가.
+/// 발언을 어떻게 받는가. 마지막 응답을 읽을 수 있는 CLI는 그것을 쓴다. 제출 명령은 셸 호출이라
+/// 사용자 권한 설정에 걸릴 수 있다(실측: Claude `dontAsk`는 본문에 `{"`가 있는 heredoc을
+/// 허용 규칙과 무관하게 거절해 사회자 JSON 지시가 매번 막혔다). Codex 기본 workspace-write
+/// 샌드박스도 앱 데이터 쓰기를 막는다.
 pub fn collection_mode(cli: &WorkCli) -> DiscussionCollection {
     match cli {
-        // 읽기 전용 샌드박스는 제출 명령의 앱 데이터 쓰기도 막는다(실측: Operation not permitted).
-        WorkCli::Codex => DiscussionCollection::LastReply,
+        WorkCli::Claude | WorkCli::Codex => DiscussionCollection::LastReply,
         _ => DiscussionCollection::Submit,
     }
 }
 
-/// 토의 세션 셸 래퍼에 붙일 읽기 전용 인자(명령별). 탭에서 어느 CLI를 띄워도 걸리게
-/// 참가자 CLI와 무관하게 모두 싣는다. `shim`은 Claude 허용 목록에 넣을 제출 명령 경로다.
-pub fn read_only_args(shim: Option<&Path>) -> Vec<(&'static str, Vec<WrapperArg>)> {
-    let lit = |s: &str| WrapperArg::Literal(s.to_string());
-    let mut allowed = "Read Grep Glob WebFetch WebSearch".to_string();
-    if let Some(shim) = shim {
-        allowed.push_str(&format!(" Bash({}:*)", shim.display()));
-    }
-    vec![
-        (
-            "claude",
-            vec![
-                lit("--allowed-tools"),
-                WrapperArg::Literal(allowed),
-                // 사용자 설정의 allow 규칙이 편집 도구를 열어 두었어도 막는다.
-                lit("--disallowed-tools"),
-                lit("Edit Write NotebookEdit"),
-                // 값 하나짜리 옵션을 끝에 둔다. 앞의 두 옵션은 값을 여럿 받으므로 뒤에 위치 인자가 오면 삼킨다.
-                lit("--permission-mode"),
-                lit("dontAsk"),
-            ],
-        ),
-        // 승인 프롬프트에서 멈추지 않고(`never`), 웹 조사는 `--search`로 연다.
-        ("codex", vec![lit("--sandbox"), lit("read-only"), lit("--ask-for-approval"), lit("never"), lit("--search")]),
-        ("pi", vec![lit("--exclude-tools"), lit("edit,write")]),
-    ]
+/// 토의 세션 셸 래퍼에 붙일 인자(명령별). 권한·도구를 좁히는 플래그는 싣지 않는다. 읽기 전용은
+/// 첫 프롬프트 규칙으로 지키고, CLI는 사용자의 평소 권한 설정으로 돈다. Codex는 웹 조사만 연다.
+pub fn session_args() -> Vec<(&'static str, Vec<WrapperArg>)> {
+    vec![("codex", vec![WrapperArg::Literal("--search".into())])]
 }
 
 /// 열기 상한. `live`는 살아 있는 토의 세션 agentId들이다. 다른 토의의 세션이 남아 있으면
@@ -148,13 +108,12 @@ struct Text {
     stances: [&'static str; 7],
     rules: &'static str,
     read_only: &'static str,
-    enforced: [&'static str; 3],
+    submit_exception: &'static str,
     flow: &'static str,
     moderator_rules: &'static str,
     debater_rules: &'static str,
     submit: &'static str,
     submit_placeholder: &'static str,
-    submit_after: &'static str,
     last_reply: &'static str,
     topic: &'static str,
     context: &'static str,
@@ -192,19 +151,14 @@ const KO: Text = Text {
         "종합 — 나온 의견을 묶어 절충안과 남은 쟁점을 정리합니다.",
     ],
     rules: "## 토의 규칙",
-    read_only: "- **읽기 전용**: 코드·문서를 읽고 웹을 조사할 수 있지만, 파일을 만들거나 고치거나 지우지 마세요. 커밋·푸시·패키지 설치를 하지 말고, `office-task`로 업무를 만들거나 바꾸지 마세요.",
-    enforced: [
-        "  이 세션은 CLI 설정으로 수정 도구가 막혀 있습니다.",
-        "  이 세션은 CLI 설정으로 편집 도구만 막혀 있고 셸 명령은 다 막히지 않습니다. 셸 명령으로도 아무것도 고치지 마세요.",
-        "  이 세션은 CLI 설정으로 막혀 있지 않습니다. 이 규칙을 스스로 지켜야 합니다.",
-    ],
+    read_only: "- **읽기 전용**: 이 토의에서는 코드·문서를 읽고 웹을 조사하는 것만 합니다. 이 세션의 CLI는 평소 권한 그대로 돌기 때문에 이 규칙은 스스로 지켜야 합니다.\n  - 파일을 만들거나 고치거나 지우지 마세요. 편집 도구뿐 아니라 셸로 쓰는 것(`>`·`>>` 리다이렉션, `tee`, `sed -i`, `mv`, `rm`, `touch`, `mkdir` 등)도 하지 마세요.\n  - 커밋·푸시·브랜치 전환·`git stash`·패키지 설치·빌드·서버 실행처럼 저장소나 환경을 바꾸는 명령을 실행하지 마세요. `office-task`로 업무를 만들거나 바꾸지 마세요.\n  - 셸은 `cat`·`rg`·`ls`·`git log`·`git diff`·`git show`처럼 읽기만 하는 명령에 쓰세요. 무언가를 바꿔야 결론이 난다면 직접 하지 말고 발언에서 제안하세요.",
+    submit_exception: "  - 아래 발언 제출 명령은 이 규칙의 예외입니다.",
     flow: "- **진행**: 사회자가 진행합니다. 첫 라운드는 토론자 모두가 서로의 의견을 보지 않고 동시에 발언합니다. 그다음부터는 사회자가 지목한 사람이 차례로 말합니다. 다른 참가자의 새 발언은 앱이 차례마다 전해 줍니다. 차례 지시가 오기 전에는 발언하지 마세요.",
     moderator_rules: "- **사회자**: 중립을 지키고 자기 의견을 내지 마세요. 차례마다 다음 발언자와 질문을 정하거나, 사람에게 물을 것을 정하거나, 토의를 정리합니다. 지시 형식은 차례 지시를 따르세요.",
     debater_rules: "- **토론자**: 역할 카드의 관점과 스탠스로 말하세요. 근거를 대고 짧게(대략 300단어 이내) 말하세요. 동의만 하지 말고 새 정보나 이유를 보태세요.",
     submit: "## 발언 내는 법\n\n차례마다 발언(사회자는 지시)을 정한 뒤 아래 명령으로 제출하고 차례를 마치세요. 같은 차례에 다시 내면 바뀝니다. 제출한 내용만 다른 참가자에게 전해집니다.",
     submit_placeholder: "<발언>",
-    submit_after: "명령을 쓸 수 없으면 마지막 답변에 발언만 쓰세요.",
-    last_reply: "## 발언 내는 법\n\n이 세션은 샌드박스가 쓰기를 막아 제출 명령을 쓸 수 없습니다. 차례마다 마지막 답변 전체가 발언(사회자는 지시)으로 전해지니, 마지막 답변에는 발언만 쓰세요.",
+    last_reply: "## 발언 내는 법\n\n따로 제출하는 명령은 없습니다. 차례마다 마지막 답변 전체가 그대로 발언(사회자는 지시)으로 전해집니다. 조사는 도구로 하고, 마지막 답변에는 발언만 쓰세요. 작업 과정 설명, 인사, \"제출했습니다\" 같은 말은 붙이지 마세요.",
     topic: "## 주제",
     context: "### 맥락",
     no_context: "따로 적힌 맥락이 없습니다.",
@@ -241,19 +195,14 @@ const EN: Text = Text {
         "Synthesizer — combines the opinions into a compromise and lists the open issues.",
     ],
     rules: "## Discussion rules",
-    read_only: "- **Read only**: you may read code and documents and research the web, but do not create, edit or delete files. Do not commit, push or install packages, and do not create or change tasks with `office-task`.",
-    enforced: [
-        "  In this session the CLI settings block editing tools.",
-        "  In this session the CLI settings block only the editing tools; shell commands are not fully blocked. Do not change anything with shell commands either.",
-        "  In this session the CLI settings do not block anything. You must keep this rule yourself.",
-    ],
+    read_only: "- **Read only**: in this discussion you only read code and documents and research the web. This session's CLI runs with its usual permissions, so you must keep this rule yourself.\n  - Do not create, edit or delete files. That covers the editing tools and also writing from the shell (`>`/`>>` redirection, `tee`, `sed -i`, `mv`, `rm`, `touch`, `mkdir` and so on).\n  - Do not run commands that change the repository or the environment, such as commit, push, switching branches, `git stash`, installing packages, building or starting servers. Do not create or change tasks with `office-task`.\n  - Use the shell only for commands that just read, such as `cat`, `rg`, `ls`, `git log`, `git diff` and `git show`. If reaching a conclusion would need a change, propose it in your utterance instead of making it.",
+    submit_exception: "  - The submit command below is the one exception to this rule.",
     flow: "- **Flow**: the moderator runs the discussion. In the first round every debater speaks at the same time without seeing the others. After that, people speak in turn when the moderator calls on them. The app passes on the other participants' new utterances each turn. Do not speak before a turn instruction arrives.",
     moderator_rules: "- **Moderator**: stay neutral and give no opinion of your own. Each turn, choose the next speaker and question, choose what to ask the person, or wrap up the discussion. Follow the format in the turn instruction.",
     debater_rules: "- **Debater**: speak from the perspective and stance on your role card. Give reasons and keep it short (about 300 words at most). Do not just agree; add new information or reasons.",
     submit: "## How to speak\n\nEach turn, decide your utterance (the moderator: your instruction), submit it with the command below and end your turn. Submitting again in the same turn replaces it. Only what you submit reaches the other participants.",
     submit_placeholder: "<utterance>",
-    submit_after: "If you cannot run the command, write only your utterance in your final reply.",
-    last_reply: "## How to speak\n\nIn this session the sandbox blocks writes, so the submit command cannot be used. Each turn your whole final reply is passed on as your utterance (the moderator: your instruction), so write only that in your final reply.",
+    last_reply: "## How to speak\n\nThere is no command to submit with. Each turn your whole final reply is passed on as it is as your utterance (the moderator: your instruction). Do your research with tools and write only the utterance in your final reply. Do not add notes about your work, greetings or remarks like \"submitted\".",
     topic: "## Topic",
     context: "### Context",
     no_context: "No context was given.",
@@ -349,26 +298,25 @@ pub fn build_briefing(input: &Briefing, lang: Lang) -> String {
     }
     sections.push(card);
 
-    let enforced = match read_only_mode(&cli) {
-        DiscussionReadOnly::Flags => t.enforced[0],
-        DiscussionReadOnly::Partial => t.enforced[1],
-        DiscussionReadOnly::Prompt => t.enforced[2],
+    let collection = collection_mode(&cli);
+    let exception = match collection {
+        DiscussionCollection::Submit => format!("\n{}", t.submit_exception),
+        DiscussionCollection::LastReply => String::new(),
     };
     sections.push(format!(
-        "{}\n\n{}\n{enforced}\n{}\n{}",
+        "{}\n\n{}{exception}\n{}\n{}",
         t.rules,
         t.read_only,
         t.flow,
         if moderator { t.moderator_rules } else { t.debater_rules },
     ));
 
-    sections.push(match collection_mode(&cli) {
+    sections.push(match collection {
         DiscussionCollection::Submit => format!(
-            "{}\n\n```sh\n{} say - <<'EOF'\n{}\nEOF\n```\n\n{}",
+            "{}\n\n```sh\n{} say - <<'EOF'\n{}\nEOF\n```",
             t.submit,
             input.shim.display(),
             t.submit_placeholder,
-            t.submit_after,
         ),
         DiscussionCollection::LastReply => t.last_reply.to_string(),
     });
@@ -690,7 +638,6 @@ pub async fn open(app_state: &crate::state::AppState, request: DiscussionSession
         agent_id,
         session_id,
         submitted_at,
-        read_only: read_only_mode(&participant.agent.cli),
         collection: collection_mode(&participant.agent.cli),
         observed,
     })
@@ -821,30 +768,21 @@ mod tests {
     }
 
     #[test]
-    fn read_only_and_collection_follow_the_cli() {
-        assert_eq!(read_only_mode(&WorkCli::Claude), DiscussionReadOnly::Partial);
-        assert_eq!(read_only_mode(&WorkCli::Codex), DiscussionReadOnly::Flags);
-        assert_eq!(read_only_mode(&WorkCli::Pi), DiscussionReadOnly::Partial);
-        assert_eq!(read_only_mode(&WorkCli::Agy), DiscussionReadOnly::Prompt);
-        assert_eq!(read_only_mode(&WorkCli::Kilo), DiscussionReadOnly::Prompt);
-        assert_eq!(collection_mode(&WorkCli::Codex), DiscussionCollection::LastReply);
-        for cli in [WorkCli::Claude, WorkCli::Agy, WorkCli::Kilo, WorkCli::Pi] {
+    fn collection_follows_the_cli_and_no_permission_flags_are_added() {
+        for cli in [WorkCli::Claude, WorkCli::Codex] {
+            assert_eq!(collection_mode(&cli), DiscussionCollection::LastReply);
+        }
+        for cli in [WorkCli::Agy, WorkCli::Kilo, WorkCli::Pi] {
             assert_eq!(collection_mode(&cli), DiscussionCollection::Submit);
         }
-        let args = read_only_args(Some(Path::new("/tmp/ao/office-discuss")));
-        let literal = |cmd: &str| -> Vec<String> {
-            args.iter().find(|(c, _)| *c == cmd).unwrap().1.iter().map(|a| match a { WrapperArg::Literal(s) | WrapperArg::Env(s) => s.clone() }).collect()
-        };
-        assert_eq!(literal("claude")[4..], ["--permission-mode", "dontAsk"], "값 하나짜리 옵션이 끝");
-        assert!(literal("claude")[1].ends_with("Bash(/tmp/ao/office-discuss:*)"));
-        assert_eq!(literal("claude")[2..4], ["--disallowed-tools", "Edit Write NotebookEdit"]);
-        assert_eq!(literal("codex")[..4], ["--sandbox", "read-only", "--ask-for-approval", "never"]);
-        assert_eq!(literal("pi"), ["--exclude-tools", "edit,write"]);
-        assert!(args.iter().all(|(c, _)| !matches!(*c, "agy" | "kilo")));
+        // 권한·도구를 좁히는 플래그는 제출 명령까지 막는다. 웹 조사 여는 것만 남는다.
+        let args = session_args();
+        assert_eq!(args.len(), 1);
+        assert_eq!(args[0], ("codex", vec![WrapperArg::Literal("--search".into())]));
     }
 
     #[test]
-    fn debater_briefing_has_role_card_rules_submit_command_topic_and_voice_in_order() {
+    fn debater_briefing_has_role_card_rules_how_to_speak_topic_and_voice_in_order() {
         let out = brief("hana", "Speak.", Lang::En);
         let at = |needle: &str| out.find(needle).unwrap_or_else(|| panic!("missing {needle:?} in\n{out}"));
         let order = [at("# Team discussion"), at("## Role card"), at("## Discussion rules"), at("## How to speak"), at("## Topic"), at("## Participants"), at("## Voice"), at("## This turn")];
@@ -852,8 +790,9 @@ mod tests {
         assert!(out.contains("**Hana**") && out.contains("**debater**"));
         assert!(out.contains("- Role: Critic") && out.contains("Critical —") && out.contains("Find risks."));
         assert!(!out.contains("### Criteria"), "empty criteria is left out");
-        assert!(out.contains(EN.enforced[1]), "claude blocks only the editing tools");
-        assert!(out.contains("/tmp/ao/office-discuss say - <<'EOF'"));
+        // Claude는 마지막 응답이 발언이라 제출 명령도, 그 예외 문구도 없다.
+        assert!(out.contains(EN.read_only) && out.contains(EN.last_reply));
+        assert!(!out.contains("office-discuss say") && !out.contains(EN.submit_exception));
         assert!(out.contains("Pick a storage format") && out.contains("We store tasks as JSON today.") && out.contains("/work/repo"));
         assert!(out.contains("- Mina (Moderator, moderator)") && out.contains("- Hana (Critic, you)") && out.contains("- Jun\n"));
         // 지워진 역할·삭제된 팀원은 이름 없이 표시한다.
@@ -863,7 +802,7 @@ mod tests {
     }
 
     #[test]
-    fn moderator_briefing_is_neutral_and_codex_speaks_by_final_reply() {
+    fn moderator_briefing_is_neutral_and_only_submit_clis_get_the_command() {
         let out = brief("mod", "Open the discussion.", Lang::En);
         assert!(out.contains("**moderator**") && out.contains(EN.moderator_rules));
         assert!(out.ends_with("## This turn\n\nOpen the discussion."));
@@ -871,10 +810,10 @@ mod tests {
 
         let codex = brief("jun", "Speak.", Lang::En);
         assert!(codex.contains(EN.last_reply) && !codex.contains("office-discuss say"));
-        assert!(codex.contains(EN.enforced[0]), "codex sandbox blocks writes");
-        assert!(codex.contains(EN.no_role));
+        assert!(codex.contains(EN.read_only) && codex.contains(EN.no_role));
+        // 마지막 응답을 못 읽는 CLI는 제출 명령으로 내고, 그 명령만 읽기 전용의 예외다.
         let kilo = brief("gone", "Speak.", Lang::En);
-        assert!(kilo.contains(EN.enforced[2]), "kilo is prompt-only");
+        assert!(kilo.contains("/tmp/ao/office-discuss say - <<'EOF'") && kilo.contains(EN.submit_exception));
         assert!(kilo.contains(EN.no_role), "a deleted role reads as no role");
     }
 

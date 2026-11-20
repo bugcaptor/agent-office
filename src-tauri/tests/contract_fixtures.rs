@@ -27,7 +27,7 @@ use agent_office_lib::session_events::types::SessionEventRecord;
 use agent_office_lib::types::{
     ActivityEvent, ActivityKind, AdoptedSessionInfo, AwardsFile,
     CollectedUtterance, CreateSessionRequest, CreateSessionResult, DiscussionCollectRequest, DiscussionCollection,
-    DiscussionReadOnly, DiscussionSessionRequest, DiscussionSessionResult, DiscussionUtteranceSource, MemoSheet, MemoSheetMeta,
+    DiscussionSessionRequest, DiscussionSessionResult, DiscussionUtteranceSource, MemoSheet, MemoSheetMeta,
     DiscussionLimitReason, DiscussionPauseReason, DiscussionPhase, DiscussionRun, DiscussionStance, DiscussionState, DiscussionUtteranceKind, DiscussionsFile, NotificationEvent, NotificationSource, OutputChunk, PersistedState, RolesFile, SessionEventTokens,
     SessionExitInfo, SessionState, SessionStateEvent, TaskChatRequest, TaskChatResult, TurnUsageEvent,
     WorkCli, WorkStatus,
@@ -477,7 +477,6 @@ fn open_discussion_session_result_serializes_to_fixture() {
         agent_id: "discuss-Xk3pQ9aB.V1StGXR8_Z5jdHi6B-myT".into(),
         session_id: "0f0e0d0c-0000".into(),
         submitted_at: 1_798_000_000_000,
-        read_only: DiscussionReadOnly::Partial,
         collection: DiscussionCollection::LastReply,
         observed: true,
     };

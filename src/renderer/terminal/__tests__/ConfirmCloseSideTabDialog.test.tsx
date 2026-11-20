@@ -21,7 +21,7 @@ describe("곁 세션 탭 닫기 확인", () => {
       sessions: {
         [sessionId]: {
           agentId: sessionId, discussionId: "d1", participantAgentId: "a", sessionId: "s1", cli: "claude", status: "running",
-          readOnly: "partial", collection: "submit", observed: true, openedAt: 0, submittedAt: 0,
+          collection: "submit", observed: true, openedAt: 0, submittedAt: 0,
         },
       },
       order: [sessionId],

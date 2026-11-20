@@ -130,7 +130,7 @@
     "maxCostUsd": "Cost limit (USD)",
     "usageGuard": "Wait for a reset when subscription usage runs low",
     "limitsHint": "When a limit is reached, the moderator writes the decision memo from the opinions so far.",
-    "readOnlyHint": "Participants are read-only. They can read code and docs and search the web, but they do not edit files or commit.",
+    "readOnlyHint": "Participants are read-only. They can read code and docs and search the web, but they do not edit files or commit. CLI permissions stay as they are; a prompt rule keeps this.",
     "cancel": "Cancel",
     "save": "Save",
     "create": "Create",
@@ -167,21 +167,8 @@
     "reviewHint": "The discussion tabs are closed. Read the decision memo and confirm the conclusion to finish."
   },
   "readOnly": {
-    "summary": {
-      "flags": "Read only · enforced by the CLI",
-      "partial": "Read only · partly by prompt only",
-      "prompt": "Read only · partly by prompt only"
-    },
-    "hint": {
-      "flags": "Every participant's CLI settings block file-editing tools and commands.",
-      "partial": "For some participants the CLI blocks only the editing tools and cannot block every shell command, so those are limited by the prompt (Claude can still run commands your settings already allow).",
-      "prompt": "Some participants' CLIs cannot be locked down, so editing is forbidden by the prompt only."
-    },
-    "mode": {
-      "flags": "read only enforced by the CLI",
-      "partial": "CLI blocks editing tools only",
-      "prompt": "limited by prompt only"
-    }
+    "label": "Read only · prompt rule",
+    "hint": "Participants' CLIs run with their usual permissions; the rules in the first prompt forbid editing files, committing and changing tasks. Permission flags would also block submitting utterances and stall the discussion."
   },
   "session": {
     "errors": {

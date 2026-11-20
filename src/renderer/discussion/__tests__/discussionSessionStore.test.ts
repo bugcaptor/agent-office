@@ -7,7 +7,7 @@ import requestFixture from "@shared/contract-fixtures/open-discussion-session-re
 import resultFixture from "@shared/contract-fixtures/open-discussion-session-result.json";
 import collectFixture from "@shared/contract-fixtures/collect-discussion-utterance-request.json";
 import utteranceFixture from "@shared/contract-fixtures/collected-utterance.json";
-import { DISCUSSION_MAX_SESSIONS, discussionCollectionMode, discussionReadOnlyMode, discussionSessionAgentId, parseDiscussionSessionAgentId } from "@shared/types";
+import { DISCUSSION_MAX_SESSIONS, discussionCollectionMode, discussionSessionAgentId, parseDiscussionSessionAgentId } from "@shared/types";
 const { api, registry, cbs } = vi.hoisted(() => ({
   api: { openDiscussionSession: vi.fn(), disposeSession: vi.fn(), sendDiscussionTurn: vi.fn(), collectDiscussionUtterance: vi.fn() },
   registry: { ensure: vi.fn(), destroy: vi.fn(), get: vi.fn(), has: vi.fn() },
@@ -61,7 +61,7 @@ beforeEach(() => {
   let n = 0;
   api.openDiscussionSession.mockImplementation(async (r: DiscussionSessionRequest) => {
     const cli = r.agentId === "b" ? "codex" : "claude";
-    return { agentId: sid(r.discussionId, r.agentId), sessionId: `sid-${++n}`, submittedAt: now, readOnly: discussionReadOnlyMode(cli), collection: discussionCollectionMode(cli), observed: true };
+    return { agentId: sid(r.discussionId, r.agentId), sessionId: `sid-${++n}`, submittedAt: now, collection: discussionCollectionMode(cli), observed: true };
   });
   api.disposeSession.mockResolvedValue(undefined);
   const agents = Object.fromEntries(["m", "b", "c", "d", "e", "f"].map((id) => [id, { id, name: `Name ${id}`, role: "", seed: id, createdAt: now, deskIndex: 0 }]));
@@ -91,13 +91,11 @@ describe("토의 세션 id와 읽기 전용 미러", () => {
     const utterance = utteranceFixture as CollectedUtterance;
     expect(result.agentId).toBe(sid(request.discussionId, request.agentId));
     expect(collect.agentId).toBe(result.agentId);
-    expect(["flags", "partial", "prompt"]).toContain(result.readOnly);
     expect(["submit", "last-reply"]).toContain(result.collection);
     expect(["submitted", "last-reply"]).toContain(utterance.source);
   });
-  it("CLI별 읽기 전용·수집 방식은 Rust와 같다", () => {
-    expect(["claude", "codex", "pi", "agy", "kilo"].map((c) => discussionReadOnlyMode(c as never))).toEqual(["partial", "flags", "partial", "prompt", "prompt"]);
-    expect(["claude", "codex", "pi", "agy", "kilo"].map((c) => discussionCollectionMode(c as never))).toEqual(["submit", "last-reply", "submit", "submit", "submit"]);
+  it("CLI별 수집 방식은 Rust와 같다", () => {
+    expect(["claude", "codex", "pi", "agy", "kilo"].map((c) => discussionCollectionMode(c as never))).toEqual(["last-reply", "last-reply", "submit", "submit", "submit"]);
   });
 });
 
@@ -107,14 +105,14 @@ describe("토의 세션 열기", () => {
     expect(lastRequest()).toMatchObject({ discussionId: "d1", agentId: "m", turn: "Open." });
     expect(registry.ensure).toHaveBeenCalledWith(sid("d1", "m"));
     const session = useDiscussionSessionStore.getState().sessions[sid("d1", "m")];
-    expect(session).toMatchObject({ discussionId: "d1", participantAgentId: "m", sessionId: "sid-1", cli: "claude", readOnly: "partial", collection: "submit", status: "running" });
+    expect(session).toMatchObject({ discussionId: "d1", participantAgentId: "m", sessionId: "sid-1", cli: "claude", collection: "last-reply", status: "running" });
     expect(useAppStore.getState().activeTerminalAgentId).toBe(sid("d1", "m"));
     expect(useAppStore.getState().recentAgentIds).toEqual(["m"]);
     expect(discussionSessionTitle(session)).toBe("Name m · 사회자");
     // 역할이 없으면 "역할 없음"(사회자면 "사회자"), 탭을 보여 주지 않고 열 수도 있다.
     await openDiscussionSession("d1", "b", { focus: false });
     const codex = useDiscussionSessionStore.getState().sessions[sid("d1", "b")];
-    expect(codex).toMatchObject({ cli: "codex", readOnly: "flags", collection: "last-reply" });
+    expect(codex).toMatchObject({ cli: "codex", collection: "last-reply" });
     expect(discussionSessionTitle(codex)).toBe("Name b · 역할 없음");
     useDiscussionStore.setState((s) => ({ discussions: s.discussions.map((d) => ({ ...d, participants: d.participants.map((p) => ({ ...p, roleId: undefined })) })) }));
     expect(discussionSessionTitle(session)).toBe("Name m · 사회자");
@@ -128,7 +126,7 @@ describe("토의 세션 열기", () => {
     const pending = openDiscussionSession("d1", "m");
     expect(discussionSessionBlockedReason("d1", "m")).toBe("discussion-session-busy");
     expect(await openDiscussionSession("d1", "m")).toBe("discussion-session-busy");
-    resolve({ agentId: sid("d1", "m"), sessionId: "s-x", submittedAt: now, readOnly: "flags", collection: "submit", observed: true });
+    resolve({ agentId: sid("d1", "m"), sessionId: "s-x", submittedAt: now, collection: "submit", observed: true });
     await pending;
     expect(await openDiscussionSession("d1", "m")).toBeUndefined();
     expect(api.openDiscussionSession).toHaveBeenCalledTimes(1);

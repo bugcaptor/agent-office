@@ -574,18 +574,18 @@ impl SessionManager {
         if !task_chat && !discussion {
             env.push(("AGENT_OFFICE_AGENT_ID".into(), agent_id.to_string()));
         }
-        // 토의 세션: 제출 명령이 어느 참가자인지 알게 하고, Claude 허용 목록과 안내문에 박을
-        // 제출 명령 경로를 싣는다. 읽기 전용 인자는 CLI별 래퍼에 붙인다.
+        // 토의 세션: 제출 명령이 어느 참가자인지 알게 하고 안내문에 박을 제출 명령 경로를 싣는다.
+        // 권한을 좁히는 플래그는 붙이지 않는다(읽기 전용은 프롬프트 규칙, `discussion_session::session_args`).
         if discussion {
             env.push((crate::discussion_session::SESSION_ENV.into(), agent_id.to_string()));
             if let Some(shim) = &discuss_shim {
                 env.push((crate::discussion_session::SHIM_ENV.into(), shim.to_string_lossy().into_owned()));
             }
-            for (command, args) in crate::discussion_session::read_only_args(discuss_shim.as_deref()) {
+            for (command, args) in crate::discussion_session::session_args() {
                 merge_wrapper_args(&mut plan.wrappers, command, args);
             }
-            // 설정 파일이 사라졌다고 prefix를 통째로 버리면 읽기 전용 인자도 같이 빠진다.
-            // 토의 세션은 조용히 쓰기 가능해지기보다 실행 실패가 낫다.
+            // 설정 파일이 사라졌을 때 prefix를 버리고 띄우면 턴 종료 훅 없이 돌아 실행기가 차례 끝을
+            // 영영 못 받는다. 토의 세션은 조용히 멈추기보다 실행 실패가 낫다.
             for wrapper in plan.wrappers.iter_mut().filter(|w| w.command == "claude") {
                 wrapper.skip_prefix_if_env_file_missing = None;
             }

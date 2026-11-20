@@ -12,7 +12,6 @@ import {
 import type {
   CollectedUtterance,
   DiscussionCollection,
-  DiscussionReadOnly,
   SessionStateEvent,
   SessionStatus,
   WorkAgent,
@@ -42,7 +41,6 @@ export interface DiscussionSession {
   sessionId: string;
   cli: WorkAgent["cli"];
   status: SessionStatus;
-  readOnly: DiscussionReadOnly;
   collection: DiscussionCollection;
   /** 관찰 훅이 붙었는가. 거짓이면 턴 단계가 바뀌지 않는다. */
   observed: boolean;
@@ -174,7 +172,7 @@ export async function openDiscussionSession(
     const status = seen?.sessionId === result.sessionId ? seen.status : "running";
     const session: DiscussionSession = {
       agentId, discussionId, participantAgentId, sessionId: result.sessionId, cli: participant.agent.cli, status,
-      readOnly: result.readOnly, collection: result.collection, observed: result.observed, openedAt: Date.now(), submittedAt: result.submittedAt,
+      collection: result.collection, observed: result.observed, openedAt: Date.now(), submittedAt: result.submittedAt,
       ...(seen?.sessionId === result.sessionId && seen.turn ? { turn: seen.turn } : {}),
     };
     useDiscussionSessionStore.setState((s) => ({

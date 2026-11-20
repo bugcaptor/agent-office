@@ -640,7 +640,7 @@
     }
 
     #[tokio::test]
-    async fn discussion_session_keeps_hooks_and_adds_read_only_flags_and_the_submit_command() {
+    async fn discussion_session_keeps_hooks_and_the_submit_command_without_permission_flags() {
         let (manager, control, recorded_wrappers, scratch) = task_chat_manager();
         manager.create(req_with_persona("discuss-d1.a1", Some("해적처럼 말한다.".into()))).unwrap();
 
@@ -663,17 +663,18 @@
             let wrapper = wrappers.iter().find(|w| w.command == command).unwrap_or_else(|| panic!("{command} wrapper"));
             wrapper.prefix_args.iter().filter_map(|a| match a { WrapperArg::Literal(s) => Some(s.clone()), _ => None }).collect()
         };
+        // 권한·도구를 좁히는 플래그는 붙이지 않는다(읽기 전용은 프롬프트 규칙). 제출 명령이 막히면 진행이 멈춘다.
         let claude = literals("claude");
-        assert!(claude.windows(2).any(|w| w == ["--permission-mode", "dontAsk"]), "{claude:?}");
-        assert!(claude.contains(&format!("Read Grep Glob WebFetch WebSearch Bash({}:*)", shim.display())), "{claude:?}");
-        assert!(claude.windows(2).any(|w| w == ["--disallowed-tools", "Edit Write NotebookEdit"]));
-        assert!(!claude.contains(&"--append-system-prompt".to_string()), "persona 없음");
+        for flag in ["--permission-mode", "--allowed-tools", "--disallowed-tools", "--append-system-prompt"] {
+            assert!(!claude.contains(&flag.to_string()), "{flag}: {claude:?}");
+        }
         let claude_wrapper = wrappers.iter().find(|w| w.command == "claude").unwrap();
-        assert_eq!(claude_wrapper.skip_prefix_if_env_file_missing, None, "읽기 전용 인자를 조용히 버리지 않는다");
+        assert_eq!(claude_wrapper.skip_prefix_if_env_file_missing, None, "훅 설정이 없으면 조용히 훅 없이 뜨지 않는다");
         let codex = literals("codex");
-        assert_eq!(codex, ["--sandbox", "read-only", "--ask-for-approval", "never", "--search"]);
-        assert!(literals("pi").windows(2).any(|w| w == ["--exclude-tools", "edit,write"]));
-        // Kilo·agy 관찰 배선은 그대로(읽기 전용 플래그는 없다).
+        assert!(codex.ends_with(&["--search".to_string()]), "{codex:?}");
+        assert!(!codex.iter().any(|a| a == "--sandbox" || a == "--ask-for-approval"), "{codex:?}");
+        assert!(wrappers.iter().find(|w| w.command == "pi").is_none_or(|w| !w.prefix_args.contains(&WrapperArg::Literal("--exclude-tools".into()))));
+        // Kilo·agy 관찰 배선은 그대로다.
         assert!(wrappers.iter().any(|w| w.command == "kilo"));
         drop(wrappers);
         assert_eq!(manager.live_discussion_session_ids(), vec!["discuss-d1.a1".to_string()]);
