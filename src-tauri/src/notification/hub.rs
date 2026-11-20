@@ -459,7 +459,12 @@ impl NotificationHub {
 
         // 이슈 #39: 완료 알림이 실제 방출된 시점부터 출력 감시를 시작한다.
         // dedup 으로 억제된 중복 Stop 은 여기 오지 않으므로 감시창이 리셋되지 않는다.
-        if source == NotificationSource::Stop {
+        // 토의 탭은 감시하지 않는다: 무인 탭이라 Stop(서브에이전트는 running으로 가림)이
+        // 턴 종료의 정본이다. 리드로우 출력에 복귀가 잘못 걸리면 턴이 다시 '작업 중'이 되고,
+        // 60초 뒤 Claude idle_prompt가 '입력 대기'로 덮어 토의가 다음 차례를 영영 못 넣는다.
+        if source == NotificationSource::Stop
+            && crate::discussion_session::parse_session_agent_id(&ev.agent_id).is_none()
+        {
             self.resume_watch.lock().unwrap().insert(
                 session_id,
                 ResumeWatch {

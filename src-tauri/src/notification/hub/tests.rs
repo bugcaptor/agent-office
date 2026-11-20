@@ -722,6 +722,24 @@
     }
 
     #[test]
+    fn discussion_tab_output_after_stop_does_not_resume() {
+        // 실측(disc-40699582): 사회자 Stop 뒤 리드로우 출력에 복귀가 걸려 '작업 중'으로 돌아가고,
+        // idle_prompt가 '입력 대기'로 덮어 다음 차례를 못 넣었다. 토의 탭은 Stop이 정본이다.
+        let registry = Arc::new(SessionRegistry::new());
+        registry.insert("s1", "discuss-d1.mod", SessionState::Running);
+        let events = Arc::new(RecordingEvents::default());
+        let clock = Arc::new(FakeClock::new());
+        let hub = NotificationHub::new(registry, events.clone(), clock.clone(), Duration::from_millis(3000));
+        ingest_final_stop(&hub);
+        clock.advance(4000);
+        hub.on_output("s1", 100_000);
+
+        assert_eq!(hub.pending("s1").len(), 1, "stop 알림이 남아야 한다");
+        assert!(events.cleared().is_empty());
+        assert!(events.activities().iter().all(|a| a.kind != ActivityKind::Resume));
+    }
+
+    #[test]
     fn on_output_without_prior_stop_is_a_noop() {
         let (hub, events, clock) = fixture();
         clock.advance(5000);
