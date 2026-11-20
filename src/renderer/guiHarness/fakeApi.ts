@@ -194,6 +194,7 @@ const impl: Partial<AgentOfficeApi> = {
   async loadWorkLogs() { return {}; },
   async saveWorkLog() {},
   async scanWorkInbox() { return []; },
+  async scanDiscussionInbox() { return []; },
   async repositoryAuditList() { return auditRepos; },
   async repositoryAuditPush(path) {
     // 푸시 버튼 흐름을 화면에서 확인할 수 있게 잠깐 기다렸다가 성공시킨다.

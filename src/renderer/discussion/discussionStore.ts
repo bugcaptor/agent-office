@@ -26,6 +26,11 @@ interface DiscussionStoreState {
    */
   commit(discussion: Discussion): Promise<void>;
   remove(id: string): Promise<void>;
+  /**
+   * 백엔드가 수신함에서 가져와 이미 저장한 토의를 붙인다. 아는 id는 건드리지 않는다 — 다시 읽으면(`load`) 실행기가
+   * 스토어에만 먼저 고친 진행 상태를 디스크의 옛 값으로 되돌릴 수 있다.
+   */
+  adopt(discussions: readonly Discussion[]): void;
   openDialog(dialog: DiscussionDialog): void;
 }
 
@@ -71,6 +76,10 @@ export const useDiscussionStore = create<DiscussionStoreState>((set, get) => ({
   remove: async (id) => {
     await tauriApi.deleteDiscussion(id);
     set((s) => ({ discussions: s.discussions.filter((d) => d.id !== id), dialog: null }));
+  },
+  adopt: (incoming) => {
+    const fresh = incoming.filter((d, i) => !get().discussions.some((known) => known.id === d.id) && incoming.findIndex((x) => x.id === d.id) === i);
+    if (fresh.length) set((s) => ({ discussions: [...s.discussions, ...fresh] }));
   },
   openDialog: (dialog) => set({ dialog }),
 }));

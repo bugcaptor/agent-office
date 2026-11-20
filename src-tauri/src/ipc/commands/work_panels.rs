@@ -102,6 +102,15 @@ pub fn autorun_control_reply(request_id: String, error: Option<String>, app_stat
     };
     app_state.control_ctx.autorun.reply(&request_id, result)
 }
+/// CLI 토의 요청(`discussion-control` 이벤트)에 대한 렌더러의 답. `error`가 있으면 거절이다.
+#[tauri::command(rename_all = "camelCase")]
+pub fn discussion_control_reply(request_id: String, error: Option<String>, app_state: State<'_, AppState>) -> bool {
+    let result = match error {
+        Some(e) => Err(e),
+        None => Ok(serde_json::Value::Null),
+    };
+    app_state.control_ctx.discussion.reply(&request_id, result)
+}
 /// 자동 진행 판단자 호출 1회. 실행 파일은 요약 설정의 Claude 명령을 따른다.
 #[tauri::command(rename_all = "camelCase")]
 pub async fn auto_run_judge(

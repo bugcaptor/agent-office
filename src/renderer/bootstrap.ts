@@ -40,6 +40,7 @@ import { installDiscussionSessionTracking } from "./discussion/discussionSession
 import { installDiscussionRunner } from "./discussion/discussionRun";
 import { installAutoRun } from "./workpanels/autoRun";
 import { installAutoRunControl } from "./workpanels/autoRunControl";
+import { installDiscussionControl } from "./discussion/discussionControl";
 import { installScheduleRunner } from "./workpanels/scheduleRunner";
 import { installUsageForecast } from "./usage/usageForecastStore";
 import { installWorkInboxLifecycle } from "./workpanels/lifecycle";
@@ -171,6 +172,8 @@ export async function bootApp(): Promise<() => void> {
   const offAutoRun = installAutoRun();
   // CLI의 자동 진행 요청(시작·재개·멈춤·끝내기·넘기기). 루프와 같은 함수를 부른다.
   const offAutoRunControl = installAutoRunControl();
+  // CLI의 토의 요청(시작·사회자 질문에 답하기). 카드 버튼과 같은 함수를 부른다.
+  const offDiscussionControl = installDiscussionControl();
   // 예약 실행기. 자동 진행·보내기를 부르므로 그 뒤에 건다. 메인 창에서만 돈다.
   const offScheduleRunner = installScheduleRunner();
   const offWorkInbox = installWorkInboxLifecycle();
@@ -227,6 +230,7 @@ export async function bootApp(): Promise<() => void> {
     offDiscussionSessions();
     offAutoRun();
     offAutoRunControl();
+    offDiscussionControl();
     offScheduleRunner();
     offUsageForecast();
     offWorkInbox();

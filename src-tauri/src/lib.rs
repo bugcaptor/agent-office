@@ -747,6 +747,12 @@ pub fn run() {
                         handle.emit_to("main", "autorun-control", request).map_err(|e| e.to_string())
                     }))
                 },
+                discussion: {
+                    let handle = handle.clone();
+                    Arc::new(crate::control::autorun::AutoRunBridge::new(move |request: &serde_json::Value| {
+                        handle.emit_to("main", "discussion-control", request).map_err(|e| e.to_string())
+                    }))
+                },
                 agent_session_lookup: claude_resume_store.clone(),
             });
             if settings_cache.read().unwrap().cli_enabled {
@@ -884,6 +890,8 @@ pub fn run() {
             ipc::commands::work_last_reply,
             ipc::commands::auto_run_report,
             ipc::commands::autorun_control_reply,
+            ipc::commands::discussion_control_reply,
+            ipc::commands::scan_discussion_inbox,
             ipc::commands::auto_run_judge,
             ipc::commands::load_work_items,
             ipc::commands::load_roles,

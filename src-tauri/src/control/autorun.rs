@@ -251,10 +251,16 @@ impl AutoRunBridge {
     }
 
     pub async fn request(&self, op: &str, root_id: &str, options: Value) -> Result<Value, String> {
+        self.send(json!({ "op": op, "rootId": root_id, "options": options })).await
+    }
+
+    /// 요청 본문(`payload`, 객체)에 `requestId`를 붙여 보내고 답을 기다린다. 토의 다리도 같은 방식을 쓴다.
+    pub async fn send(&self, payload: Value) -> Result<Value, String> {
         let request_id = uuid::Uuid::new_v4().to_string();
         let (tx, rx) = oneshot::channel();
         self.pending.lock().unwrap().insert(request_id.clone(), tx);
-        let event = json!({ "requestId": request_id, "op": op, "rootId": root_id, "options": options });
+        let mut event = payload;
+        event["requestId"] = json!(request_id);
         if let Err(e) = (self.emit)(&event) {
             self.pending.lock().unwrap().remove(&request_id);
             return Err(format!("renderer-unavailable: {e}"));

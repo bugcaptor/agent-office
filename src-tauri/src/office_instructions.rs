@@ -31,7 +31,9 @@ EOF
 - When the user asks to run a task later or on a schedule, add `--at "YYYY-MM-DD HH:MM"` (once, local time) or `--every <rule>` (`30m`, `2h`, `1d`, `daily@09:00`, `mon,wed@09:00`, `weekdays@09:00`) on create or edit; `--no-schedule` removes it. A recurring task is a template that the app copies and runs each time (a `--plan` root runs its whole plan). Schedules you set start turned off, and changing a scheduled task turns it off; tell the user to turn it on in the task's Schedule section.
 - Changes are applied by the app within a few seconds, in the order you run them; you can target a task you just created.
 - After leaving tasks, tell the user in one line.
-- When an Agent Office auto-run prompt asks for a report, write it before your turn ends with `{cli} --report <task id> - <<'EOF'` … `EOF`, in the format the prompt gives. Writing it again replaces it."#
+- When an Agent Office auto-run prompt asks for a report, write it before your turn ends with `{cli} --report <task id> - <<'EOF'` … `EOF`, in the format the prompt gives. Writing it again replaces it.
+- Only when the user asks for a team discussion (several colleagues debating a design or direction decision, or brainstorming), create one with `{cli} --discuss --moderator <colleague> --with <colleague> [--with <colleague>]... "<question to decide>" - <<'EOF'` … `EOF` (body: background, options, constraints). The moderator stays neutral; add 1 to 4 debaters. Optional: `--role <colleague>=<role name>`, `--cli <colleague>=<cli>[:<model>]`, `--rounds <1..12>`, `--minutes <5..240>`, `--cost <USD>`, `--cwd <folder>`; see `{cli} --discuss --help`. Participants only read code, docs and the web. It prints the discussion id.
+- A discussion you create waits in the ready state; tell the user in one line to start it from its card in the work panel. Do not start or join it yourself. When it concludes, its decision memo is saved as `$AGENT_OFFICE_APP_DATA/discussions/memos/<id>.md`; read it when the user asks about the outcome."#
     )
 }
 
@@ -226,6 +228,9 @@ mod tests {
         assert!(text.contains("--every <rule>") && text.contains("start turned off"));
         assert!(text.contains("/tmp/agent-office/bin/office-task --delete <id>"));
         assert!(text.contains("/tmp/agent-office/bin/office-task --show <id>"));
+        assert!(text.contains("/tmp/agent-office/bin/office-task --discuss --moderator <colleague> --with <colleague>"));
+        assert!(text.contains("/tmp/agent-office/bin/office-task --discuss --help"));
+        assert!(text.contains("start it from its card") && text.contains("discussions/memos/<id>.md"));
     }
 
     #[test]

@@ -392,6 +392,18 @@ pub async fn delete_discussion(app_state: State<'_, AppState>, id: String) -> Re
 pub async fn save_discussion_memo(app_state: State<'_, AppState>, id: String, markdown: String) -> Result<String, String> {
     app_state.discussion_store.write_memo(&id, &markdown).map(|p| p.to_string_lossy().into_owned())
 }
+/// 에이전트·CLI(`office-task --discuss`)가 남긴 토의를 수신함에서 가져와 저장하고, 새로 저장한 것만 돌려준다.
+/// 늘 준비 상태로 들어오고 사람이 카드에서 시작한다. 없는 팀원을 넣은 요청은 `rejected/`로 옮긴다.
+#[tauri::command(rename_all = "camelCase")]
+pub async fn scan_discussion_inbox(app_state: State<'_, AppState>) -> Result<Vec<Discussion>, String> {
+    let agents: std::collections::HashSet<String> = app_state.store.load().agents.into_iter().map(|a| a.id).collect();
+    crate::persistence::discussion_inbox::import(
+        &app_state.app_data_dir.join("work-inbox"),
+        &app_state.discussion_store,
+        &|id| agents.contains(id),
+        chrono::Utc::now().timestamp_millis(),
+    )
+}
 /// 결정 메모 본문. 아직 없으면 null.
 #[tauri::command(rename_all = "camelCase")]
 pub async fn load_discussion_memo(app_state: State<'_, AppState>, id: String) -> Result<Option<String>, String> {

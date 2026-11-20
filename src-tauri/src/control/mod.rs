@@ -16,6 +16,7 @@
 /// 플랜 위임(자동 진행 제어·상태)과 단발 질의.
 pub mod autorun;
 pub mod client;
+mod discussion;
 /// VS Code 연결 확장이 캐릭터·외형·사용량을 읽는 제한된 표시 API.
 mod display;
 pub mod protocol;
@@ -89,6 +90,8 @@ pub struct ControlContext {
     pub work_send: Arc<crate::work_send::WorkSendRuntime>,
     /// 자동 진행 쓰기를 렌더러로 넘기는 다리.
     pub autorun: Arc<autorun::AutoRunBridge>,
+    /// `ctl discuss start|answer`를 렌더러 토의 실행기로 넘기는 다리(`discussion-control` 이벤트).
+    pub discussion: Arc<autorun::AutoRunBridge>,
     /// Claude 전사 위치(`ask`의 마지막 응답 읽기).
     pub agent_session_lookup: Arc<dyn crate::session_log::agent_transcript::AgentSessionLookup>,
 }
@@ -123,6 +126,11 @@ fn router(ctx: Arc<ControlContext>) -> Router {
         .route("/v1/autorun/pause", post(autorun_pause))
         .route("/v1/autorun/end", post(autorun_end))
         .route("/v1/autorun/escalate", post(escalate))
+        .route("/v1/discuss/list", post(discussion::list))
+        .route("/v1/discuss/status", post(discussion::status))
+        .route("/v1/discuss/memo", post(discussion::memo))
+        .route("/v1/discuss/start", post(discussion::start))
+        .route("/v1/discuss/answer", post(discussion::answer))
         .layer(axum::middleware::from_fn_with_state(ctx.clone(), auth))
         .with_state(ctx)
 }
@@ -354,6 +362,13 @@ mod tests {
             work_panels: crate::persistence::work_panels_store::WorkPanelsStore::new(dir.clone()),
             work_send: Arc::new(crate::work_send::WorkSendRuntime::default()),
             autorun: {
+                let bridged = bridged.clone();
+                Arc::new(autorun::AutoRunBridge::new(move |v: &serde_json::Value| {
+                    bridged.lock().unwrap().push(v.clone());
+                    Ok(())
+                }))
+            },
+            discussion: {
                 let bridged = bridged.clone();
                 Arc::new(autorun::AutoRunBridge::new(move |v: &serde_json::Value| {
                     bridged.lock().unwrap().push(v.clone());
@@ -862,6 +877,118 @@ mod tests {
                 if let Some(request) = request {
                     let id = request["requestId"].as_str().unwrap().to_string();
                     ctx.autorun.reply(&id, error.map(|e| Err(e.to_string())).unwrap_or(Ok(serde_json::Value::Null)));
+                    return request;
+                }
+                tokio::time::sleep(Duration::from_millis(5)).await;
+            }
+        })
+    }
+
+    fn discussion(id: &str, state: crate::types::DiscussionState) -> crate::types::Discussion {
+        let p = |agent: &str| crate::types::DiscussionParticipant {
+            agent_id: agent.into(),
+            role_id: None,
+            agent: crate::types::WorkAgent { cli: crate::types::WorkCli::Claude, model: None, effort: None },
+        };
+        crate::types::Discussion {
+            id: id.into(), topic: "저장 형식".into(), context: String::new(), cwd: None,
+            participants: vec![p("mod"), p("a1")], moderator_agent_id: "mod".into(),
+            limits: Default::default(), state, round: 0, transcript: vec![], decision_memo_path: None,
+            cost_usd: 0.0, created_at: 1, updated_at: 1, started_at: None, ended_at: None,
+            active_ms: None, active_since: None, run: None,
+        }
+    }
+
+    #[tokio::test]
+    async fn discuss_writes_need_the_extra_opt_in_wait_for_import_and_reads_do_not() {
+        use crate::types::DiscussionState;
+        let f = build("discuss");
+        let port = f.state.ensure(f.ctx.clone()).await.unwrap();
+        let token = f.state.issue_token().unwrap();
+        let store = crate::persistence::discussion_store::DiscussionStore::new(f.dir.clone());
+        store.save(&discussion("disc-ready", DiscussionState::Ready)).unwrap();
+        let mut asking = discussion("disc-ask", DiscussionState::WaitingUser);
+        asking.run = Some(crate::types::DiscussionRun {
+            phase: crate::types::DiscussionPhase::User, turns: vec![], seen: Default::default(), question: Some("예산은?".into()),
+            pause_reason: None, pause_detail: None, forced: None, forced_at_ms: None, usage_wait: None, usage_override: None,
+        });
+        store.save(&asking).unwrap();
+        store.save(&discussion("disc-done", DiscussionState::Review)).unwrap();
+        store.write_memo("disc-done", "# 결론\n").unwrap();
+
+        // 허용 전: 시작·답하기는 거절, 렌더러로 아무것도 가지 않는다.
+        for (path, body) in [
+            ("discuss/start", serde_json::json!({ "id": "disc-ready" })),
+            ("discuss/answer", serde_json::json!({ "id": "disc-ask", "text": "월 100만 원" })),
+        ] {
+            let r = post(port, &token, path, body).await;
+            assert_eq!(r["error"], "cli-auto-run-disabled", "{path}: {r}");
+        }
+        assert!(f.bridged.lock().unwrap().is_empty());
+
+        // 읽기는 열려 있다. 준비 상태는 사람이 시작해야 하므로 기다리지 않고 바로 답한다.
+        let ready = post(port, &token, "discuss/status", serde_json::json!({ "id": "disc-ready", "waitSecs": 30 })).await;
+        assert_eq!(ready["data"]["state"], "ready", "{ready}");
+        assert_eq!(ready["data"]["timedOut"], false);
+        assert_eq!(ready["data"]["attention"]["actions"], serde_json::json!(["wait"]));
+        let missing = post(port, &token, "discuss/status", serde_json::json!({ "id": "nope" })).await;
+        assert_eq!(missing["error"], "discussion-not-found");
+        let memo = post(port, &token, "discuss/memo", serde_json::json!({ "id": "disc-done" })).await;
+        assert_eq!(memo["data"]["markdown"], "# 결론\n");
+        assert_eq!(post(port, &token, "discuss/memo", serde_json::json!({ "id": "disc-ready" })).await["error"], "discussion-memo-not-found");
+        let list = post(port, &token, "discuss/list", serde_json::json!({})).await;
+        assert_eq!(list["data"].as_array().unwrap().len(), 3);
+
+        // 허용 후: 답하기가 렌더러로 간다.
+        f.ctx.settings.write().unwrap().cli_auto_run_enabled = true;
+        let renderer = answer_discussion_bridge(&f, None);
+        let answered = post(port, &token, "discuss/answer", serde_json::json!({ "id": "disc-ask", "text": "월 100만 원" })).await;
+        assert_eq!(answered["ok"], true, "{answered}");
+        let request = renderer.await.unwrap();
+        assert_eq!((request["op"].clone(), request["discussionId"].clone(), request["options"]["text"].clone()), (serde_json::json!("answer"), serde_json::json!("disc-ask"), serde_json::json!("월 100만 원")));
+
+        // 모르는 토의는 렌더러에 닿지 않는다.
+        assert_eq!(post(port, &token, "discuss/start", serde_json::json!({ "id": "nope" })).await["error"], "discussion-not-found");
+        assert!(f.bridged.lock().unwrap().is_empty());
+
+        // 방금 만든(수신함에만 있는) 토의는 앱이 가져갈 때까지 기다린 뒤 넘긴다. 렌더러의 거절은 그대로 실패다.
+        let inbox = f.dir.join("work-inbox");
+        let dir = crate::persistence::discussion_inbox::inbox_dir(&inbox);
+        std::fs::create_dir_all(&dir).unwrap();
+        let request = crate::persistence::discussion_inbox::DiscussionRequest {
+            version: 1, id: "disc-new".into(), topic: "새 토의".into(), context: String::new(), cwd: None,
+            moderator_agent_id: "mod".into(), participants: discussion("x", DiscussionState::Ready).participants,
+            limits: Default::default(), requested_by: None,
+        };
+        std::fs::write(dir.join("1-a.json"), serde_json::to_vec(&request).unwrap()).unwrap();
+        let pending = post(port, &token, "discuss/status", serde_json::json!({ "id": "disc-new" })).await;
+        assert_eq!(pending["data"]["state"], "pending");
+        let importer = {
+            let dir = f.dir.clone();
+            tokio::spawn(async move {
+                tokio::time::sleep(Duration::from_millis(400)).await;
+                let store = crate::persistence::discussion_store::DiscussionStore::new(dir.clone());
+                crate::persistence::discussion_inbox::import(&dir.join("work-inbox"), &store, &|_| true, 5).unwrap()
+            })
+        };
+        let renderer = answer_discussion_bridge(&f, Some("discussion-busy"));
+        let started = post(port, &token, "discuss/start", serde_json::json!({ "id": "disc-new" })).await;
+        assert_eq!(started["error"], "discussion-busy", "{started}");
+        assert_eq!(importer.await.unwrap().len(), 1);
+        let request = renderer.await.unwrap();
+        assert_eq!((request["op"].clone(), request["discussionId"].clone()), (serde_json::json!("start"), serde_json::json!("disc-new")));
+        cleanup(&f);
+    }
+
+    fn answer_discussion_bridge(f: &Fixture, error: Option<&'static str>) -> tokio::task::JoinHandle<serde_json::Value> {
+        let bridged = f.bridged.clone();
+        let ctx = f.ctx.clone();
+        tokio::spawn(async move {
+            loop {
+                let request = bridged.lock().unwrap().pop();
+                if let Some(request) = request {
+                    let id = request["requestId"].as_str().unwrap().to_string();
+                    ctx.discussion.reply(&id, error.map(|e| Err(e.to_string())).unwrap_or(Ok(serde_json::Value::Null)));
                     return request;
                 }
                 tokio::time::sleep(Duration::from_millis(5)).await;

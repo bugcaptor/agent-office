@@ -90,6 +90,10 @@ export interface AgentOfficeApi {
   autoRunJudge(request: AutoRunJudgeRequest): Promise<AutoRunJudgeResult>;
   /** CLI 자동 진행 요청(`autorun-control` 이벤트)에 답한다. `error`가 있으면 거절이다. */
   autoRunControlReply(requestId: string, error?: string): Promise<boolean>;
+  /** CLI 토의 요청(`discussion-control` 이벤트)에 답한다. `error`가 있으면 거절이다. */
+  discussionControlReply(requestId: string, error?: string): Promise<boolean>;
+  /** 에이전트·CLI(`office-task --discuss`)가 남긴 토의를 저장하고, 새로 저장한 것(준비 상태)만 돌려준다. */
+  scanDiscussionInbox(): Promise<Discussion[]>;
   scanWorkInbox(): Promise<InboxEntry[]>;
   ackWorkInbox(fileNames: string[]): Promise<void>;
   rejectWorkInbox(rejections: InboxRejection[]): Promise<void>;

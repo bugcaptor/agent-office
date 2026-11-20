@@ -332,6 +332,7 @@
             work_panels: crate::persistence::work_panels_store::WorkPanelsStore::new(profile_dir.clone()),
             work_send: Arc::new(crate::work_send::WorkSendRuntime::default()),
             autorun: Arc::new(crate::control::autorun::AutoRunBridge::new(|_: &serde_json::Value| Ok(()))),
+            discussion: Arc::new(crate::control::autorun::AutoRunBridge::new(|_: &serde_json::Value| Ok(()))),
             agent_session_lookup: claude_resume_store.clone(),
         });
 

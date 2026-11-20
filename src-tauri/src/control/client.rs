@@ -279,6 +279,33 @@ fn build_request(p: &Parsed) -> Result<(&'static str, Value), String> {
             }
             Ok((path, body))
         }
+        "discuss" => {
+            let op = pos.get(1).map(String::as_str).ok_or("discuss: list|status|memo|start|answer 하위 명령이 필요합니다")?;
+            if op == "list" {
+                return Ok(("/v1/discuss/list", json!({})));
+            }
+            let id = pos.get(2).cloned().ok_or_else(|| format!("discuss {op}: 토의 id가 필요합니다"))?;
+            match op {
+                "status" => {
+                    let mut o = Map::new();
+                    o.insert("id".into(), Value::String(id));
+                    if let Some(since) = p.kv.get("since") {
+                        o.insert("since".into(), Value::String(since.clone()));
+                    }
+                    if p.wait {
+                        o.insert("waitSecs".into(), json!(timeout_secs(p, DEFAULT_WAIT_SECS)?.min(super::autorun::MAX_WAIT_SECS)));
+                    }
+                    Ok(("/v1/discuss/status", Value::Object(o)))
+                }
+                "memo" => Ok(("/v1/discuss/memo", json!({ "id": id }))),
+                "start" => Ok(("/v1/discuss/start", json!({ "id": id }))),
+                "answer" => {
+                    let text = pos.get(3).filter(|t| !t.trim().is_empty()).ok_or("discuss answer: 사회자에게 줄 답이 필요합니다")?;
+                    Ok(("/v1/discuss/answer", json!({ "id": id, "text": text })))
+                }
+                other => Err(format!("discuss: 알 수 없는 하위 명령: {other}")),
+            }
+        }
         "" => Err("명령이 필요합니다 (help 참고)".into()),
         other => Err(format!("알 수 없는 명령: {other} (help 참고)")),
     }
@@ -293,9 +320,10 @@ fn timeout_secs(p: &Parsed, default: u64) -> Result<u64, String> {
 
 /// 성공 응답의 종료 코드. 기다리는 명령만 결과에 따라 나뉜다(셸이 JSON 없이 분기하게).
 fn success_exit(parsed: &Parsed, data: &Value) -> i32 {
+    let status_wait = parsed.wait && parsed.positionals.get(1).map(String::as_str) == Some("status");
     let waited = match parsed.sub() {
         "ask" => true,
-        "autorun" => parsed.wait && parsed.positionals.get(1).map(String::as_str) == Some("status"),
+        "autorun" | "discuss" => status_wait,
         _ => false,
     };
     if !waited {
@@ -304,8 +332,10 @@ fn success_exit(parsed: &Parsed, data: &Value) -> i32 {
     if data.get("timedOut").and_then(Value::as_bool) == Some(true) {
         return EXIT_TIMEOUT;
     }
+    // 토의는 결론 확인 대기(review)도 끝남이다 — 결정 메모가 나왔다.
     match data.get("state").and_then(Value::as_str) {
         Some("finished" | "idle") => EXIT_OK,
+        Some("review") if parsed.sub() == "discuss" => EXIT_OK,
         _ => EXIT_ATTENTION,
     }
 }
@@ -314,7 +344,9 @@ fn success_exit(parsed: &Parsed, data: &Value) -> i32 {
 fn request_timeout(path: &str, body: &Value) -> Duration {
     let held = match path {
         "/v1/ask" => body["timeoutSecs"].as_u64().unwrap_or(600),
-        "/v1/autorun/status" => body["waitSecs"].as_u64().unwrap_or(0),
+        "/v1/autorun/status" | "/v1/discuss/status" => body["waitSecs"].as_u64().unwrap_or(0),
+        // 방금 만든 토의를 앱이 가져갈 때까지(서버 IMPORT_WAIT) + 렌더러 답.
+        "/v1/discuss/start" | "/v1/discuss/answer" => 20,
         _ => 0,
     };
     Duration::from_secs(10 + held)
@@ -353,6 +385,18 @@ agent-office ctl — 실행 중인 Agent Office를 조종하는 CLI (이슈 #55)
                                   멈추고 사람에게 넘긴다(OS 알림)
   ask <agentId> <프롬프트> [--timeout S] [--cli claude|codex]
                                   실행 중인 세션에 입력하고 턴이 끝나면 마지막 응답을 준다
+
+팀 토의(start·answer는 앱 설정 'CLI 자동 진행 허용' 필요):
+  discuss list                    토의 목록(아직 앱이 가져가지 않은 것은 pending)
+  discuss status <id> [--wait] [--timeout S] [--since REV]
+                                  상태·라운드·비용·사회자 질문(attention)과 결정 메모 유무.
+                                  --wait: 결론이 나거나(review·finished) 조치가 필요할 때까지
+                                  (ready=사람이 시작해야 함, waiting_user=사회자 질문, paused) 기다린다
+  discuss start <id>              준비된 토의를 시작한다(카드의 시작과 같다)
+  discuss answer <id> <답>        사회자가 사용자에게 한 질문에 답한다
+  discuss memo <id>               결정 메모(Markdown)를 출력한다
+  토의 만들기는 office-task --discuss(준비 상태로 생기고 사람이 카드에서 시작).
+  결론 확인(review → finished)은 앱에서 사람이 한다.
 
 종료 코드(기다리는 명령): 0 끝남, 10 조치 필요(멈춤·승인 대기), 11 시간 초과.
 
@@ -438,7 +482,7 @@ pub fn run(args: Vec<String>) -> i32 {
     let mut body = body;
     let result = loop {
         let result = runtime.block_on(send(port, &token, path, &body));
-        let again = matches!(&result, Ok((200, v)) if path == "/v1/autorun/status"
+        let again = matches!(&result, Ok((200, v)) if matches!(path, "/v1/autorun/status" | "/v1/discuss/status")
             && v["data"]["timedOut"].as_bool() == Some(true));
         let left = deadline.saturating_duration_since(std::time::Instant::now()).as_secs();
         if !again || left == 0 {
@@ -655,9 +699,60 @@ fn render_success(parsed: &Parsed, data: &Value) -> String {
             }
         },
         "autorun" => render_autorun(&mut out, data),
+        "discuss" => render_discuss(&mut out, parsed.positionals.get(1).map(String::as_str).unwrap_or(""), data),
         _ => out.push_str("ok\n"),
     }
     out
+}
+
+fn render_discuss(out: &mut String, op: &str, data: &Value) {
+    use std::fmt::Write as _;
+    if op == "memo" {
+        let text = data["markdown"].as_str().unwrap_or("");
+        out.push_str(text);
+        if !text.ends_with('\n') {
+            out.push('\n');
+        }
+        return;
+    }
+    if op == "list" {
+        match data.as_array() {
+            Some(rows) if !rows.is_empty() => {
+                for r in rows {
+                    let _ = writeln!(out, "{:<14} {:<13} {}", r["id"].as_str().unwrap_or("?"), r["state"].as_str().unwrap_or("?"), r["topic"].as_str().unwrap_or(""));
+                }
+            }
+            _ => out.push_str("(토의 없음)\n"),
+        }
+        return;
+    }
+    if data.is_null() {
+        out.push_str("ok\n");
+        return;
+    }
+    let _ = writeln!(out, "{} [{}] {}", data["id"].as_str().unwrap_or("?"), data["state"].as_str().unwrap_or("?"), data["topic"].as_str().unwrap_or(""));
+    if data.get("limits").is_some() {
+        let _ = writeln!(
+            out,
+            "  round {}/{} · {}분/{}분 · ${:.2}/${}",
+            data["round"],
+            data["limits"]["maxRounds"],
+            data["activeMs"].as_i64().unwrap_or(0) / 60_000,
+            data["limits"]["maxMinutes"],
+            data["costUsd"].as_f64().unwrap_or(0.0),
+            data["limits"]["maxCostUsd"]
+        );
+    }
+    if let Some(a) = data.get("attention") {
+        let actions: Vec<&str> = a["actions"].as_array().map(|v| v.iter().filter_map(Value::as_str).collect()).unwrap_or_default();
+        let _ = writeln!(out, "  attention: {}{} → {}", a["reason"].as_str().unwrap_or("?"), a["detail"].as_str().map(|d| format!(" ({d})")).unwrap_or_default(), actions.join(", "));
+    }
+    if let Some(path) = data["memoPath"].as_str() {
+        let _ = writeln!(out, "  memo: {path}");
+    }
+    if let Some(rev) = data["rev"].as_str() {
+        let _ = writeln!(out, "  rev: {rev}");
+    }
 }
 
 fn render_autorun(out: &mut String, data: &Value) {
@@ -847,6 +942,53 @@ mod tests {
         assert_eq!(success_exit(&ask, &json!({ "state": "idle", "reply": "done" })), EXIT_OK);
         assert_eq!(success_exit(&ask, &json!({ "state": "needs-human" })), EXIT_ATTENTION);
         assert_eq!(success_exit(&ask, &json!({ "state": "working", "timedOut": true })), EXIT_TIMEOUT);
+    }
+
+    #[test]
+    fn build_discuss_requests() {
+        let (path, body) = build_request(&parse(&args(&["discuss", "status", "disc-1", "--wait", "--timeout", "90", "--since", "r1"])).unwrap()).unwrap();
+        assert_eq!(path, "/v1/discuss/status");
+        assert_eq!(body, json!({ "id": "disc-1", "since": "r1", "waitSecs": 50 }));
+        assert_eq!(request_timeout(path, &body), Duration::from_secs(60));
+        let (_, plain) = build_request(&parse(&args(&["discuss", "status", "disc-1"])).unwrap()).unwrap();
+        assert_eq!(plain, json!({ "id": "disc-1" }));
+        assert_eq!(build_request(&parse(&args(&["discuss", "list"])).unwrap()).unwrap(), ("/v1/discuss/list", json!({})));
+        assert_eq!(build_request(&parse(&args(&["discuss", "memo", "disc-1"])).unwrap()).unwrap(), ("/v1/discuss/memo", json!({ "id": "disc-1" })));
+        let (path, body) = build_request(&parse(&args(&["discuss", "start", "disc-1"])).unwrap()).unwrap();
+        assert_eq!((path, body.clone()), ("/v1/discuss/start", json!({ "id": "disc-1" })));
+        assert_eq!(request_timeout(path, &body), Duration::from_secs(30));
+        let (path, body) = build_request(&parse(&args(&["discuss", "answer", "disc-1", "예산은 월 100만 원"])).unwrap()).unwrap();
+        assert_eq!((path, body), ("/v1/discuss/answer", json!({ "id": "disc-1", "text": "예산은 월 100만 원" })));
+        for bad in [&["discuss"][..], &["discuss", "status"], &["discuss", "answer", "disc-1"], &["discuss", "answer", "disc-1", "  "], &["discuss", "confirm", "disc-1"], &["discuss", "status", "d", "--wait", "--timeout", "0"]] {
+            assert!(build_request(&parse(&args(bad)).unwrap()).is_err(), "{bad:?}");
+        }
+    }
+
+    #[test]
+    fn discuss_wait_exit_codes() {
+        let wait = parse(&args(&["discuss", "status", "disc-1", "--wait"])).unwrap();
+        for (state, code) in [("review", EXIT_OK), ("finished", EXIT_OK), ("ready", EXIT_ATTENTION), ("waiting_user", EXIT_ATTENTION), ("paused", EXIT_ATTENTION)] {
+            assert_eq!(success_exit(&wait, &json!({ "state": state, "timedOut": false })), code, "{state}");
+        }
+        assert_eq!(success_exit(&wait, &json!({ "state": "running", "timedOut": true })), EXIT_TIMEOUT);
+        let peek = parse(&args(&["discuss", "status", "disc-1"])).unwrap();
+        assert_eq!(success_exit(&peek, &json!({ "state": "paused" })), EXIT_OK);
+        // autorun은 review를 끝남으로 보지 않는다(태스크 review는 플랜 단계 상태가 아니다).
+        let autorun = parse(&args(&["autorun", "status", "t-1", "--wait"])).unwrap();
+        assert_eq!(success_exit(&autorun, &json!({ "state": "review", "timedOut": false })), EXIT_ATTENTION);
+    }
+
+    #[test]
+    fn discuss_renders_memo_verbatim_and_status_summary() {
+        let memo = parse(&args(&["discuss", "memo", "disc-1"])).unwrap();
+        assert_eq!(render_success(&memo, &json!({ "markdown": "# 결론\n본문" })), "# 결론\n본문\n");
+        let status = parse(&args(&["discuss", "status", "disc-1"])).unwrap();
+        let text = render_success(&status, &json!({
+            "id": "disc-1", "state": "waiting_user", "topic": "주제", "round": 2, "activeMs": 120000, "costUsd": 0.5,
+            "limits": { "maxRounds": 4, "maxMinutes": 30, "maxCostUsd": 5.0 },
+            "attention": { "reason": "question", "detail": "예산은?", "actions": ["answer", "wait"] }, "rev": "abc",
+        }));
+        assert_eq!(text, "disc-1 [waiting_user] 주제\n  round 2/4 · 2분/30분 · $0.50/$5.0\n  attention: question (예산은?) → answer, wait\n  rev: abc\n");
     }
 
     #[test]

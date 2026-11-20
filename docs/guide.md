@@ -91,6 +91,29 @@ esac
 - 플랜 없이 한 번만 물을 때는 `ctl ask <agentId> "<프롬프트>" --timeout 600`을 씁니다. 실행 중인 세션에 입력하고, 턴이 끝나면 마지막 응답을 출력합니다. 터미널에 쓰다 만 사람 입력이 있으면 끼어들지 않고 거절합니다.
 - 기다리는 명령(`autorun status --wait`, `ask`)의 종료 코드는 `0` 끝남, `10` 조치 필요, `11` 시간 초과입니다. `ctl state <agentId>`는 턴 상태(`working`·`needs-human`·`idle`·`ended`·`none`)만 바로 알려 줍니다.
 
+### 에이전트·CLI에서 토의 열기
+
+에이전트나 스크립트가 팀 토의를 만들고 결과(결정 메모)를 받을 수 있습니다. 만든 토의는 **준비** 상태로 업무 패널에 생기고, 사람이 카드의 **시작**을 눌러 시작합니다.
+
+```bash
+D=$(agent-office task --discuss --moderator 하나 --with 둘 --with 셋 --role 셋=비판자 --rounds 3 "저장 형식을 바꿀까" - <<'EOF'
+배경·선택지·제약
+EOF
+)
+agent-office ctl discuss start "$D"        # 'CLI 자동 진행 허용'이 켜져 있을 때만
+agent-office ctl discuss status "$D" --wait --timeout 3600
+case $? in
+  0)  agent-office ctl discuss memo "$D" ;;   # 결론 확인 대기(review)·끝남
+  10) echo "조치 필요" ;;   # ready(시작 전)·waiting_user(사회자 질문)·paused
+  11) echo "아직 진행 중" ;;
+esac
+```
+
+- `task --discuss`는 앱 밖에서도 동작합니다(CLI 제어가 꺼져 있어도 됨). 팀원은 이름이나 id로, 역할은 역할 이름이나 id로 지정합니다(`--role <팀원>=none`은 역할 없음). 지정하지 않으면 업무 패널에서 열 때와 같은 기본값(프로필 기본 역할, 역할 → 프로필 → claude 순의 CLI, 상한 4라운드·30분·$5)이 들어갑니다. 전체 옵션은 `task --discuss --help`로 봅니다.
+- 토의가 업무 패널에 반영되기까지 몇 초 걸립니다. 그 사이 `status`의 `state`는 `pending`이고, `start`·`answer`는 반영될 때까지 잠시 기다립니다.
+- `ctl discuss start`와 `ctl discuss answer <id> "<답>"`(사회자가 사용자에게 한 질문에 답하기)는 **CLI 자동 진행 허용**이 필요합니다. 목록(`discuss list`)·상태·결정 메모 조회는 이 설정 없이도 됩니다.
+- 결론 확인(결론 확인 대기 → 끝남)은 사람이 카드에서 합니다.
+
 ## 사용 팁
 
 ### 저장소 일괄 점검

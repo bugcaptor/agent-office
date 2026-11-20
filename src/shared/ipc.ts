@@ -18,6 +18,8 @@ export const Commands = {
   workLastReply: "work_last_reply",
   autoRunReport: "auto_run_report",
   autoRunControlReply: "autorun_control_reply",
+  discussionControlReply: "discussion_control_reply",
+  scanDiscussionInbox: "scan_discussion_inbox",
   autoRunJudge: "auto_run_judge",
   scanWorkInbox: "scan_work_inbox",
   ackWorkInbox: "ack_work_inbox",
@@ -212,4 +214,6 @@ export const Events = {
   turnUsage: "turn-usage",
   // CLI(`ctl autorun …`)의 자동 진행 쓰기 요청. 렌더러가 처리하고 autoRunControlReply로 답한다.
   autoRunControl: "autorun-control",
+  // CLI(`ctl discuss start|answer`)의 토의 쓰기 요청. 렌더러가 처리하고 discussionControlReply로 답한다.
+  discussionControl: "discussion-control",
 } as const;

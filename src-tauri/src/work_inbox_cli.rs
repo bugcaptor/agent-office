@@ -16,6 +16,7 @@ const USAGE: &str = "usage: office-task [--to <name|id> | --unassigned] [--after
        office-task --done <id>...
        office-task --delete <id>...
        office-task --report <id> [text | -]
+       office-task --discuss --moderator <name|id> --with <name|id>... [options] <topic> [context | -]
 Prints the new task id. Pass it to --after to make a later task wait for this one.
 --edit --after replaces all prerequisites; --add-after/--remove-after change them one by one.
 --plan makes the task a plan root: it holds only the plan memo, and auto-run runs the tasks it
@@ -28,6 +29,7 @@ mon,wed@HH:MM (also weekdays@HH:MM). A plan root template runs its whole plan wi
 Schedules made here start turned off; a person turns them on in the app. Changing one turns it off.
 --report leaves the auto-run report for a task; writing it again replaces it.
 --show --json prints the stored task as JSON, including its auto-run state.
+--discuss creates a ready team discussion that a person starts in the app (office-task --discuss --help).
 Outside an Agent Office session the default app data folder is used.
 ";
 
@@ -85,6 +87,15 @@ pub fn run_with(
         Some("--delete") => return delete(&args[1..], env, out, err, now),
         Some("--edit") => return edit(&args[1..], env, stdin, out, err, now),
         Some("--report") => return report(&args[1..], env, stdin, err),
+        Some("--discuss") => {
+            let create = crate::discussion_cli::CreateEnv {
+                inbox: env.inbox(),
+                data_dir: env.data_dir(),
+                agent_id: env.agent_id.clone(),
+                cwd: std::env::current_dir().ok(),
+            };
+            return crate::discussion_cli::create(&args[1..], &create, stdin, out, err, now);
+        }
         Some("--show") => return match &args[1..] {
             [id] => show(id, false, env, out, err),
             [id, flag] if flag == "--json" => show(id, true, env, out, err),
