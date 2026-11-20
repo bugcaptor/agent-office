@@ -92,7 +92,7 @@
     "participants": "参与者：{{names}}",
     "moderatorOf": "主持人：{{name}}",
     "limits": "最多 {{rounds}} 轮 · {{minutes}} 分钟 · ${{cost}}",
-    "progress": "第 {{round}}/{{max}} 轮"
+    "meter": "第 {{round}}/{{maxRounds}} 轮 · {{minutes}}/{{maxMinutes}} 分钟 · ${{cost}}/${{maxCost}}"
   },
   "states": {
     "ready": "准备",
@@ -210,7 +210,8 @@
       "invalid": "无法读取指示：{{problem}} 请重新提交一个格式正确的 JSON。\n\n```json\n{{format}}\n```",
       "newHeader": "### 你上一轮之后的发言",
       "allHeader": "### 到目前为止的发言",
-      "noNew": "（你上一轮之后没有新的发言。）"
+      "noNew": "（你上一轮之后没有新的发言。）",
+      "forcedWrap": "{{reason}}，讨论到此结束。请只根据目前的发言整理决策备忘。这是你的最后一次发言，不能再点名或向人提问。请只提交一个下面格式的 JSON。在 summary 中写明结论、依据、被否决的方案和遗留问题。\n\n```json\n{{format}}\n```"
     },
     "label": {
       "answer": "人的答复",
@@ -246,14 +247,16 @@
       "send-failed": "无法发送这一轮。",
       "session-ended": "正在进行这一轮的讨论标签页已结束。继续时会重新打开。",
       "no-utterance": "再次请求后仍未收到发言。请检查标签页后再继续。",
-      "moderator-invalid": "再次请求后仍无法读取主持人的指示。请检查标签页后再继续。"
+      "moderator-invalid": "再次请求后仍无法读取主持人的指示。请检查标签页后再继续。",
+      "usage-wait": "订阅用量看起来不够，正在等待限额窗口重置。"
     },
     "phase": {
       "opening": "同时进行的第一轮 · {{done}}/{{total}} 人已发言",
       "moderator": "轮到主持人 {{name}}",
       "speakers": "轮到 {{name}} 发言（{{index}}/{{total}}）",
       "user": "主持人提出了问题",
-      "wrap_up": "正在总结"
+      "wrap_up": "正在总结",
+      "wrapForced": "整理中（{{reason}}）"
     },
     "actions": {
       "start": "开始",
@@ -261,11 +264,28 @@
       "resume": "继续",
       "end": "结束",
       "confirmEnd": "确认结束",
-      "answer": "回答"
+      "answer": "回答",
+      "skipUsageWait": "不等待，继续"
     },
     "question": "主持人的问题",
     "answerLabel": "答复",
     "answerPlaceholder": "写下答复后讨论会继续",
-    "pausedBecause": "暂停原因"
+    "pausedBecause": "暂停原因",
+    "limit": {
+      "rounds": "已进行到最大轮数（{{max}}）",
+      "time": "已达到进行时间上限（{{max}} 分钟）",
+      "cost": "已达到费用上限（${{max}}）"
+    },
+    "limitName": {
+      "rounds": "轮数上限",
+      "time": "时间上限",
+      "cost": "费用上限"
+    },
+    "notice": {
+      "limit": "{{reason}}，已请主持人整理。",
+      "wrapTimeout": "整理发言未在宽限时间内结束，已在没有总结的情况下结束。",
+      "wrapMissing": "未从整理发言中收到总结，已在没有总结的情况下结束。"
+    },
+    "usageStage": "{{name}} 的下一次发言"
   }
 }

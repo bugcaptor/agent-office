@@ -28,7 +28,7 @@ use agent_office_lib::types::{
     ActivityEvent, ActivityKind, AdoptedSessionInfo, AwardsFile,
     CollectedUtterance, CreateSessionRequest, CreateSessionResult, DiscussionCollectRequest, DiscussionCollection,
     DiscussionReadOnly, DiscussionSessionRequest, DiscussionSessionResult, DiscussionUtteranceSource, MemoSheet, MemoSheetMeta,
-    DiscussionPauseReason, DiscussionPhase, DiscussionStance, DiscussionState, DiscussionUtteranceKind, DiscussionsFile, NotificationEvent, NotificationSource, OutputChunk, PersistedState, RolesFile, SessionEventTokens,
+    DiscussionLimitReason, DiscussionPauseReason, DiscussionPhase, DiscussionRun, DiscussionStance, DiscussionState, DiscussionUtteranceKind, DiscussionsFile, NotificationEvent, NotificationSource, OutputChunk, PersistedState, RolesFile, SessionEventTokens,
     SessionExitInfo, SessionState, SessionStateEvent, TaskChatRequest, TaskChatResult, TurnUsageEvent,
     WorkCli, WorkStatus,
 };
@@ -538,9 +538,22 @@ fn discussions_file_roundtrips() {
     assert_eq!(run.pause_reason, Some(DiscussionPauseReason::HumanInput));
     assert_eq!((run.turns[0].sent_at, run.turns[1].sent_at), (Some(1720001100500), None));
     assert_eq!(run.seen["p3"].count, 3);
+    assert_eq!((full.active_ms, running.active_ms, running.active_since), (Some(610000), Some(245000), None));
     for d in &parsed.discussions {
         assert_eq!(agent_office_lib::persistence::discussion_store::discussion_problem(d), None);
     }
+}
+
+#[test]
+fn discussion_run_forced_wrap_roundtrips() {
+    assert_roundtrip::<DiscussionRun>(fixture!("discussion-run.forced-wrap.json"));
+    let run: DiscussionRun = serde_json::from_str(fixture!("discussion-run.forced-wrap.json")).unwrap();
+    assert_eq!((run.phase, run.forced, run.forced_at_ms), (DiscussionPhase::WrapUp, Some(DiscussionLimitReason::Time), Some(1800000)));
+    assert_eq!(run.pause_reason, Some(DiscussionPauseReason::UsageWait));
+    let wait = run.usage_wait.expect("usage wait");
+    assert_eq!((wait.agent_id.as_str(), wait.provider.as_str(), wait.kind.as_str()), ("p1", "claude", "session"));
+    assert!(wait.label.is_none() && wait.add_percent.is_none());
+    assert_eq!(run.usage_override, Some(true));
 }
 
 #[test]

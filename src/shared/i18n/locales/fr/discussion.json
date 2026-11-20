@@ -92,7 +92,7 @@
     "participants": "Participants : {{names}}",
     "moderatorOf": "Animateur : {{name}}",
     "limits": "Jusqu’à {{rounds}} tours · {{minutes}} min · {{cost}} $",
-    "progress": "Tour {{round}}/{{max}}"
+    "meter": "Tour {{round}}/{{maxRounds}} · {{minutes}}/{{maxMinutes}} min · {{cost}} $/{{maxCost}} $"
   },
   "states": {
     "ready": "Prête",
@@ -210,7 +210,8 @@
       "invalid": "Votre consigne n'a pas pu être lue : {{problem}} Soumettez de nouveau un seul objet JSON au bon format.\n\n```json\n{{format}}\n```",
       "newHeader": "### Dit depuis votre dernier tour",
       "allHeader": "### Dit jusqu'ici",
-      "noNew": "(Rien de nouveau depuis votre dernier tour.)"
+      "noNew": "(Rien de nouveau depuis votre dernier tour.)",
+      "forcedWrap": "{{reason}} : la discussion s'arrête ici. Rédigez la note de décision à partir des interventions déjà faites. C'est votre dernier tour : vous ne pouvez plus donner la parole ni interroger la personne. Soumettez un seul objet JSON au format ci-dessous. Indiquez dans summary la conclusion, les raisons, les alternatives écartées et les points en suspens.\n\n```json\n{{format}}\n```"
     },
     "label": {
       "answer": "Réponse de la personne",
@@ -246,14 +247,16 @@
       "send-failed": "Impossible d'envoyer un tour.",
       "session-ended": "Un onglet de discussion qui prenait son tour s'est terminé. Reprenez pour le rouvrir.",
       "no-utterance": "Aucune intervention reçue même après une relance. Vérifiez l'onglet, puis reprenez.",
-      "moderator-invalid": "La consigne du modérateur reste illisible après une relance. Vérifiez l'onglet, puis reprenez."
+      "moderator-invalid": "La consigne du modérateur reste illisible après une relance. Vérifiez l'onglet, puis reprenez.",
+      "usage-wait": "L'utilisation de l'abonnement semble insuffisante : la discussion attend la réinitialisation de la fenêtre de limite."
     },
     "phase": {
       "opening": "Premier tour simultané · {{done}}/{{total}} ont parlé",
       "moderator": "Tour du modérateur {{name}}",
       "speakers": "Tour de {{name}} ({{index}}/{{total}})",
       "user": "Le modérateur a posé une question",
-      "wrap_up": "Conclusion en cours"
+      "wrap_up": "Conclusion en cours",
+      "wrapForced": "Conclusion en cours ({{reason}})"
     },
     "actions": {
       "start": "Démarrer",
@@ -261,11 +264,28 @@
       "resume": "Reprendre",
       "end": "Terminer",
       "confirmEnd": "Vraiment terminer",
-      "answer": "Répondre"
+      "answer": "Répondre",
+      "skipUsageWait": "Continuer sans attendre"
     },
     "question": "Question du modérateur",
     "answerLabel": "Réponse",
     "answerPlaceholder": "Écrivez une réponse pour poursuivre la discussion",
-    "pausedBecause": "Raison de la pause"
+    "pausedBecause": "Raison de la pause",
+    "limit": {
+      "rounds": "Le nombre maximal de tours ({{max}}) est atteint",
+      "time": "La limite de durée ({{max}} min) est atteinte",
+      "cost": "La limite de coût ({{max}} $) est atteinte"
+    },
+    "limitName": {
+      "rounds": "limite de tours",
+      "time": "limite de durée",
+      "cost": "limite de coût"
+    },
+    "notice": {
+      "limit": "{{reason}} ; le modérateur a été invité à conclure.",
+      "wrapTimeout": "Le tour de conclusion ne s'est pas terminé dans le délai de grâce : la discussion s'est terminée sans résumé.",
+      "wrapMissing": "Aucun résumé n'est venu du tour de conclusion : la discussion s'est terminée sans résumé."
+    },
+    "usageStage": "le prochain tour de {{name}}"
   }
 }

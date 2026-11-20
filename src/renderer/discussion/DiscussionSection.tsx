@@ -13,7 +13,8 @@ import { WorkDialog } from "../workpanels/WorkDialog";
 import { AgentFace } from "../workpanels/AgentFace";
 import { useRoleStore } from "./roleStore";
 import { sortDiscussions, useDiscussionStore } from "./discussionStore";
-import { discussionDeletable, discussionEditable, discussionReadOnlySummary } from "./discussionModel";
+import { discussionDeletable, discussionEditable, discussionElapsedMs, discussionReadOnlySummary, discussionTicking } from "./discussionModel";
+import { usageBlockText, useNow } from "../workpanels/AutoRunUsage";
 import { discussionReadOnlyMode } from "@shared/types";
 import { DiscussionEditor } from "./DiscussionEditor";
 import {
@@ -55,6 +56,17 @@ function limitsText(t: (key: string, options?: Record<string, unknown>) => strin
   return t("board.limits", { rounds: d.limits.maxRounds, minutes: d.limits.maxMinutes, cost: d.limits.maxCostUsd });
 }
 
+/** 진행 라운드·진행 시간·추산 비용과 각 상한. 진행 중이면 시간이 흐르게 다시 그린다. */
+function RunMeter({ discussion: d }: { discussion: Discussion }) {
+  const { t } = useTranslation("discussion");
+  const now = useNow(discussionTicking(d.state) ? 15_000 : 3_600_000);
+  return <small className="discussion-run-meter">{t("board.meter", {
+    round: d.round, maxRounds: d.limits.maxRounds,
+    minutes: Math.floor(discussionElapsedMs(d, now) / 60_000), maxMinutes: d.limits.maxMinutes,
+    cost: d.costUsd.toFixed(2), maxCost: d.limits.maxCostUsd,
+  })}</small>;
+}
+
 /** 진행 중인 단계 한 줄. 시작 전·끝난 뒤에는 없다. */
 function RunStatus({ discussion: d }: { discussion: Discussion }) {
   const { t } = useTranslation("discussion");
@@ -68,6 +80,7 @@ function RunStatus({ discussion: d }: { discussion: Discussion }) {
     const index = run.turns.findIndex((x) => x.text === undefined);
     text = t("run.phase.speakers", { name: name(run.turns[index]?.agentId), index: index + 1, total: run.turns.length });
   } else if (run.phase === "moderator") text = t("run.phase.moderator", { name: name(d.moderatorAgentId) });
+  else if (run.phase === "wrap_up" && run.forced) text = t("run.phase.wrapForced", { reason: t(`run.limitName.${run.forced}`) });
   else text = t(`run.phase.${run.phase}`);
   return <small className="discussion-run-status">{text}</small>;
 }
@@ -87,7 +100,7 @@ function DiscussionCard({ discussion: d, selected, onOpen }: { discussion: Discu
         <span className="discussion-card-moderator" title={t("board.moderatorOf", { name: agents[d.moderatorAgentId]?.name ?? t("board.missingAgent") })}><AgentFace agentId={d.moderatorAgentId} /></span>
         {debaters.map((p) => <span key={p.agentId} title={agents[p.agentId]?.name ?? t("board.missingAgent")}><AgentFace agentId={p.agentId} /></span>)}
       </span>
-      <small>{d.state === "ready" ? limitsText(t, d) : t("board.progress", { round: d.round, max: d.limits.maxRounds })}</small>
+      {d.state === "ready" ? <small>{limitsText(t, d)}</small> : <RunMeter discussion={d} />}
       <RunStatus discussion={d} />
       <ReadOnlyBadge discussion={d} />
     </button>
@@ -116,7 +129,7 @@ function DiscussionDetail({ discussion: d, onClose }: { discussion: Discussion; 
   const ordered = [...d.participants].sort((a, b) => Number(b.agentId === d.moderatorAgentId) - Number(a.agentId === d.moderatorAgentId));
   return <WorkDialog title={d.topic} id={d.id} onClose={onClose} className="discussion-detail">
     <p><span className={`work-status-chip discussion-state-chip state-${d.state}`}>{t(`states.${d.state}`)}</span>
-      {d.state !== "ready" && t("board.progress", { round: d.round, max: d.limits.maxRounds })}</p>
+      {d.state !== "ready" && <RunMeter discussion={d} />}</p>
     <RunStatus discussion={d} />
     {d.context && <p className="discussion-context">{d.context}</p>}
     <RunPanel discussion={d} />
@@ -161,9 +174,11 @@ function RunPanel({ discussion: d }: { discussion: Discussion }) {
   const blocked = d.state === "ready" ? discussionStartBlockedReason(d, discussions, agents, observerEnabled) : undefined;
   const fail = (code: string | undefined) => setError(code);
   const active = d.state !== "ready" && d.state !== "finished";
+  const usageWaiting = d.state === "paused" && run?.pauseReason === "usage-wait";
   return <div className="discussion-run">
     {d.state === "paused" && run?.pauseReason && <p className="discussion-run-paused" role="status">
       <strong>{t("run.pausedBecause")}</strong> {t(`run.pause.${run.pauseReason}`)}{run.pauseDetail ? ` (${run.pauseDetail})` : ""}
+      {usageWaiting && run.usageWait && <UsageWaitLine discussion={d} />}
     </p>}
     {d.state === "waiting_user" && run?.question && <form className="discussion-run-question" onSubmit={(e) => {
       e.preventDefault();
@@ -179,8 +194,8 @@ function RunPanel({ discussion: d }: { discussion: Discussion }) {
     {(d.state === "ready" || active) && <div className="work-dialog-actions discussion-run-actions">
       {d.state === "ready" && <button type="button" className="pixel-btn primary" disabled={!!blocked} title={blocked ? t(`run.blocked.${blocked}`) : undefined}
         onClick={() => fail(startDiscussion(d.id))}>{t("run.actions.start")}</button>}
-      {(d.state === "running" || d.state === "wrapping_up") && <button type="button" className="pixel-btn" onClick={() => pauseDiscussion(d.id)}>{t("run.actions.pause")}</button>}
-      {d.state === "paused" && <button type="button" className="pixel-btn primary" onClick={() => fail(resumeDiscussion(d.id))}>{t("run.actions.resume")}</button>}
+      {(d.state === "running" || d.state === "wrapping_up" || usageWaiting) && <button type="button" className="pixel-btn" onClick={() => pauseDiscussion(d.id)}>{t("run.actions.pause")}</button>}
+      {d.state === "paused" && <button type="button" className="pixel-btn primary" onClick={() => fail(resumeDiscussion(d.id))}>{t(usageWaiting ? "run.actions.skipUsageWait" : "run.actions.resume")}</button>}
       {active && (ending
         ? <button type="button" className="pixel-btn danger" onClick={() => { setEnding(false); void endDiscussion(d.id); }}>{t("run.actions.confirmEnd")}</button>
         : <button type="button" className="pixel-btn danger" onClick={() => setEnding(true)}>{t("run.actions.end")}</button>)}
@@ -188,4 +203,17 @@ function RunPanel({ discussion: d }: { discussion: Discussion }) {
     {d.state === "ready" && blocked && <p className="work-send-hint">{t(`run.blocked.${blocked}`)}</p>}
     {error && <p className="work-send-hint" role="alert">{t(`run.blocked.${error}`)}</p>}
   </div>;
+}
+
+/** 사용량 대기 이유와 언제 이어 가는지(자동 진행과 같은 문장). */
+function UsageWaitLine({ discussion: d }: { discussion: Discussion }) {
+  const { t } = useTranslation("discussion");
+  const { t: tWork } = useTranslation("workpanels");
+  const { t: tActivity } = useTranslation("activity");
+  const agents = useAppStore((s) => s.agents);
+  const now = useNow(30_000);
+  const wait = d.run?.usageWait;
+  if (!wait) return null;
+  const stage = t("run.usageStage", { name: agents[wait.agentId]?.name ?? t("board.missingAgent") });
+  return <span className="discussion-run-usage"> {usageBlockText(tWork, tActivity, wait, stage, now)}</span>;
 }

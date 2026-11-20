@@ -9,10 +9,14 @@
 // - 턴 종료는 관찰 훅의 턴 단계(idle, 보낸 뒤 신호)로 안다. 발언이 없거나 지시를 못 읽으면 한 번 재촉하고, 또 그러면 멈춘다.
 // - 쓰다 만 사람 입력이 있으면 차례를 넣지 않고 멈춘다(자동 진행과 같은 `work-send-human-input`).
 // - 토의 세션은 앱 재시작 때 버려진다. 재시작하면 진행 중이던 토의는 멈춤(restarted)이 되고, 계속하면 세션을 다시 연다.
+// - 안전장치: 라운드·진행 시간·비용 상한에 닿으면 하던 차례를 버리고 사회자에게 정리 차례 하나(forced wrap_up)를 준다.
+//   그 차례는 재촉하지 않고, 유예(WRAP_GRACE_MS) 안에 끝나지 않으면 요약 없이 끝낸다. 진행 시간은 진행 중·정리 중에만 흐른다.
+//   사용량 대기가 켜져 있으면 차례를 넣기 전마다 그 참가자의 구독을 예측해, 모자라면 한도 창 리셋까지 기다렸다가 스스로 이어 간다.
 import type {
-  AgentProfile, Discussion, DiscussionPauseReason, DiscussionRun, DiscussionTurn, DiscussionUtterance,
+  AgentProfile, Discussion, DiscussionLimitReason, DiscussionPauseReason, DiscussionRun, DiscussionTurn, DiscussionUsageWait,
+  DiscussionUtterance, TurnUsageEvent,
 } from "@shared/types";
-import { discussionProblem, discussionSessionAgentId } from "@shared/types";
+import { discussionProblem, discussionSessionAgentId, parseDiscussionSessionAgentId } from "@shared/types";
 import { t } from "../i18n";
 import { tauriApi } from "../ipc/tauriApi";
 import { maybeSendOsNotification } from "../ipc/osNotify";
@@ -23,6 +27,9 @@ import {
   useDiscussionSessionStore,
 } from "./discussionSessionStore";
 import { useRoleStore } from "./roleStore";
+import { discussionElapsedMs, discussionTicking } from "./discussionModel";
+import { tokensCost } from "../usage/usageForecast";
+import { assessTurn, refreshUsage, workerProvider } from "../usage/usageForecastStore";
 
 /** 사회자 지시 형식. 키는 언어와 무관하게 고정이다. */
 export const MODERATOR_FORMAT = [
@@ -30,6 +37,11 @@ export const MODERATOR_FORMAT = [
   '{"action":"ask_user","question":"<question for the person>"}',
   '{"action":"wrap","summary":"<conclusion, reasons, rejected alternatives, open issues>"}',
 ].join("\n");
+
+/** 강제 정리 차례의 유예(진행 시간 기준). 넘기면 요약 없이 끝낸다. 정리가 상한을 크게 넘기지 않게 한다. */
+export const WRAP_GRACE_MS = 5 * 60_000;
+/** 강제 정리 차례에서 사회자가 낼 형식. */
+export const WRAP_FORMAT = '{"action":"wrap","summary":"<conclusion, reasons, rejected alternatives, open issues>"}';
 
 /** 끝나지 않은 토의(동시 토의는 하나만). 준비·끝남이 아니면 진행 중으로 본다. */
 export function isActiveDiscussion(d: Pick<Discussion, "state">): boolean {
@@ -156,6 +168,7 @@ export function turnText(d: Discussion, turn: DiscussionTurn, sessionId: string 
   let instruction: string;
   if (run.phase === "opening") instruction = t("discussion:run.prompt.opening");
   else if (run.phase === "speakers") instruction = t("discussion:run.prompt.speaker", { question: turn.question ?? "" });
+  else if (run.phase === "wrap_up") instruction = t("discussion:run.prompt.forcedWrap", { reason: limitText(d, run.forced ?? "rounds"), format: WRAP_FORMAT });
   else instruction = t("discussion:run.prompt.moderator", { round: d.round, max: d.limits.maxRounds, format: MODERATOR_FORMAT, roster: roster(d) });
   return [deltaText(d, turn.agentId, sessionId), instruction].filter(Boolean).join("\n\n");
 }
@@ -167,11 +180,21 @@ function running(id: string): Discussion | undefined {
   const d = find(id);
   return d?.run && (d.state === "running" || d.state === "wrapping_up") ? d : undefined;
 }
-/** 최신 토의를 읽어 고친다. 없으면 아무것도 하지 않는다. */
-function update(id: string, change: (d: Discussion) => Discussion): Discussion | undefined {
+/**
+ * 최신 토의를 읽어 고친다. 없으면 아무것도 하지 않는다. 진행 시간 시계도 여기서 맞춘다: 진행 중·정리 중으로
+ * 들어가면 구간을 열고, 나가면 `clockAt`(기본 지금)에서 닫아 누계에 더한다.
+ */
+function update(id: string, change: (d: Discussion) => Discussion, clockAt?: number): Discussion | undefined {
   const d = find(id);
   if (!d) return undefined;
-  const next = { ...change(d), updatedAt: Date.now() };
+  const now = Date.now();
+  let next = { ...change(d), updatedAt: now };
+  const was = discussionTicking(d.state), is = discussionTicking(next.state);
+  if (!was && is) next = { ...next, activeSince: now };
+  else if (was && !is) {
+    const since = d.activeSince ?? now;
+    next = { ...next, activeMs: (next.activeMs ?? 0) + Math.max(0, (clockAt ?? now) - since), activeSince: undefined };
+  }
   void useDiscussionStore.getState().commit(next);
   return next;
 }
@@ -185,7 +208,7 @@ function utterance(d: Discussion, kind: DiscussionUtterance["kind"], text: strin
   return { at: Date.now(), round: d.round, kind, ...(agentId ? { agentId } : {}), text };
 }
 function pause(id: string, reason: DiscussionPauseReason, detail?: string): void {
-  update(id, (d) => (d.run ? { ...d, state: "paused", run: { ...d.run, pauseReason: reason, ...(detail ? { pauseDetail: detail } : { pauseDetail: undefined }) } } : d));
+  update(id, (d) => (d.run ? { ...d, state: "paused", run: { ...d.run, pauseReason: reason, pauseDetail: detail, usageWait: undefined } } : d));
 }
 function errorCode(error: unknown): string { return error instanceof Error ? error.message : String(error); }
 
@@ -216,23 +239,26 @@ export function startDiscussion(id: string): string | undefined {
   if (blocked) return blocked;
   const debaters = d.participants.filter((p) => p.agentId !== d.moderatorAgentId);
   const run: DiscussionRun = { phase: "opening", turns: debaters.map((p) => ({ agentId: p.agentId })), seen: {} };
-  update(id, (latest) => ({ ...latest, state: "running", round: 1, transcript: [], startedAt: Date.now(), endedAt: undefined, run }));
+  update(id, (latest) => ({ ...latest, state: "running", round: 1, transcript: [], costUsd: 0, startedAt: Date.now(), endedAt: undefined, activeMs: 0, run }));
   kick(id);
   return undefined;
 }
 
-/** 멈춤. 돌고 있는 턴은 끝까지 두고, 다음 차례를 넣지 않는다. */
+/** 멈춤. 돌고 있는 턴은 끝까지 두고, 다음 차례를 넣지 않는다. 사용량 대기 중이면 스스로 이어 가지 않게 바꾼다. */
 export function pauseDiscussion(id: string): void {
-  if (running(id)) pause(id, "user");
+  if (running(id) || find(id)?.run?.pauseReason === "usage-wait") pause(id, "user");
 }
 
 /**
  * 계속. 세션이 사라진 차례는 다시 보내고(세션을 새로 연다), 재촉도 다시 한 번 할 수 있게 한다.
- * 관찰 훅이 꺼져 있으면 턴 종료를 알 수 없어 이어 가지 않는다.
+ * 관찰 훅이 꺼져 있으면 턴 종료를 알 수 없어 이어 가지 않는다. 사람이 사용량 대기를 계속하면 다음 차례 하나는
+ * 검사 없이 보낸다(`auto`는 대기가 풀려 스스로 이어 가는 것).
  */
-export function resumeDiscussion(id: string): string | undefined {
+export function resumeDiscussion(id: string, options: { auto?: boolean } = {}): string | undefined {
   const d = find(id);
   if (!d?.run || d.state !== "paused") return undefined;
+  if (options.auto && d.run.pauseReason !== "usage-wait") return undefined;
+  const usageOverride = d.run.pauseReason === "usage-wait" && !options.auto ? true : undefined;
   if (!useAppStore.getState().appSettings.observerEnabled) return "discussion-observer-off";
   const live = new Map(liveDiscussionSessions().filter((s) => s.discussionId === id).map((s) => [s.participantAgentId, s.sessionId]));
   update(id, (latest) => {
@@ -242,7 +268,7 @@ export function resumeDiscussion(id: string): string | undefined {
       const alive = turn.sessionId && live.get(turn.agentId) === turn.sessionId;
       return alive ? { ...turn, nudged: undefined } : { agentId: turn.agentId, ...(turn.question ? { question: turn.question } : {}) };
     });
-    return { ...latest, state: run.phase === "user" ? "waiting_user" : run.phase === "wrap_up" ? "wrapping_up" : "running", run: { ...run, turns, pauseReason: undefined, pauseDetail: undefined } };
+    return { ...latest, state: run.phase === "user" ? "waiting_user" : run.phase === "wrap_up" ? "wrapping_up" : "running", run: { ...run, turns, pauseReason: undefined, pauseDetail: undefined, usageWait: undefined, usageOverride } };
   });
   kick(id);
   return undefined;
@@ -301,13 +327,94 @@ export function isDiscussionStepping(id: string): boolean { return inFlight.has(
 export async function stepDiscussion(id: string): Promise<void> {
   const d = running(id);
   if (!d?.run) return;
+  if (d.run.phase === "opening" || d.run.phase === "moderator" || d.run.phase === "speakers") {
+    const reason = discussionLimitReached(d);
+    if (reason) return forceWrap(id, reason);
+  }
   switch (d.run.phase) {
     case "opening": return stepOpening(id);
     case "moderator": return stepModerator(id);
     case "speakers": return stepSpeakers(id);
-    case "wrap_up": return finish(id);
+    case "wrap_up": return stepWrapUp(id);
     case "user": return;
   }
+}
+
+// ── 안전장치 ──────────────────────────────────────────────────────────
+
+/** 진행 시간·비용 상한에 닿았으면 그 상한. 라운드 상한은 사회자 차례 앞에서 본다(지목 한 번이 한 라운드). */
+export function discussionLimitReached(d: Discussion, now = Date.now()): Exclude<DiscussionLimitReason, "rounds"> | undefined {
+  if (discussionElapsedMs(d, now) >= d.limits.maxMinutes * 60_000) return "time";
+  if (d.costUsd >= d.limits.maxCostUsd) return "cost";
+  return undefined;
+}
+
+function limitText(d: Discussion, reason: DiscussionLimitReason): string {
+  const max = reason === "rounds" ? d.limits.maxRounds : reason === "time" ? d.limits.maxMinutes : d.limits.maxCostUsd;
+  return t(`discussion:run.limit.${reason}`, { max });
+}
+
+/**
+ * 상한에 닿았다. 하던 차례는 버리고(동시 첫 라운드에서 이미 받은 발언은 공개한다) 사회자에게 정리 차례 하나를 준다.
+ * 사회자 세션이 차례를 도는 중이면 끝난 뒤에 넣는다. 권한 대기 등으로 끝나지 않으면 유예가 지나 끝낸다.
+ */
+function forceWrap(id: string, reason: DiscussionLimitReason): Promise<void> {
+  update(id, (x) => {
+    const run = x.run!;
+    const opening = run.phase === "opening"
+      ? run.turns.filter((turn) => turn.text !== undefined).map((turn) => utterance(x, "opening", turn.text!, turn.agentId)) : [];
+    return {
+      ...x, state: "wrapping_up",
+      transcript: [...x.transcript, ...opening, utterance(x, "notice", t("discussion:run.notice.limit", { reason: limitText(x, reason) }))],
+      run: { ...run, phase: "wrap_up", forced: reason, forcedAtMs: discussionElapsedMs(x), turns: [{ agentId: x.moderatorAgentId }], question: undefined },
+    };
+  });
+  return stepDiscussion(id);
+}
+
+/**
+ * 정리. 사회자가 스스로 정리했으면 요약이 이미 기록에 있으니 끝낸다. 강제 정리면 사회자의 정리 차례 하나를 받는다:
+ * wrap 지시면 그 요약, JSON이 없으면 답변 전체를 요약으로 받고, 그 밖이거나 비었거나 유예가 지나면 요약 없이 끝낸다.
+ */
+async function stepWrapUp(id: string): Promise<void> {
+  const d = running(id)!;
+  const run = d.run!;
+  const turn = run.forced ? run.turns[0] : undefined;
+  if (!turn) return finish(id);
+  if (discussionElapsedMs(d) >= (run.forcedAtMs ?? 0) + WRAP_GRACE_MS) return finish(id, t("discussion:run.notice.wrapTimeout"));
+  if (turn.sentAt === undefined) return deliver(id, turn.agentId);
+  const text = await receive(id, turn.agentId, { nudge: false });
+  if (text === null) return;
+  const latest = running(id);
+  if (!latest) return;
+  const parsed = parseModeratorDirective(text, latest, names(latest));
+  const summary = "directive" in parsed ? (parsed.directive.action === "wrap" ? parsed.directive.summary : "")
+    : parsed.problem === "no-json" ? text : "";
+  if (!summary) return finish(id, t("discussion:run.notice.wrapMissing"));
+  update(id, (x) => ({
+    ...x, transcript: [...x.transcript, utterance(x, "moderator", summary, x.moderatorAgentId)],
+    run: { ...x.run!, turns: x.run!.turns.map((y) => (y.agentId === turn.agentId ? { ...y, text: summary } : y)) },
+  }));
+  return finish(id);
+}
+
+/** 참가자들의 구독 사용량이 모자랄 것 같으면 사용량 대기로 멈추고 true. 사람이 건너뛰었으면 통과시킨다. */
+function waitForUsage(id: string, agentIds: string[]): boolean {
+  const d = running(id);
+  if (!d?.run || !d.limits.usageGuard || d.run.usageOverride) return false;
+  let wait: DiscussionUsageWait | undefined;
+  for (const agentId of agentIds) {
+    const participant = d.participants.find((p) => p.agentId === agentId);
+    const block = assessTurn(workerProvider(participant?.agent));
+    if (block && (!wait || block.until > wait.until)) {
+      const { provider, kind, label, nowPercent, addPercent, limit, until, resetsAtMs } = block;
+      wait = { agentId, provider, kind, label, nowPercent, addPercent, limit, until, resetsAtMs };
+    }
+  }
+  if (!wait) return false;
+  const usageWait = wait;
+  update(id, (x) => (x.run ? { ...x, state: "paused", run: { ...x.run, pauseReason: "usage-wait", pauseDetail: memberName(usageWait.agentId), usageWait } } : x));
+  return true;
 }
 
 function sessionOf(d: Discussion, agentId: string) {
@@ -326,8 +433,9 @@ async function deliver(id: string, agentId: string): Promise<void> {
   if (!d || !turn || turn.sentAt !== undefined) return;
   const session = sessionOf(d, agentId);
   let sessionId: string, sentAt: number;
+  if (session && isLive(session.status) && (session.turn?.phase === "working" || session.turn?.phase === "waiting")) return;
+  if (waitForUsage(id, [agentId])) return;
   if (session && isLive(session.status)) {
-    if (session.turn?.phase === "working" || session.turn?.phase === "waiting") return;
     try {
       ({ submittedAt: sentAt } = await sendDiscussionTurn(session.agentId, turnText(d, turn, session.sessionId)));
     } catch (error) {
@@ -363,11 +471,12 @@ async function deliver(id: string, agentId: string): Promise<void> {
     ...run,
     turns: run.turns.map((x) => (x.agentId === agentId ? { ...x, sessionId, sentAt } : x)),
     seen: { ...run.seen, [agentId]: { sessionId, count: latest.transcript.length } },
+    usageOverride: undefined,
   }));
 }
 
 /** 보낸 차례 하나를 받는다. 턴이 끝나지 않았으면 null. 발언이 없으면 한 번 재촉하고, 또 없으면 멈춘다. */
-async function receive(id: string, agentId: string): Promise<string | null> {
+async function receive(id: string, agentId: string, options: { nudge?: boolean } = {}): Promise<string | null> {
   const d = running(id);
   const turn = d?.run?.turns.find((x) => x.agentId === agentId);
   if (!d || !turn || turn.sentAt === undefined || turn.text !== undefined) return null;
@@ -384,6 +493,8 @@ async function receive(id: string, agentId: string): Promise<string | null> {
   if (!running(id)) return null;
   const text = got?.text.trim();
   if (text) return text;
+  // 재촉하지 않는 차례(강제 정리)는 빈 발언을 그대로 돌려준다.
+  if (options.nudge === false) return "";
   await nudge(id, agentId, t("discussion:run.prompt.nudge"), "no-utterance");
   return null;
 }
@@ -396,9 +507,11 @@ async function nudge(id: string, agentId: string, text: string, reason: Discussi
   if (turn.nudged) return pause(id, reason, detail ?? memberName(agentId));
   const session = sessionOf(d, agentId);
   if (!session || !isLive(session.status)) return pause(id, "session-ended", memberName(agentId));
+  if (waitForUsage(id, [agentId])) return;
   try {
     const { submittedAt } = await sendDiscussionTurn(session.agentId, text);
     patchTurn(id, agentId, { sentAt: submittedAt, nudged: true });
+    updateRun(id, (run) => ({ ...run, usageOverride: undefined }));
   } catch (error) {
     const code = errorCode(error);
     if (running(id)) pause(id, code === "work-send-human-input" ? "human-input" : "send-failed", code);
@@ -409,6 +522,8 @@ async function nudge(id: string, agentId: string, text: string, reason: Discussi
 async function stepOpening(id: string): Promise<void> {
   const d = running(id)!;
   const unsent = d.run!.turns.filter((x) => x.sentAt === undefined).map((x) => x.agentId);
+  // 한 사람이라도 기다려야 하면 아무에게도 보내지 않는다(동시 라운드라 한꺼번에 시작한다).
+  if (unsent.length && waitForUsage(id, unsent)) return;
   await Promise.all(unsent.map((agentId) => deliver(id, agentId)));
   for (const turn of running(id)?.run?.turns ?? []) {
     if (turn.sentAt === undefined || turn.text !== undefined) continue;
@@ -432,6 +547,8 @@ async function stepModerator(id: string): Promise<void> {
   const moderator = d.moderatorAgentId;
   const turn = d.run!.turns.find((x) => x.agentId === moderator);
   if (!turn) return pause(id, "moderator-invalid");
+  // 마지막 라운드까지 말했으면 평소 지시 대신 정리 차례를 준다.
+  if (turn.sentAt === undefined && d.round >= d.limits.maxRounds) return forceWrap(id, "rounds");
   if (turn.sentAt === undefined) return deliver(id, moderator);
   const text = await receive(id, moderator);
   if (text === null) return;
@@ -490,7 +607,45 @@ async function stepSpeakers(id: string): Promise<void> {
   return stepDiscussion(id);
 }
 
+// ── 비용·사용량 대기 ──────────────────────────────────────────────────
+
+/**
+ * 토의 세션의 턴 토큰을 API 요율로 셈해 그 토의의 비용 누계에 더한다. 중간 갱신(partial)도 증분이므로 더한다.
+ * 사용량 예측 장부는 sessionBridge가 따로 센다. 시작 전이거나 없는 토의는 무시한다.
+ */
+export function addDiscussionTurnCost(e: Pick<TurnUsageEvent, "agentId" | "tokens" | "at">): void {
+  const parsed = parseDiscussionSessionAgentId(e.agentId);
+  if (!parsed) return;
+  const d = find(parsed.discussionId);
+  if (!d || d.state === "ready") return;
+  const cost = tokensCost(e.tokens, e.at);
+  if (!(cost > 0)) return;
+  update(d.id, (x) => ({ ...x, costUsd: x.costUsd + cost }));
+}
+
+const waking = new Set<string>();
+/**
+ * 사용량 대기 중인 토의를 살핀다. 다시 볼 시각이 지났으면 사용량을 새로 받아 이어 가고(이어 간 차례가 다시
+ * 검사한다), 그 전이라도 새 조회값으로 보니 모자라지 않으면 일찍 이어 간다.
+ */
+export async function checkDiscussionUsageWaits(now = Date.now()): Promise<void> {
+  for (const d of useDiscussionStore.getState().discussions) {
+    const wait = d.state === "paused" && d.run?.pauseReason === "usage-wait" ? d.run.usageWait : undefined;
+    if (!wait || waking.has(d.id)) continue;
+    if (now < wait.until && assessTurn(wait.provider, now)) continue;
+    waking.add(d.id);
+    try {
+      if (now >= wait.until) await refreshUsage();
+      // 그 사이 사람이 멈췄거나 끝냈으면 그대로 둔다.
+      if (find(d.id)?.run?.pauseReason === "usage-wait") resumeDiscussion(d.id, { auto: true });
+    } finally { waking.delete(d.id); }
+  }
+}
+
 // ── 설치 ──────────────────────────────────────────────────────────────
+
+/** 진행 시간 상한·정리 유예·사용량 대기를 다시 보는 주기. 차례가 끝없이 기다려도 상한이 걸리게 한다. */
+const CHECK_MS = 15_000;
 
 /**
  * 앱을 열 때: 토의 세션은 재시작 때 버려지므로 진행 중·정리 중이던 토의는 멈춤(restarted)으로 돌린다.
@@ -499,7 +654,8 @@ async function stepSpeakers(id: string): Promise<void> {
 export function restoreDiscussionsAfterRestart(): void {
   for (const d of useDiscussionStore.getState().discussions) {
     if (!d.run || (d.state !== "running" && d.state !== "wrapping_up")) continue;
-    update(d.id, (x) => ({ ...x, state: "paused", run: { ...x.run!, pauseReason: "restarted", pauseDetail: undefined } }));
+    // 앱이 꺼져 있던 동안은 진행 시간에 넣지 않는다. 마지막으로 쓴 시각에서 구간을 닫는다.
+    update(d.id, (x) => ({ ...x, state: "paused", run: { ...x.run!, pauseReason: "restarted", pauseDetail: undefined } }), d.updatedAt);
   }
 }
 
@@ -521,8 +677,12 @@ export function installDiscussionRunner(): () => void {
   });
   const offSessions = useDiscussionSessionStore.subscribe((s, prev) => { if (s.sessions !== prev.sessions) wake(); });
   const offDiscussions = useDiscussionStore.subscribe((s, prev) => { if (s.discussions !== prev.discussions) wake(); });
-  return () => { installed = false; offSessions(); offDiscussions(); };
+  const offCost = tauriApi.onTurnUsage(addDiscussionTurnCost);
+  const check = () => { if (installed && restored) { wake(); void checkDiscussionUsageWaits(); } };
+  const offUsage = useAppStore.subscribe((state, previous) => { if (state.usage !== previous.usage) check(); });
+  const timer = setInterval(check, CHECK_MS);
+  return () => { installed = false; offSessions(); offDiscussions(); offCost(); offUsage(); clearInterval(timer); };
 }
 
 /** 테스트 전용. */
-export function resetDiscussionRunForTest(): void { inFlight.clear(); }
+export function resetDiscussionRunForTest(): void { inFlight.clear(); waking.clear(); }

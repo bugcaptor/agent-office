@@ -1,7 +1,8 @@
 // @vitest-environment jsdom
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { Discussion, RolesFile } from "@shared/types";
+import type { Discussion, DiscussionRun, RolesFile } from "@shared/types";
+import forcedRun from "@shared/contract-fixtures/discussion-run.forced-wrap.json";
 
 const api = vi.hoisted(() => ({
   loadRoles: vi.fn<() => Promise<RolesFile | null>>(),
@@ -121,10 +122,14 @@ describe("DiscussionSection", () => {
   });
 
   it("does not offer edit or delete while a discussion is running", async () => {
-    api.loadDiscussions.mockResolvedValue([{ ...structuredClone(ready), state: "running", round: 2 }]);
+    // 진행 시간은 누계 7분 + 지금 흐르는 구간 5분, 비용은 추산 누계.
+    api.loadDiscussions.mockResolvedValue([{ ...structuredClone(ready), state: "running", round: 2, costUsd: 0.4231,
+      activeMs: 7 * 60_000, activeSince: Date.now() - 5 * 60_000 - 1000 }]);
     render(<DiscussionSection />);
+    const meter = `2/4 라운드 · 12/${ready.limits.maxMinutes}분 · $0.42/$${ready.limits.maxCostUsd}`;
+    expect(await screen.findByText(meter, { selector: ".discussion-card .discussion-run-meter" })).toBeTruthy();
     fireEvent.click(await screen.findByRole("button", { name: /회의실 이름/ }));
-    expect(within(dialog()).getAllByText("2/4 라운드").length).toBeGreaterThan(0);
+    expect(within(dialog()).getAllByText(meter).length).toBeGreaterThan(0);
     expect(within(dialog()).queryByRole("button", { name: "고치기" })).toBeNull();
     expect(within(dialog()).queryByRole("button", { name: "삭제" })).toBeNull();
   });
@@ -159,6 +164,21 @@ describe("DiscussionSection run controls", () => {
     const d = useDiscussionStore.getState().discussions[0];
     expect(d.transcript.slice(-1)[0]).toMatchObject({ kind: "answer", text: "10만 원" });
     expect(d.run?.phase).toBe("moderator");
+  });
+
+  it("shows a forced wrap-up waiting on usage, and offers skipping the wait or pausing it", async () => {
+    // 계약 fixture: 시간 상한으로 강제 정리 중, 사회자 차례가 Claude 사용량을 기다린다.
+    const run = structuredClone(forcedRun) as DiscussionRun;
+    const waiting: Discussion = { ...structuredClone(ready), state: "paused", round: 3, run: { ...run, turns: [{ agentId: "a1" }], usageWait: { ...run.usageWait!, agentId: "a1" } } };
+    api.loadDiscussions.mockResolvedValue([waiting]);
+    render(<DiscussionSection />);
+    await open();
+    expect(within(dialog()).getByText("정리 중 (시간 상한)")).toBeTruthy();
+    expect(within(dialog()).getByText(/리셋되기를 기다립니다/)).toBeTruthy();
+    expect(within(dialog()).getByText(/약 97%로 한도 95%에 닿았습니다/)).toBeTruthy();
+    expect(within(dialog()).getByRole("button", { name: "기다리지 않고 계속" })).toBeTruthy();
+    fireEvent.click(within(dialog()).getByRole("button", { name: "멈춤" }));
+    expect(useDiscussionStore.getState().discussions[0].run).toMatchObject({ pauseReason: "user", usageWait: undefined });
   });
 
   it("shows why a discussion paused and offers resume and end", async () => {

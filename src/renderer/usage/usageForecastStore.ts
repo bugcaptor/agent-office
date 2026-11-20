@@ -82,6 +82,14 @@ export function assessTask(worker: ForecastProvider | null, now = Date.now()): U
 export function assessFollowup(worker: ForecastProvider | null, now = Date.now()): UsageBlock | null {
   return assessUsage(predictFollowupNeeds(model, worker), snapshot(), model, ledger, now);
 }
+/**
+ * 토의 차례 한 턴을 넣어도 되는가. 후속 지시 한 턴의 표본으로 예측하되, 판단자가 없으므로
+ * 그 참가자의 구독만 본다(Codex 참가자가 Claude 창 때문에 기다리지 않게).
+ */
+export function assessTurn(worker: ForecastProvider | null, now = Date.now()): UsageBlock | null {
+  if (!worker) return null;
+  return assessUsage(predictFollowupNeeds(model, worker).filter((need) => need.provider === worker), snapshot(), model, ledger, now);
+}
 /** 판단자를 불러도 되는가. */
 export function assessJudge(now = Date.now()): UsageBlock | null {
   return assessUsage(judgeNeeds(), snapshot(), model, ledger, now);

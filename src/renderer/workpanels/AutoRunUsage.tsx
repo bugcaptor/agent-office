@@ -20,12 +20,21 @@ const percent = (n: number) => Math.max(0, Math.round(n));
 
 /** 사용량 대기 이유와 언제 이어 가는지. */
 export function usageWaitText(t: Translate, tActivity: Translate, wait: AutoRunUsageWait, now: number): string {
+  return usageBlockText(t, tActivity, wait, t(`autoRun.usage.stage.${wait.stage}`), now);
+}
+
+/** 막는 창 하나의 대기 문장. `stage`는 무엇을 보내기 전이었는지(토의 차례 등 자동 진행 밖에서도 쓴다). `t`는 workpanels. */
+export function usageBlockText(
+  t: Translate, tActivity: Translate,
+  wait: Pick<AutoRunUsageWait, "provider" | "kind" | "label" | "nowPercent" | "addPercent" | "limit" | "until" | "resetsAtMs">,
+  stage: string, now: number,
+): string {
   const base = {
     provider: t(`autoRun.usage.provider.${wait.provider}`),
     window: windowName(tActivity, wait.kind, wait.label),
     now: percent(wait.nowPercent),
     limit: wait.limit,
-    stage: t(`autoRun.usage.stage.${wait.stage}`),
+    stage,
   };
   const why = wait.addPercent === null || wait.nowPercent >= wait.limit
     ? t("autoRun.usage.waitExhausted", base)
@@ -38,7 +47,7 @@ export function usageWaitText(t: Translate, tActivity: Translate, wait: AutoRunU
   return `${why} ${when}`;
 }
 
-function useNow(intervalMs: number): number {
+export function useNow(intervalMs: number): number {
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
     const id = window.setInterval(() => setNow(Date.now()), intervalMs);

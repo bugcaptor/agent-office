@@ -1,11 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { CollectedUtterance, Discussion, DiscussionCollectRequest, DiscussionSessionRequest } from "@shared/types";
+import type { CollectedUtterance, Discussion, DiscussionCollectRequest, DiscussionSessionRequest, UsageSnapshot } from "@shared/types";
 import { discussionCollectionMode, discussionReadOnlyMode, discussionSessionAgentId } from "@shared/types";
 
 const { api, notify } = vi.hoisted(() => ({
   api: {
     openDiscussionSession: vi.fn(), disposeSession: vi.fn(), sendDiscussionTurn: vi.fn(), collectDiscussionUtterance: vi.fn(),
-    saveDiscussion: vi.fn(), loadDiscussions: vi.fn(),
+    saveDiscussion: vi.fn(), loadDiscussions: vi.fn(), loadUsageSnapshot: vi.fn(),
   },
   notify: vi.fn(),
 }));
@@ -19,8 +19,9 @@ import { useAppStore } from "../../store/appStore";
 import { useDiscussionStore } from "../discussionStore";
 import { useRoleStore } from "../roleStore";
 import { applyDiscussionSessionState, applyDiscussionTurn, resetDiscussionSessionStoreForTest, useDiscussionSessionStore } from "../discussionSessionStore";
+import { resetUsageForecast } from "../../usage/usageForecastStore";
 import {
-  MODERATOR_FORMAT, answerDiscussion, discussionStartBlockedReason, endDiscussion, installDiscussionRunner, isDiscussionStepping,
+  MODERATOR_FORMAT, WRAP_FORMAT, WRAP_GRACE_MS, addDiscussionTurnCost, checkDiscussionUsageWaits, discussionLimitReached, answerDiscussion, discussionStartBlockedReason, endDiscussion, installDiscussionRunner, isDiscussionStepping,
   parseModeratorDirective, pauseDiscussion, resetDiscussionRunForTest, restoreDiscussionsAfterRestart, resumeDiscussion, startDiscussion,
 } from "../discussionRun";
 
@@ -91,6 +92,7 @@ beforeEach(() => {
   ], status: "ready" });
   resetDiscussionSessionStoreForTest();
   resetDiscussionRunForTest();
+  resetUsageForecast();
   off = installDiscussionRunner();
 });
 afterEach(async () => { off(); await settle(); });
@@ -405,3 +407,228 @@ describe("저장", () => {
     expect(saved.slice(-1)[0]).toEqual(d1());
   });
 });
+
+// ── 안전장치(라운드·시간·비용 상한, 사용량 대기) ─────────────────────────
+
+const HOUR = 60 * 60 * 1000;
+/** Claude 5시간 창 하나뿐인 조회값. */
+function usage(percent: number, resetsAtMs = Date.now() + HOUR): UsageSnapshot {
+  const never = { outcome: "never_attempted", detail: null, lastAttemptMs: null, lastSuccessMs: null } as const;
+  return {
+    claude: { provider: "claude", fetchedAtMs: Date.now(), planLabel: null, windows: [{ kind: "session", label: null, usedPercent: percent, resetsAtMs, windowMinutes: 300, isActive: null }] },
+    codex: null, opencode: null, openrouter: null,
+    claudeLive: { ...never, tokenSource: null, via: null }, codexLive: never, opencodeLive: never, openrouterLive: never,
+  };
+}
+/** 진행 시간 누계를 바꾼다(스토어가 바뀌면 실행기가 깨어 상한을 본다). */
+async function setElapsed(ms: number): Promise<void> {
+  useDiscussionStore.setState((s) => ({ discussions: s.discussions.map((d) => (d.id === "d1" ? { ...d, activeMs: ms, activeSince: Date.now() } : d)) }));
+  await settle();
+}
+const notices = () => d1().transcript.filter((e) => e.kind === "notice").map((e) => e.text);
+const forcedPrompt = (reason: string) => t("discussion:run.prompt.forcedWrap", { reason, format: WRAP_FORMAT });
+
+describe("라운드 상한", () => {
+  it("마지막 라운드가 끝나면 평소 지시 대신 정리 차례 하나를 주고, 받은 요약으로 끝낸다", async () => {
+    useDiscussionStore.setState({ discussions: [discussion({ limits: { maxRounds: 2, maxMinutes: 30, maxCostUsd: 5, usageGuard: true } })] });
+    await throughOpening();
+    // 1라운드 뒤 사회자는 평소처럼 지목한다.
+    expect(openedTurn("m")).toContain(MODERATOR_FORMAT);
+    await finishTurn("m", directive({ action: "next", speakers: [{ id: "a", question: "Why the pantry?" }] }));
+    expect(d1().round).toBe(2);
+    await finishTurn("a", "Coffee is there.");
+    // 2라운드가 최대: 정리 차례.
+    expect(d1()).toMatchObject({ state: "wrapping_up", run: { phase: "wrap_up", forced: "rounds", turns: [{ agentId: "m" }] } });
+    const reason = t("discussion:run.limit.rounds", { max: 2 });
+    expect(notices()).toEqual([t("discussion:run.notice.limit", { reason })]);
+    expect(sentTurns("m").slice(-1)[0]).toContain(forcedPrompt(reason));
+    expect(sentTurns("m").slice(-1)[0]).toContain("Coffee is there.");
+    await finishTurn("m", directive({ action: "wrap", summary: "Pantry, for the coffee." }));
+    expect(d1()).toMatchObject({ state: "finished", run: undefined });
+    expect(d1().transcript.slice(-1)[0]).toMatchObject({ kind: "moderator", agentId: "m", text: "Pantry, for the coffee." });
+    expect(sentTurns("m")).toHaveLength(1);
+    expect(useDiscussionSessionStore.getState().order).toEqual([]);
+  });
+
+  it("최대 1라운드면 사회자의 첫 차례가 정리 차례다", async () => {
+    useDiscussionStore.setState({ discussions: [discussion({ limits: { maxRounds: 1, maxMinutes: 30, maxCostUsd: 5, usageGuard: true } })] });
+    await throughOpening();
+    expect(openedTurn("m")).toContain(forcedPrompt(t("discussion:run.limit.rounds", { max: 1 })));
+    expect(openedTurn("m")).not.toContain(MODERATOR_FORMAT);
+    expect(openedTurn("m")).toContain("Put it in the north corner.");
+  });
+});
+
+describe("시간 상한", () => {
+  it("동시 첫 라운드 도중에 닿으면 받은 발언은 공개하고, 사회자 탭을 정리 차례로 열어 답변 전체를 요약으로 받는다", async () => {
+    startDiscussion("d1");
+    await settle();
+    await finishTurn("a", "Put it by the pantry.");
+    await setElapsed(30 * 60_000);
+    expect(d1()).toMatchObject({ state: "wrapping_up", run: { phase: "wrap_up", forced: "time" } });
+    expect(d1().transcript.map((e) => [e.kind, e.agentId])).toEqual([["opening", "a"], ["notice", undefined]]);
+    expect(d1().run!.forcedAtMs).toBeGreaterThanOrEqual(30 * 60_000);
+    expect(openedTurn("m")).toContain(forcedPrompt(t("discussion:run.limit.time", { max: 30 })));
+    expect(openedTurn("m")).toContain("Put it by the pantry.");
+    // 늦게 끝난 토론자의 발언은 받지 않는다.
+    await finishTurn("b", "Too late.");
+    expect(d1().transcript.some((e) => e.text === "Too late.")).toBe(false);
+    await finishTurn("m", "Pantry it is: the only voice so far, nothing against it.");
+    expect(d1()).toMatchObject({ state: "finished" });
+    expect(d1().transcript.slice(-1)[0]).toMatchObject({ kind: "moderator", text: "Pantry it is: the only voice so far, nothing against it." });
+  });
+
+  it("정리 차례가 유예 안에 끝나지 않으면(권한 대기 등) 요약 없이 끝낸다", async () => {
+    await throughOpening();
+    await setElapsed(30 * 60_000);
+    expect(d1().state).toBe("wrapping_up");
+    // 사회자가 권한 승인을 기다리며 멈춰 있다.
+    applyDiscussionTurn(session("m").agentId, session("m").sessionId, "waiting", ++clock);
+    await settle();
+    expect(d1().state).toBe("wrapping_up");
+    await setElapsed(d1().run!.forcedAtMs! + WRAP_GRACE_MS);
+    expect(d1()).toMatchObject({ state: "finished" });
+    expect(notices().slice(-1)[0]).toBe(t("discussion:run.notice.wrapTimeout"));
+    expect(useDiscussionSessionStore.getState().order).toEqual([]);
+  });
+
+  it("진행 시간은 진행 중에만 흐르고, 멈춤·재시작 동안은 세지 않는다", async () => {
+    startDiscussion("d1");
+    await settle();
+    expect(d1().activeMs).toBe(0);
+    expect(d1().activeSince).toBeGreaterThan(0);
+    pauseDiscussion("d1");
+    expect(d1().activeSince).toBeUndefined();
+    const paused = d1().activeMs!;
+    expect(paused).toBeGreaterThanOrEqual(0);
+    resumeDiscussion("d1");
+    expect(d1().activeSince).toBeGreaterThan(0);
+    await settle();
+    // 재시작: 앱이 꺼진 시간은 빼고 마지막으로 쓴 시각에서 구간을 닫는다.
+    off(); off = () => {};
+    useDiscussionStore.setState({ discussions: [{ ...d1(), state: "running", activeMs: 60_000, activeSince: now, updatedAt: now + 90_000 }] });
+    restoreDiscussionsAfterRestart();
+    expect(d1()).toMatchObject({ state: "paused", activeMs: 150_000, activeSince: undefined });
+  });
+});
+
+describe("비용 상한", () => {
+  // claude-opus-5-5 입력 $4/M → 1.5M 토큰이면 $6.
+  const tokens = { model: "claude-opus-5-5", input: 1_500_000 };
+
+  it("토의 탭의 턴 토큰(중간 갱신 포함)을 요율로 셈해 누계에 더한다", async () => {
+    addDiscussionTurnCost({ agentId: sid("a"), tokens: { model: "claude-opus-5-5", input: 100_000 }, at: now });
+    expect(d1().costUsd).toBe(0);  // 시작 전은 세지 않는다.
+    startDiscussion("d1");
+    await settle();
+    addDiscussionTurnCost({ agentId: sid("a"), tokens: { model: "claude-opus-5-5", input: 100_000 }, at: now });
+    addDiscussionTurnCost({ agentId: sid("b"), tokens: { model: "claude-opus-5-5", output: 10_000 }, at: now });
+    addDiscussionTurnCost({ agentId: "a", tokens: { model: "claude-opus-5-5", input: 1_000_000 }, at: now });
+    expect(d1().costUsd).toBeCloseTo(0.4 + 0.2, 6);
+  });
+
+  it("상한에 닿으면 지목 차례를 버리고 정리 차례를 주며, 정리 차례는 재촉하지 않는다", async () => {
+    await throughOpening();
+    await finishTurn("m", directive({ action: "next", speakers: [{ id: "a", question: "Why?" }, { id: "b", question: "And you?" }] }));
+    expect(d1().run!.phase).toBe("speakers");
+    addDiscussionTurnCost({ agentId: sid("a"), tokens, at: now });
+    await settle();
+    expect(d1()).toMatchObject({ state: "wrapping_up", run: { forced: "cost", turns: [{ agentId: "m" }] } });
+    const reason = t("discussion:run.limit.cost", { max: 5 });
+    expect(sentTurns("m").slice(-1)[0]).toContain(forcedPrompt(reason));
+    // 정리 차례 중 비용이 더 들어도 다시 강제하지 않는다.
+    addDiscussionTurnCost({ agentId: sid("m"), tokens, at: now });
+    await settle();
+    expect(notices()).toHaveLength(1);
+    const sends = sentTurns("m").length;
+    await finishTurn("m", null);
+    expect(sentTurns("m")).toHaveLength(sends);
+    expect(d1()).toMatchObject({ state: "finished" });
+    expect(notices().slice(-1)[0]).toBe(t("discussion:run.notice.wrapMissing"));
+  });
+
+  it("상한 검사: 시간·비용", () => {
+    const base = discussion({ state: "running", activeMs: 0 });
+    expect(discussionLimitReached(base)).toBeUndefined();
+    expect(discussionLimitReached({ ...base, activeMs: 29 * 60_000 })).toBeUndefined();
+    expect(discussionLimitReached({ ...base, activeMs: 10 * 60_000, activeSince: now }, now + 20 * 60_000)).toBe("time");
+    expect(discussionLimitReached({ ...base, activeMs: 10 * 60_000, activeSince: now, state: "paused" }, now + 20 * 60_000)).toBeUndefined();
+    expect(discussionLimitReached({ ...base, costUsd: 5 })).toBe("cost");
+  });
+});
+
+describe("사용량 대기", () => {
+  it("차례를 받을 참가자의 구독이 한도에 닿았으면 아무에게도 보내지 않고 기다리다가, 풀리면 스스로 이어 간다", async () => {
+    useAppStore.setState({ usage: usage(96) });
+    expect(startDiscussion("d1")).toBeUndefined();
+    await settle();
+    expect(api.openDiscussionSession).not.toHaveBeenCalled();
+    expect(d1()).toMatchObject({ state: "paused", activeSince: undefined, run: { pauseReason: "usage-wait", pauseDetail: "Ari", usageWait: { agentId: "a", provider: "claude", kind: "session", limit: 95 } } });
+    // 아직 모자라면 그대로 기다린다.
+    await checkDiscussionUsageWaits();
+    expect(d1().state).toBe("paused");
+    // 조회값이 내려가면(리셋) 이어 간다.
+    useAppStore.setState({ usage: usage(10) });
+    await vi.waitFor(() => expect(d1().state).toBe("running"));
+    await settle();
+    expect(api.openDiscussionSession).toHaveBeenCalledTimes(2);
+    expect(d1().run!.usageWait).toBeUndefined();
+  });
+
+  it("다시 볼 시각이 지나면 사용량을 새로 받아 이어 간다", async () => {
+    useAppStore.setState({ usage: usage(96) });
+    startDiscussion("d1");
+    await settle();
+    const until = d1().run!.usageWait!.until;
+    api.loadUsageSnapshot.mockResolvedValue(usage(5));
+    await checkDiscussionUsageWaits(until + 1);
+    await settle();
+    expect(api.loadUsageSnapshot).toHaveBeenCalled();
+    expect(d1().state).toBe("running");
+  });
+
+  it("Codex 참가자는 Claude 창 때문에 기다리지 않는다", async () => {
+    useAppStore.setState({ usage: usage(96) });
+    await throughOpeningWithoutGuard();
+    // 다음은 Codex 토론자 b의 차례다.
+    await finishTurn("m", directive({ action: "next", speakers: [{ id: "b", question: "Why?" }] }));
+    expect(d1()).toMatchObject({ state: "running", run: { phase: "speakers" } });
+    expect(sentTurns("b")).toHaveLength(1);
+  });
+
+  it("사람이 계속하면 다음 차례 하나는 검사 없이 보내고, 사용량 대기를 끄면 검사하지 않는다", async () => {
+    useAppStore.setState({ usage: usage(96) });
+    startDiscussion("d1");
+    await settle();
+    expect(resumeDiscussion("d1")).toBeUndefined();
+    await settle();
+    expect(api.openDiscussionSession).toHaveBeenCalledTimes(2);
+    expect(d1()).toMatchObject({ state: "running", run: { usageOverride: undefined } });
+    // 다음 사회자 차례(Claude)는 다시 기다린다.
+    await finishTurn("a", "Pantry.");
+    await finishTurn("b", "Corner.");
+    expect(d1()).toMatchObject({ state: "paused", run: { phase: "moderator", pauseReason: "usage-wait" } });
+    // 사람이 멈추면 스스로 이어 가지 않는다.
+    pauseDiscussion("d1");
+    useAppStore.setState({ usage: usage(10) });
+    await settle();
+    expect(d1().run!.pauseReason).toBe("user");
+
+    useDiscussionStore.setState({ discussions: [discussion({ limits: { maxRounds: 4, maxMinutes: 30, maxCostUsd: 5, usageGuard: false } })] });
+    resetDiscussionSessionStoreForTest();
+    api.openDiscussionSession.mockClear();
+    useAppStore.setState({ usage: usage(96) });
+    startDiscussion("d1");
+    await settle();
+    expect(api.openDiscussionSession).toHaveBeenCalledTimes(2);
+  });
+});
+
+/** 사용량 검사 없이 첫 라운드를 마친 뒤 사용량 대기를 켠다. */
+async function throughOpeningWithoutGuard(): Promise<void> {
+  const limits = { maxRounds: 4, maxMinutes: 30, maxCostUsd: 5, usageGuard: false };
+  useDiscussionStore.setState({ discussions: [discussion({ limits })] });
+  await throughOpening();
+  useDiscussionStore.setState((s) => ({ discussions: s.discussions.map((d) => ({ ...d, limits: { ...limits, usageGuard: true } })) }));
+  await settle();
+}

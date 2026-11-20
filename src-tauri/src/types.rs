@@ -1493,7 +1493,29 @@ pub enum DiscussionPhase { Opening, Moderator, Speakers, User, WrapUp }
 /// 멈춘 이유. TS `DiscussionPauseReason` 미러.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
-pub enum DiscussionPauseReason { User, Restarted, HumanInput, OpenFailed, SendFailed, SessionEnded, NoUtterance, ModeratorInvalid }
+pub enum DiscussionPauseReason { User, Restarted, HumanInput, OpenFailed, SendFailed, SessionEnded, NoUtterance, ModeratorInvalid, UsageWait }
+/// 강제 정리를 부른 상한. TS `DiscussionLimitReason` 미러.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum DiscussionLimitReason { Rounds, Time, Cost }
+/// 사용량 대기. 차례를 받을 참가자의 구독이 한도에 닿을 것 같아 기다린다. TS `DiscussionUsageWait` 미러.
+/// 구독·창 종류는 렌더러 사용량 예측의 값이라 문자열로 그대로 보존한다.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DiscussionUsageWait {
+    /// 기다리게 한 참가자(캐릭터) agentId.
+    pub agent_id: String,
+    pub provider: String,
+    pub kind: String,
+    pub label: Option<String>,
+    pub now_percent: f64,
+    pub add_percent: Option<f64>,
+    /// 한도(%). 사용량 예측의 정수 상수(`USAGE_LIMIT_PERCENT`)다.
+    pub limit: u32,
+    /// 다시 볼 시각(epoch ms).
+    pub until: i64,
+    pub resets_at_ms: Option<i64>,
+}
 /// 이번 단계의 차례 하나. 보내기 전에는 `sent_at`이 없고, 발언을 받으면 `text`가 생긴다.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -1524,6 +1546,13 @@ pub struct DiscussionRun {
     #[serde(default, skip_serializing_if = "Option::is_none")] pub question: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")] pub pause_reason: Option<DiscussionPauseReason>,
     #[serde(default, skip_serializing_if = "Option::is_none")] pub pause_detail: Option<String>,
+    /// 상한에 닿아 사회자에게 강제 정리를 맡겼다(wrap_up 단계).
+    #[serde(default, skip_serializing_if = "Option::is_none")] pub forced: Option<DiscussionLimitReason>,
+    /// 강제 정리를 시작한 때의 진행 시간(ms). 정리 차례의 유예를 여기서 잰다.
+    #[serde(default, skip_serializing_if = "Option::is_none")] pub forced_at_ms: Option<i64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")] pub usage_wait: Option<DiscussionUsageWait>,
+    /// 사람이 사용량 대기를 건너뛰었다. 다음 차례 하나를 검사 없이 보낸다.
+    #[serde(default, skip_serializing_if = "Option::is_none")] pub usage_override: Option<bool>,
 }
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -1549,6 +1578,10 @@ pub struct Discussion {
     pub updated_at: i64,
     #[serde(default, skip_serializing_if = "Option::is_none")] pub started_at: Option<i64>,
     #[serde(default, skip_serializing_if = "Option::is_none")] pub ended_at: Option<i64>,
+    /// 진행 시간 누계(ms). 진행 중·정리 중일 때만 흐르고, 멈춤·사람 대기·사용량 대기는 세지 않는다.
+    #[serde(default, skip_serializing_if = "Option::is_none")] pub active_ms: Option<i64>,
+    /// 지금 흐르는 구간의 시작(epoch ms). 진행 중·정리 중일 때만 있다.
+    #[serde(default, skip_serializing_if = "Option::is_none")] pub active_since: Option<i64>,
     /// 실행기 상태(렌더러 실행기가 쓴다). 시작 전·끝난 뒤에는 없다.
     #[serde(default, skip_serializing_if = "Option::is_none")] pub run: Option<DiscussionRun>,
 }

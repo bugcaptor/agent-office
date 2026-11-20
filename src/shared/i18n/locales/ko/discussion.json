@@ -92,7 +92,7 @@
     "participants": "참가자: {{names}}",
     "moderatorOf": "사회자: {{name}}",
     "limits": "최대 {{rounds}}라운드 · {{minutes}}분 · ${{cost}}",
-    "progress": "{{round}}/{{max}} 라운드"
+    "meter": "{{round}}/{{maxRounds}} 라운드 · {{minutes}}/{{maxMinutes}}분 · ${{cost}}/${{maxCost}}"
   },
   "states": {
     "ready": "준비",
@@ -210,7 +210,8 @@
       "invalid": "지시를 읽지 못했습니다: {{problem}} 형식에 맞는 JSON 하나만 다시 제출하세요.\n\n```json\n{{format}}\n```",
       "newHeader": "### 지난 차례 이후 나온 발언",
       "allHeader": "### 지금까지 나온 발언",
-      "noNew": "(지난 차례 이후 새 발언이 없습니다.)"
+      "noNew": "(지난 차례 이후 새 발언이 없습니다.)",
+      "forcedWrap": "{{reason}} 토의를 여기서 마칩니다. 지금까지 나온 발언만으로 결정 메모를 정리하세요. 이번이 마지막 차례라 더 지목하거나 사람에게 물을 수 없습니다. 아래 형식의 JSON 하나만 제출하세요. summary에 결론, 근거, 기각한 대안, 남은 쟁점을 적으세요.\n\n```json\n{{format}}\n```"
     },
     "label": {
       "answer": "사람의 답",
@@ -246,14 +247,16 @@
       "send-failed": "차례를 보내지 못했습니다.",
       "session-ended": "차례를 기다리던 토의 탭이 끝났습니다. 계속하면 다시 엽니다.",
       "no-utterance": "다시 요청해도 발언을 받지 못했습니다. 탭을 확인한 뒤 계속하세요.",
-      "moderator-invalid": "다시 요청해도 사회자 지시를 읽지 못했습니다. 탭을 확인한 뒤 계속하세요."
+      "moderator-invalid": "다시 요청해도 사회자 지시를 읽지 못했습니다. 탭을 확인한 뒤 계속하세요.",
+      "usage-wait": "구독 사용량이 모자랄 것 같아 한도 창이 리셋되기를 기다립니다."
     },
     "phase": {
       "opening": "동시 첫 라운드 · {{done}}/{{total}}명 발언",
       "moderator": "{{name}} 사회자 차례",
       "speakers": "{{name}} 발언 차례 ({{index}}/{{total}})",
       "user": "사회자가 질문했습니다",
-      "wrap_up": "정리 중"
+      "wrap_up": "정리 중",
+      "wrapForced": "정리 중 ({{reason}})"
     },
     "actions": {
       "start": "시작",
@@ -261,11 +264,28 @@
       "resume": "계속",
       "end": "끝내기",
       "confirmEnd": "정말 끝내기",
-      "answer": "답하기"
+      "answer": "답하기",
+      "skipUsageWait": "기다리지 않고 계속"
     },
     "question": "사회자의 질문",
     "answerLabel": "답",
     "answerPlaceholder": "답을 적으면 토의가 이어집니다",
-    "pausedBecause": "멈춘 이유"
+    "pausedBecause": "멈춘 이유",
+    "limit": {
+      "rounds": "최대 라운드({{max}})까지 진행해",
+      "time": "진행 시간 상한({{max}}분)에 닿아",
+      "cost": "비용 상한(${{max}})에 닿아"
+    },
+    "limitName": {
+      "rounds": "라운드 상한",
+      "time": "시간 상한",
+      "cost": "비용 상한"
+    },
+    "notice": {
+      "limit": "{{reason}} 사회자에게 정리를 요청했습니다.",
+      "wrapTimeout": "정리 차례가 유예 시간 안에 끝나지 않아 요약 없이 끝냈습니다.",
+      "wrapMissing": "정리 차례에서 요약을 받지 못해 요약 없이 끝냈습니다."
+    },
+    "usageStage": "{{name}}의 다음 차례"
   }
 }

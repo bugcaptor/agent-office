@@ -92,7 +92,7 @@
     "participants": "Participants: {{names}}",
     "moderatorOf": "Moderator: {{name}}",
     "limits": "Up to {{rounds}} rounds · {{minutes}} min · ${{cost}}",
-    "progress": "Round {{round}}/{{max}}"
+    "meter": "Round {{round}}/{{maxRounds}} · {{minutes}}/{{maxMinutes}} min · ${{cost}}/${{maxCost}}"
   },
   "states": {
     "ready": "Ready",
@@ -210,7 +210,8 @@
       "invalid": "Your instruction could not be read: {{problem}} Submit a single JSON object in the right format again.\n\n```json\n{{format}}\n```",
       "newHeader": "### Said since your last turn",
       "allHeader": "### Said so far",
-      "noNew": "(Nothing new has been said since your last turn.)"
+      "noNew": "(Nothing new has been said since your last turn.)",
+      "forcedWrap": "{{reason}}, the discussion ends here. Write the decision memo from the statements so far. This is your last turn: you can no longer call on debaters or ask the person. Submit only one JSON object in the format below. Put the conclusion, reasons, rejected alternatives and open issues in summary.\n\n```json\n{{format}}\n```"
     },
     "label": {
       "answer": "The person's answer",
@@ -246,14 +247,16 @@
       "send-failed": "A turn could not be sent.",
       "session-ended": "A discussion tab that was taking its turn has ended. Resume to open it again.",
       "no-utterance": "No utterance arrived even after asking again. Check the tab, then resume.",
-      "moderator-invalid": "The moderator's instruction could not be read even after asking again. Check the tab, then resume."
+      "moderator-invalid": "The moderator's instruction could not be read even after asking again. Check the tab, then resume.",
+      "usage-wait": "Subscription usage looks too low, so the discussion waits for the limit window to reset."
     },
     "phase": {
       "opening": "Simultaneous first round · {{done}}/{{total}} spoke",
       "moderator": "Moderator {{name}}'s turn",
       "speakers": "{{name}}'s turn ({{index}}/{{total}})",
       "user": "The moderator asked a question",
-      "wrap_up": "Wrapping up"
+      "wrap_up": "Wrapping up",
+      "wrapForced": "Wrapping up ({{reason}})"
     },
     "actions": {
       "start": "Start",
@@ -261,11 +264,28 @@
       "resume": "Resume",
       "end": "End",
       "confirmEnd": "Really end",
-      "answer": "Answer"
+      "answer": "Answer",
+      "skipUsageWait": "Continue without waiting"
     },
     "question": "Moderator's question",
     "answerLabel": "Answer",
     "answerPlaceholder": "Write an answer and the discussion goes on",
-    "pausedBecause": "Paused because"
+    "pausedBecause": "Paused because",
+    "limit": {
+      "rounds": "The maximum number of rounds ({{max}}) has been reached",
+      "time": "The time limit ({{max}} min) has been reached",
+      "cost": "The cost limit (${{max}}) has been reached"
+    },
+    "limitName": {
+      "rounds": "round limit",
+      "time": "time limit",
+      "cost": "cost limit"
+    },
+    "notice": {
+      "limit": "{{reason}}; the moderator was asked to wrap up.",
+      "wrapTimeout": "The wrap-up turn did not finish within the grace period, so the discussion ended without a summary.",
+      "wrapMissing": "No summary came from the wrap-up turn, so the discussion ended without one."
+    },
+    "usageStage": "{{name}}'s next turn"
   }
 }

@@ -28,7 +28,8 @@
       "createdAt": 1720000000000,
       "updatedAt": 1720000700000,
       "startedAt": 1720000050000,
-      "endedAt": 1720000700000
+      "endedAt": 1720000700000,
+      "activeMs": 610000
     },
     {
       "id": "disc-ready",
@@ -69,6 +70,7 @@
       "createdAt": 1720000900000,
       "updatedAt": 1720001200000,
       "startedAt": 1720000950000,
+      "activeMs": 245000,
       "run": {
         "phase": "speakers",
         "turns": [

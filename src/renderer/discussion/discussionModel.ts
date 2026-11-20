@@ -138,3 +138,14 @@ export function discussionReadOnlySummary(d: Pick<Discussion, "participants">): 
     .map((p) => discussionReadOnlyMode(p.agent.cli))
     .reduce<DiscussionReadOnly>((worst, mode) => (READ_ONLY_RANK[mode] > READ_ONLY_RANK[worst] ? mode : worst), "flags");
 }
+
+/** 진행 시간이 흐르는 상태(진행 중·정리 중). 멈춤·사람 대기·사용량 대기는 세지 않는다. */
+export function discussionTicking(state: Discussion["state"]): boolean {
+  return state === "running" || state === "wrapping_up";
+}
+
+/** 지금까지의 진행 시간(ms). 누계에 지금 흐르는 구간을 더한다. */
+export function discussionElapsedMs(d: Pick<Discussion, "state" | "activeMs" | "activeSince">, now = Date.now()): number {
+  const open = discussionTicking(d.state) && d.activeSince !== undefined ? Math.max(0, now - d.activeSince) : 0;
+  return (d.activeMs ?? 0) + open;
+}

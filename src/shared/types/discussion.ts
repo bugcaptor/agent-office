@@ -4,6 +4,7 @@
 // 저장은 토의 하나씩 upsert·삭제한다(렌더러 실행기와 CLI가 함께 쓴다).
 
 import type { WorkAgent } from './workPanels';
+import type { UsageWindowKind } from './usage';
 
 /** 토의 참가자 CLI 종류. */
 type WorkCli = WorkAgent['cli'];
@@ -56,7 +57,7 @@ export interface DiscussionUtterance {
 
 /**
  * 진행 단계. opening = 토론자 전원 동시·비공개 발언, moderator = 사회자 지시, speakers = 사회자가 지목한 순서대로 발언,
- * user = 사회자가 사람에게 물었다(답을 기다림), wrap_up = 정리(5·6단계가 강제 정리·결정 메모를 붙인다).
+ * user = 사회자가 사람에게 물었다(답을 기다림), wrap_up = 정리. 상한에 닿으면 사회자에게 정리 차례 하나를 준다(`forced`).
  */
 export type DiscussionPhase = "opening" | "moderator" | "speakers" | "user" | "wrap_up";
 export const DISCUSSION_PHASES: readonly DiscussionPhase[] = ["opening", "moderator", "speakers", "user", "wrap_up"];
@@ -65,13 +66,34 @@ export const DISCUSSION_PHASES: readonly DiscussionPhase[] = ["opening", "modera
  * 멈춘 이유. user = 사람이 멈춤, restarted = 앱을 다시 열었다(토의 세션은 재시작 때 버려진다),
  * human-input = 탭에 쓰다 만 사람 입력이 있다, open-failed·send-failed = 세션 열기·차례 보내기 실패,
  * session-ended = 차례를 기다리던 세션이 끝났다, no-utterance = 재촉해도 발언이 없다,
- * moderator-invalid = 재촉해도 사회자 지시를 읽을 수 없다.
+ * moderator-invalid = 재촉해도 사회자 지시를 읽을 수 없다, usage-wait = 구독 사용량이 모자랄 것 같아 한도 창 리셋을 기다린다.
  */
 export type DiscussionPauseReason =
-  | "user" | "restarted" | "human-input" | "open-failed" | "send-failed" | "session-ended" | "no-utterance" | "moderator-invalid";
+  | "user" | "restarted" | "human-input" | "open-failed" | "send-failed" | "session-ended" | "no-utterance" | "moderator-invalid"
+  | "usage-wait";
 export const DISCUSSION_PAUSE_REASONS: readonly DiscussionPauseReason[] = [
-  "user", "restarted", "human-input", "open-failed", "send-failed", "session-ended", "no-utterance", "moderator-invalid",
+  "user", "restarted", "human-input", "open-failed", "send-failed", "session-ended", "no-utterance", "moderator-invalid", "usage-wait",
 ];
+
+/** 강제 정리를 부른 상한. Rust `DiscussionLimitReason` 미러. */
+export type DiscussionLimitReason = "rounds" | "time" | "cost";
+export const DISCUSSION_LIMIT_REASONS: readonly DiscussionLimitReason[] = ["rounds", "time", "cost"];
+
+/** 사용량 대기. 차례를 받을 참가자의 구독이 한도에 닿을 것 같아 기다린다. Rust `DiscussionUsageWait` 미러. */
+export interface DiscussionUsageWait {
+  /** 기다리게 한 참가자(캐릭터) agentId. */
+  agentId: string;
+  provider: "claude" | "codex";
+  kind: UsageWindowKind;
+  label: string | null;
+  /** 판단 때의 지금 사용률 추정과 이번 차례가 더할 것으로 본 양(%p, 모르면 null). */
+  nowPercent: number;
+  addPercent: number | null;
+  limit: number;
+  /** 다시 볼 시각(epoch ms). */
+  until: number;
+  resetsAtMs: number | null;
+}
 
 /** 이번 단계의 차례 하나. 보내기 전에는 `sentAt`이 없고, 발언을 받으면 `text`가 생긴다. */
 export interface DiscussionTurn {
@@ -108,6 +130,13 @@ export interface DiscussionRun {
   pauseReason?: DiscussionPauseReason;
   /** 멈춘 이유의 덧붙임(오류 코드·참가자 이름 등). */
   pauseDetail?: string;
+  /** 상한에 닿아 사회자에게 강제 정리를 맡겼다(wrap_up 단계). 없으면 사회자가 스스로 정리했다. */
+  forced?: DiscussionLimitReason;
+  /** 강제 정리를 시작한 때의 진행 시간(ms). 정리 차례의 유예를 여기서 잰다. */
+  forcedAtMs?: number;
+  usageWait?: DiscussionUsageWait;
+  /** 사람이 사용량 대기를 건너뛰었다. 다음 차례 하나를 검사 없이 보낸다. */
+  usageOverride?: boolean;
 }
 
 export interface Discussion {
@@ -132,6 +161,10 @@ export interface Discussion {
   updatedAt: number;
   startedAt?: number;
   endedAt?: number;
+  /** 진행 시간 누계(ms). 진행 중·정리 중일 때만 흐르고, 멈춤·사람 대기·사용량 대기는 세지 않는다. */
+  activeMs?: number;
+  /** 지금 흐르는 구간의 시작(epoch ms). 진행 중·정리 중일 때만 있다. */
+  activeSince?: number;
   /** 실행기 상태. 시작 전·끝난 뒤에는 없다. */
   run?: DiscussionRun;
 }

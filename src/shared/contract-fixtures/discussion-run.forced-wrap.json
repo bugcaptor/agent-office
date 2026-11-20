@@ -1,0 +1,25 @@
+{
+  "phase": "wrap_up",
+  "turns": [
+    { "agentId": "p1" }
+  ],
+  "seen": {
+    "p1": { "sessionId": "sess-1", "count": 6 }
+  },
+  "pauseReason": "usage-wait",
+  "pauseDetail": "Mina",
+  "forced": "time",
+  "forcedAtMs": 1800000,
+  "usageWait": {
+    "agentId": "p1",
+    "provider": "claude",
+    "kind": "session",
+    "label": null,
+    "nowPercent": 96.5,
+    "addPercent": null,
+    "limit": 95,
+    "until": 1720003000000,
+    "resetsAtMs": 1720002880000
+  },
+  "usageOverride": true
+}
