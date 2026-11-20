@@ -35,7 +35,13 @@ import type { MeetingSeat } from "../map/mapData";
 import { GridPos, pickBreakTarget, tileCenterPx, tileKey } from "../world/pathing";
 import { BehaviorState, stepBehavior } from "./behaviorFsm";
 import { ExclamationOverlay } from "./ExclamationOverlay";
-import { MODERATOR_BADGE_POS, ModeratorBadge, SPEECH_BUBBLE_POS, SpeechOverlay } from "./DiscussionOverlay";
+import {
+  MODERATOR_BADGE_POS,
+  ModeratorBadge,
+  SPEECH_BUBBLE_MEETING_POS,
+  SPEECH_BUBBLE_POS,
+  SpeechOverlay,
+} from "./DiscussionOverlay";
 import { MiniAgentsOverlay } from "./MiniAgentsOverlay";
 import { ThinkingOverlay } from "./ThinkingOverlay";
 
@@ -350,6 +356,8 @@ export class CharacterEntity {
     this.root.zIndex = this.root.y; // y-sort refresh
     this.overlay.update(dt);
     this.miniOverlay.update(dt);
+    const bubble = this.state === "meeting" ? SPEECH_BUBBLE_MEETING_POS : SPEECH_BUBBLE_POS;
+    this.speechOverlay.root.position.set(bubble.x, bubble.y);
     this.speechOverlay.update(dt);
 
     // Belt-and-suspenders: never let a character leave the map rect.

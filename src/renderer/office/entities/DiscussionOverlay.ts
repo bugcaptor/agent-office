@@ -18,8 +18,13 @@ const LINE_PATTERNS: readonly (readonly number[])[] = [
   [5, 7, 6],
 ];
 
-/** 발언 말풍선 위치(발끝 기준, px). 머리 오른쪽 위 — 라벨 아래 변(-20)보다 낮다. */
-export const SPEECH_BUBBLE_POS = { x: 13, y: -13 } as const;
+/** 발언 말풍선 위치(발끝 기준, px). 머리 오른쪽 옆 — 라벨 아래 변(-20)보다 낮다. */
+export const SPEECH_BUBBLE_POS = { x: 13, y: -10 } as const;
+/**
+ * 회의실 의자에 앉았을 때의 말풍선 위치. 회의실에 온 캐릭터는 본업이 쉬어 작업 라벨이 없으므로 머리 위에
+ * 띄운다 — 옆에 두면 의자 간격(16px)이 좁아 옆 사람 얼굴을 덮는다.
+ */
+export const SPEECH_BUBBLE_MEETING_POS = { x: 3, y: -19 } as const;
 /** 사회자 의사봉 위치(발끝 기준, px). 머리 왼쪽. */
 export const MODERATOR_BADGE_POS = { x: -10, y: -12 } as const;
 

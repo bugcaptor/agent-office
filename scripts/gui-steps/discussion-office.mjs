@@ -17,13 +17,11 @@ export default async ({ page, shot }) => {
     return { state: d.state, phase: d.run?.phase, turns: d.run?.turns.map((t) => [t.agentId, t.sentAt !== undefined, t.text !== undefined]) };
   });
   console.log(`discussion: ${JSON.stringify(state)}`);
-  const store = await page.evaluateHandle(async () => await window.__guiHarness.store());
   for (const theme of ["daylight", "midnight", "sakura"]) {
     await page.evaluate(async (id) => (await window.__guiHarness.store()).getState().setTheme(id), theme);
     await page.waitForTimeout(400);
     await shot(`meeting-${theme}`);
   }
-  await store.dispose();
   await page.evaluate(async () => {
     const { useDiscussionStore } = await window.__guiHarness.discussionStore();
     const d = useDiscussionStore.getState().discussions.find((x) => x.id === "disc-meeting");
