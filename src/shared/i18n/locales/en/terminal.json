@@ -12,6 +12,9 @@
     "chatTooltip": "Task {{id}}\nWorking folder: {{cwd}}",
     "chatHome": "Home folder",
     "chatClose": "End chat",
+    "officeAgent": "General agent",
+    "officeAgentTooltip": "Agent without a character\nFolder: {{cwd}}",
+    "officeAgentClose": "End general agent",
     "discussionClose": "Close discussion tab"
   },
   "menu": {
@@ -35,6 +38,7 @@
     "exited": "The process exited.",
     "relaunch": "Relaunch",
     "chatEnded": "The chat has ended. Close the tab and open it again from the task.",
+    "officeAgentEnded": "The general agent session ended. Send a new instruction from the web dashboard to open it again.",
     "discussionEnded": "The discussion session has ended. Close the tab."
   },
   "palette": {
@@ -59,5 +63,9 @@
       "tokenPairHint": "In parentheses: total tokens including cache",
       "footnote": "Estimated at public API rates"
     }
+  },
+  "officeAgent": {
+    "close": { "title": "End general agent", "body": "This ends the general agent session. The CLI in the terminal stops too.", "confirm": "End" },
+    "quitNotice": "The general agent session also ends when you quit."
   }
 }

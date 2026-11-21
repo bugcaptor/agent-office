@@ -2,7 +2,8 @@
 //
 // 웹 상태판(src-tauri/web/dash.html)을 가짜 API로 띄워 폰 크기로 찍는다. 앱·Tauri 없이 화면만 본다.
 //   node scripts/dash-shot.mjs [출력 폴더(기본 /tmp/dash-shot)]
-// 찍는 것: 캐릭터 목록, 캐릭터 화면(보낸 업무·대화 로그 최신순·업무 보내기), CLI 실행 중 재시작 경고, 끝난 업무 완료.
+// 찍는 것: 캐릭터 목록(머리에 컴퓨터 이름, 맨 위 일반 에이전트), 캐릭터 화면(보낸 업무·대화 로그 최신순·업무 보내기),
+// CLI 실행 중 재시작 경고, 끝난 업무 완료, 일반 에이전트 새 지시·이어서 보내기.
 import { createServer } from "node:http";
 import { readFile, mkdir } from "node:fs/promises";
 import { resolve } from "node:path";
@@ -44,11 +45,14 @@ const tasks = {
   done: [],
 };
 const posts = [];
+let rev = 1;
+let officeAgent = { session: null, turn: null, cli: null, atPrompt: null, cwd: null, opening: false, error: null };
+const folders = ["/Users/me", "/Volumes/ssd4tb/dev/very/long/path/to/agent-office", "/Users/me/work/backend-service"];
 const server = createServer(async (req, res) => {
   const url = new URL(req.url, "http://x");
   const send = (data) => { res.setHeader("content-type", "application/json"); res.end(JSON.stringify({ ok: true, data })); };
   if (url.pathname === "/") { res.setHeader("content-type", "text/html; charset=utf-8"); return res.end(page); }
-  if (url.pathname === "/api/state") return send({ app: "0.0.0", rev: "r1", characters });
+  if (url.pathname === "/api/state") return send({ app: "0.0.0", host: "회사 맥북 프로", rev: `r${rev}`, characters, officeAgent, folders, home: "/Users/me" });
   if (url.pathname.startsWith("/api/log/")) return send({ epoch: 1, last: 10, attached: true, items: url.searchParams.get("after") ? [] : items });
   if (url.pathname === "/api/tasks" && req.method === "GET") return send(tasks);
   if (req.method === "POST") {
@@ -56,6 +60,10 @@ const server = createServer(async (req, res) => {
     posts.push({ path: url.pathname, body: JSON.parse(body || "{}") });
     const done = url.pathname.match(/^\/api\/tasks\/([^/]+)\/done$/);
     if (done) tasks.open = tasks.open.filter((t) => t.id !== decodeURIComponent(done[1]));
+    if (url.pathname === "/api/office-agent") {
+      officeAgent = { ...officeAgent, session: { sessionId: "o1", state: "running" }, turn: { phase: "idle", at: now }, cli: "claude", atPrompt: false, cwd: posts.at(-1).body.cwd };
+      rev++;
+    }
     return send(null);
   }
   res.statusCode = 404; res.end();
@@ -72,7 +80,7 @@ await mkdir(outDir, { recursive: true });
 await p.goto(base);
 await p.waitForSelector(".card");
 await p.screenshot({ path: `${outDir}/list.png` });
-await p.locator(".card.clickable").first().click();
+await p.locator(".card.clickable").nth(1).click();
 await p.waitForSelector("#log .msg");
 await p.waitForSelector("#sent .card");
 await p.screenshot({ path: `${outDir}/agent-claude.png`, fullPage: true });
@@ -84,9 +92,18 @@ await p.getByRole("button", { name: "재시작하고 보내기" }).click();
 await p.getByRole("button", { name: "한 번 더 눌러 확인" }).click();
 await p.waitForTimeout(300);
 await p.locator(".back").click();
-await p.locator(".card.clickable").nth(1).click();
+await p.locator(".card.clickable").nth(2).click();
 await p.waitForSelector("#taskform");
 await p.screenshot({ path: `${outDir}/agent-shell.png`, fullPage: true });
+await p.locator(".back").click();
+await p.locator(".card.office").click();
+await p.waitForSelector("#taskform textarea");
+await p.screenshot({ path: `${outDir}/office-new.png`, fullPage: true });
+await p.fill("#taskform textarea", "업무 보드에서 리뷰 대기 업무를 정리해 줘");
+await p.locator("#taskform select").first().selectOption({ index: 1 });
+await p.getByRole("button", { name: "보내기", exact: true }).click();
+await p.waitForSelector("text=이어서 보내기");
+await p.screenshot({ path: `${outDir}/office-follow.png`, fullPage: true });
 console.log(JSON.stringify(posts));
 await browser.close();
 server.close();

@@ -10,6 +10,7 @@ pub mod agent_paths;
 pub mod api_keys;
 mod work_send;
 mod task_chat;
+mod office_agent;
 mod discussion_session;
 mod discussion_cli;
 mod role_cli;
@@ -904,6 +905,7 @@ pub fn run() {
             ipc::commands::inspect_work_send_target,
             ipc::commands::send_work_item,
             ipc::commands::open_task_chat,
+            ipc::commands::open_office_agent,
             ipc::commands::open_discussion_session,
             ipc::commands::send_discussion_turn,
             ipc::commands::collect_discussion_utterance,

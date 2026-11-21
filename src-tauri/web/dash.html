@@ -24,7 +24,10 @@ html, body { margin: 0; background: var(--bg); color: var(--ink); font: 15px/1.4
 body { padding-bottom: env(safe-area-inset-bottom); }
 header { position: sticky; top: 0; z-index: 5; background: var(--bg); border-bottom: 1px solid var(--line); }
 .bar { display: flex; align-items: center; gap: 8px; padding: 10px 16px 6px; padding-top: max(10px, env(safe-area-inset-top)); }
-.bar h1 { font-size: 16px; margin: 0; flex: 1; }
+.bar h1 { font-size: 16px; margin: 0; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.avatar.office { font-size: 22px; background: color-mix(in srgb, var(--accent) 16%, var(--chip)); }
+.card.office { border-color: color-mix(in srgb, var(--accent) 40%, var(--line)); }
+.note { margin-top: 8px; font-size: 13px; color: var(--muted); }
 .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--idle); }
 .dot.on { background: var(--ok); }
 .dot.off { background: var(--bad); }
@@ -116,6 +119,11 @@ const S = {
     again: "한 번 더 눌러 확인", done: "보냈습니다", result: "결과", lines: "줄",
     sentTasks: "보낸 업무", taskState: { in_progress: "진행 중", review: "끝남 · 확인 대기" }, markDone: "완료", markedDone: "완료로 옮겼습니다",
     sendTask: "업무 보내기", titlePh: "할 일(제목)", bodyPh: "자세한 내용(선택)", cli: "CLI", send: "보내기", restartSend: "재시작하고 보내기",
+    office: "일반 에이전트", officeSub: "캐릭터 없음", officeHelp: "캐릭터 없이 Agent Office 안내가 다 들어간 에이전트입니다. 업무·토의를 만들거나 앱을 다루는 일을 맡길 수 있습니다.",
+    instruct: "지시하기", instructPh: "에이전트에게 시킬 일", folder: "작업 폴더", home: "홈",
+    followUp: "이어서 보내기", newSession: "새 세션으로 보내기", newWarn: "새 세션으로 보내면 지금 세션은 끊기고 고른 작업 폴더에서 새로 엽니다.",
+    officeWorking: "작업 중입니다. 턴이 끝나 입력을 기다리면 이어서 보낼 수 있습니다.", officeHuman: "답을 기다립니다. 앱이나 CLI 리모트에서 답하세요.", officeShellBusy: "터미널에서 다른 명령이 실행 중입니다.",
+    opening: "여는 중…", openFailed: "지난 열기 실패",
     cliRunning: (n) => `${n} 실행 중`, cliBusy: "터미널에서 명령이 실행 중입니다", restartNeeded: "이 터미널은 재시작해야 업무를 보낼 수 있습니다",
     restartWarn: (what) => `${what}. 보내면 터미널을 재시작하므로 지금 세션은 끊깁니다.`,
     talkState: { pending: "준비 중", ready: "준비됨", running: "진행 중", waiting_user: "답을 기다림", wrapping_up: "정리 중", review: "검토", finished: "끝남", paused: "멈춤", "waiting-usage": "사용량 대기" },
@@ -123,7 +131,8 @@ const S = {
     win: { session: "5시간", weekly: "주간", session_model: "5시간", weekly_model: "주간", monthly: "월간", unknown: "기타" },
     usageNone: "사용량 정보가 없습니다.", resets: "초기화", login: "접속 토큰이 없습니다", loginHelp: "앱 설정 › 제어 › 웹 상태판에서 접속 주소를 복사해 이 기기에서 여세요.",
     unauthorized: "토큰이 맞지 않습니다. 앱에서 접속 주소를 다시 받아 오세요.", offline: "앱에 연결할 수 없습니다",
-    err: { "not-running": "터미널이 꺼져 있습니다", "not-at-shell-prompt": "셸 프롬프트가 아닙니다(CLI가 이미 실행 중이거나 입력 중)", "human-input-pending": "앱에 쓰다 만 입력이 있습니다", "renderer-unavailable": "앱 화면이 응답하지 않습니다", "busy": "다른 입력이 진행 중입니다", "shell-unsupported": "지원하지 않는 셸입니다", "empty": "내용이 비었습니다",
+    err: { "office-agent-busy": "일반 에이전트를 여는 중입니다", "office-agent-running": "일반 에이전트가 이미 돌고 있습니다", "office-agent-working": "작업 중이라 지금은 이어 보낼 수 없습니다", "office-agent-needs-human": "답을 기다리는 중입니다(앱·CLI 리모트에서 답하세요)", "office-agent-shell-busy": "터미널에서 다른 명령이 실행 중입니다", "office-agent-invalid-cwd": "고를 수 없는 작업 폴더입니다", "too-large": "글이 너무 깁니다", "control-char": "보낼 수 없는 문자가 있습니다", "work-send-human-input": "앱 터미널에 쓰다 만 입력이 있습니다", "work-send-cli-returned": "CLI가 끝났습니다", "work-send-launch-timeout": "CLI가 제때 뜨지 않았습니다", "work-send-shell-unsupported": "지원하지 않는 셸입니다",
+      "not-running": "터미널이 꺼져 있습니다", "not-at-shell-prompt": "셸 프롬프트가 아닙니다(CLI가 이미 실행 중이거나 입력 중)", "human-input-pending": "앱에 쓰다 만 입력이 있습니다", "renderer-unavailable": "앱 화면이 응답하지 않습니다", "busy": "다른 입력이 진행 중입니다", "shell-unsupported": "지원하지 않는 셸입니다", "empty": "내용이 비었습니다",
       "restart-required": "터미널에서 CLI가 실행 중입니다. 재시작 경고를 확인하고 다시 보내세요", "work-send-busy": "이 캐릭터에 보내는 중인 업무가 있습니다", "work-send-clocked-out": "퇴근한 캐릭터입니다", "work-send-auto-run": "자동 진행 중인 캐릭터입니다", "work-send-profile-unsupported": "시작 명령이 있는 캐릭터에는 보낼 수 없습니다", "work-not-loaded": "앱이 아직 업무를 불러오지 않았습니다", "task-not-found": "업무를 찾을 수 없습니다" },
   },
   en: {
@@ -134,6 +143,11 @@ const S = {
     again: "Tap again to confirm", done: "Sent", result: "Result", lines: "lines",
     sentTasks: "Sent tasks", taskState: { in_progress: "In progress", review: "Finished · to review" }, markDone: "Done", markedDone: "Marked done",
     sendTask: "Send a task", titlePh: "Task (title)", bodyPh: "Details (optional)", cli: "CLI", send: "Send", restartSend: "Restart and send",
+    office: "General agent", officeSub: "No character", officeHelp: "An agent without a character that still gets all Agent Office instructions. Ask it to create tasks or discussions, or to operate the app.",
+    instruct: "Instruct", instructPh: "What should the agent do?", folder: "Folder", home: "Home",
+    followUp: "Send follow-up", newSession: "Send in a new session", newWarn: "Sending in a new session ends the current one and opens a new one in the chosen folder.",
+    officeWorking: "Working. You can follow up once the turn ends and it waits for input.", officeHuman: "Waiting for an answer. Reply in the app or the CLI's remote.", officeShellBusy: "Another command is running in the terminal.",
+    opening: "Opening…", openFailed: "Last open failed",
     cliRunning: (n) => `${n} running`, cliBusy: "A command is running in the terminal", restartNeeded: "This terminal must restart to receive the task",
     restartWarn: (what) => `${what}. Sending restarts the terminal, so the current session ends.`,
     talkState: { pending: "Pending", ready: "Ready", running: "Running", waiting_user: "Waiting for you", wrapping_up: "Wrapping up", review: "Review", finished: "Finished", paused: "Paused", "waiting-usage": "Waiting for usage" },
@@ -141,7 +155,8 @@ const S = {
     win: { session: "5 hours", weekly: "Weekly", session_model: "5 hours", weekly_model: "Weekly", monthly: "Monthly", unknown: "Other" },
     usageNone: "No usage data.", resets: "resets", login: "No access token", loginHelp: "Copy the address from the app: Settings › Control › Web dashboard, and open it on this device.",
     unauthorized: "Token rejected. Get a fresh address from the app.", offline: "Cannot reach the app",
-    err: { "not-running": "Terminal is not running", "not-at-shell-prompt": "Not at a shell prompt (CLI running or input pending)", "human-input-pending": "Unsent input is pending in the app", "renderer-unavailable": "App window is not responding", "busy": "Another input is in progress", "shell-unsupported": "Unsupported shell", "empty": "Empty",
+    err: { "office-agent-busy": "The general agent is opening", "office-agent-running": "The general agent is already running", "office-agent-working": "It is working; follow up after the turn ends", "office-agent-needs-human": "Waiting for an answer (reply in the app or CLI remote)", "office-agent-shell-busy": "Another command is running in the terminal", "office-agent-invalid-cwd": "That folder can't be chosen", "too-large": "Text too long", "control-char": "Text contains characters that can't be sent", "work-send-human-input": "Unsent input is pending in the app terminal", "work-send-cli-returned": "The CLI exited", "work-send-launch-timeout": "The CLI didn't start in time", "work-send-shell-unsupported": "Unsupported shell",
+      "not-running": "Terminal is not running", "not-at-shell-prompt": "Not at a shell prompt (CLI running or input pending)", "human-input-pending": "Unsent input is pending in the app", "renderer-unavailable": "App window is not responding", "busy": "Another input is in progress", "shell-unsupported": "Unsupported shell", "empty": "Empty",
       "restart-required": "A CLI is running in the terminal. Confirm the restart warning and send again", "work-send-busy": "A task is already being sent to this character", "work-send-clocked-out": "This character has clocked out", "work-send-auto-run": "This character is running an auto-run", "work-send-profile-unsupported": "Characters with a startup command can't receive tasks", "work-not-loaded": "The app hasn't loaded tasks yet", "task-not-found": "Task not found" },
   },
 }[L];
@@ -220,6 +235,8 @@ let unauthorized = false;
 let chars = null, charsRev = null;
 let talksData = null, talkDetail = null, usageData = null;
 let tasksData = null;
+let officeData = null, folders = [], homeDir = "";
+const OFFICE = "office-agent";
 const logs = new Map(); // agentId -> {epoch,last,attached,items}
 
 function phaseOf(c) {
@@ -241,6 +258,7 @@ function waitingMessage(c) {
   return null;
 }
 function avatar(c) {
+  if (c.office) return el("div", { class: "avatar office" }, "🤖");
   const box = el("div", { class: "avatar" }, (c.name || "?").slice(0, 1));
   if (c.portrait) {
     const img = el("img", { alt: "", src: `/api/portrait/${encodeURIComponent(c.agentId)}?t=${token}&v=${c.portrait}` });
@@ -294,9 +312,32 @@ function render() {
   else if (view.tab === "talks") main.replaceChildren(...renderTalks());
   else main.replaceChildren(...renderUsage());
 }
+/** 일반 에이전트를 캐릭터 모양으로 만든다(같은 머리 카드·로그 코드를 쓴다). */
+function officeChar() {
+  const o = officeData || {};
+  return { agentId: OFFICE, office: true, name: S.office, role: S.officeSub, session: o.session, turn: o.turn, waiting: [], cli: o.cli, atPrompt: o.atPrompt, cwd: o.cwd, opening: o.opening, error: o.error };
+}
+function currentChar() {
+  if (view.agent === OFFICE) return officeData ? officeChar() : null;
+  return (chars || []).find((x) => x.agentId === view.agent);
+}
+function waitText(c) {
+  if (!c.office) return waitingMessage(c);
+  return c.turn && c.turn.phase === "needs-human" ? (c.turn.message || S.officeHuman) : null;
+}
+function renderOfficeCard() {
+  const c = officeChar();
+  const [cls] = phaseOf(c);
+  const wait = cls === "human" ? waitText(c) : null;
+  return el("div", { class: "card clickable office", onclick: () => { view.agent = OFFICE; render(); refreshNow(); window.scrollTo(0, 0); } },
+    el("div", { class: "row" }, avatar(c),
+      el("div", { class: "grow" }, el("div", { class: "name", text: c.name }), el("div", { class: "sub", title: c.cwd || "", text: [S.officeSub, c.session && c.cwd && leaf(c.cwd)].filter(Boolean).join(" · ") })),
+      chips(c)),
+    wait && el("div", { class: "wait", text: wait }));
+}
 function renderChars() {
   if (!chars) return [el("div", { class: "empty", text: "…" })];
-  return chars.map((c) => {
+  return [renderOfficeCard(), ...chars.map((c) => {
     const [cls] = phaseOf(c);
     const wait = cls === "human" ? waitingMessage(c) : null;
     const goal = goalOf(c);
@@ -306,15 +347,33 @@ function renderChars() {
         chips(c)),
       goal && el("div", { class: "goal", text: goal }),
       wait && el("div", { class: "wait", text: wait }));
-  });
+  })];
 }
 function renderAgent() {
   const back = el("button", { class: "back", text: S.back, onclick: () => { view.agent = null; render(); } });
-  const c = (chars || []).find((x) => x.agentId === view.agent);
+  const c = currentChar();
   if (!c) return [back];
+  if (c.office) return [back, renderHead(c), renderOfficeForm(c), renderLog(c.agentId)];
   return [back, renderHead(c), renderSent(c), renderTaskForm(c), renderLog(c.agentId)];
 }
+function renderOfficeHead(c) {
+  const [cls] = phaseOf(c);
+  const running = c.session && c.session.state === "running";
+  const wait = cls === "human" ? waitText(c) : null;
+  return el("div", { class: "card office", id: "head" },
+    el("div", { class: "row" }, avatar(c),
+      el("div", { class: "grow" }, el("div", { class: "name", text: c.name }), el("div", { class: "sub", title: c.cwd || "", text: running && c.cwd ? leaf(c.cwd) : S.officeSub })),
+      chips(c)),
+    !c.session && el("div", { class: "note", text: S.officeHelp }),
+    wait && el("div", { class: "wait", text: wait }),
+    c.error && el("div", { class: "warn", text: `${S.openFailed}: ${errText(c.error)}` }),
+    running && el("div", { class: "btns" },
+      el("button", { class: "b", text: S.interrupt, onclick: () => act(`/office-agent/interrupt`) }),
+      el("button", { class: "b", text: S.ctrlc, onclick: () => act(`/office-agent/ctrl-c`) }),
+      confirmBtn(S.terminate, () => act(`/office-agent/terminate`))));
+}
 function renderHead(c) {
+  if (c.office) return renderOfficeHead(c);
   const [cls] = phaseOf(c);
   const running = c.session && c.session.state === "running";
   const id = encodeURIComponent(c.agentId);
@@ -366,9 +425,9 @@ async function markDone(id) {
   finally { doneBusy.delete(id); refreshSent(); setTimeout(refreshNow, 400); }
 }
 function refreshSent() {
-  const c = (chars || []).find((x) => x.agentId === view.agent);
+  const c = currentChar();
   const box = document.getElementById("sent");
-  if (!c || !box) return;
+  if (!c || c.office || !box) return;
   const next = renderSent(c);
   if (next.dataset.key !== box.dataset.key) box.replaceWith(next);
 }
@@ -422,12 +481,72 @@ function renderTaskActions(c) {
 }
 /** 보내기 버튼 줄을 다시 그린다. 모양이 같으면 그대로 둔다 — 두 번 눌러 확인하는 중에 상태 갱신이 확인을 풀지 않게. */
 function refreshTaskActions() {
-  const c = (chars || []).find((x) => x.agentId === view.agent);
+  const c = currentChar();
   const box = document.getElementById("taskact");
   if (!c || !box) return;
-  const next = renderTaskActions(c);
+  const next = c.office ? renderOfficeActions(c) : renderTaskActions(c);
   if (next.dataset.key !== box.dataset.key) box.replaceWith(next);
 }
+// ── 일반 에이전트 지시 ──
+// 세션이 없거나 CLI가 끝났으면 고른 폴더에서 새로 연다. CLI가 턴을 마치고 입력을 기다리면 같은 세션에 잇는다.
+// 작업 중이면 이어 보내지 못하고, 경고를 확인한 "새 세션으로 보내기"만 된다.
+const officeDraft = { text: "", cwd: null, cli: "claude", sending: false };
+function tildePath(p) { return homeDir && p.startsWith(homeDir) ? "~" + p.slice(homeDir.length) : p; }
+function officeMode(c) {
+  const running = c.session && c.session.state === "running";
+  if (c.opening) return "opening";
+  if (!running) return "new";
+  if (!c.cli) return c.atPrompt === true ? "new" : c.atPrompt === false ? "shell-busy" : "new";
+  const p = c.turn && c.turn.phase;
+  if (p === "idle") return "follow";
+  if (p === "needs-human") return "human";
+  return "working";
+}
+function renderOfficeForm(c) {
+  const d = officeDraft;
+  if (d.cwd == null || !folders.includes(d.cwd)) d.cwd = folders.includes(c.cwd) ? c.cwd : (folders[0] || "");
+  const folder = el("select", { onchange: (e) => { d.cwd = e.target.value; } },
+    ...folders.map((f) => el("option", { value: f, text: f === homeDir ? `~ (${S.home})` : tildePath(f), selected: d.cwd === f })));
+  const cli = el("select", { onchange: (e) => { d.cli = e.target.value; } },
+    ...["claude", "codex"].map((v) => el("option", { value: v, text: CLI_NAMES[v], selected: d.cli === v })));
+  return el("div", { class: "card taskform", id: "taskform" },
+    el("h3", { text: S.instruct }),
+    el("textarea", { placeholder: S.instructPh, oninput: (e) => { d.text = e.target.value; } }, d.text),
+    el("label", { class: "f", text: S.folder }), folder,
+    el("div", { class: "row", style: "margin-top:6px" }, el("label", { class: "sub", text: S.cli }), el("div", { style: "width:130px" }, cli)),
+    renderOfficeActions(c));
+}
+function renderOfficeActions(c) {
+  const d = officeDraft;
+  const mode = officeMode(c);
+  const key = JSON.stringify([mode, d.sending]);
+  const submit = (restart) => async () => {
+    if (d.sending) return;
+    if (!d.text.trim()) { toast(errText("empty")); return; }
+    d.sending = true; refreshTaskActions();
+    try {
+      await api("/office-agent", { method: "POST", body: { text: d.text, cwd: d.cwd || null, cli: d.cli, restart } });
+      toast(S.done);
+      d.text = "";
+      const form = document.getElementById("taskform");
+      if (form) form.replaceWith(renderOfficeForm(c));
+      setTimeout(refreshNow, 400);
+    } catch (e) { toast(e.message); }
+    finally { d.sending = false; refreshTaskActions(); }
+  };
+  const restartBtn = confirmBtn(S.newSession, submit(true), "b danger");
+  const note = { working: S.officeWorking, human: S.officeHuman, "shell-busy": S.officeShellBusy }[mode];
+  let row;
+  if (mode === "opening") row = [el("button", { class: "b primary", disabled: true, text: S.opening })];
+  else if (mode === "new") row = [el("button", { class: "b primary", disabled: d.sending, text: S.send, onclick: submit(false) })];
+  else if (mode === "follow") row = [el("button", { class: "b primary", disabled: d.sending, text: S.followUp, onclick: submit(false) }), restartBtn];
+  else row = [restartBtn];
+  return el("div", { id: "taskact", "data-key": key },
+    note && el("div", { class: "note", text: note }),
+    mode !== "new" && mode !== "opening" && el("div", { class: "warn", text: "⚠ " + S.newWarn }),
+    el("div", { class: "btns" }, ...row));
+}
+
 function firstLine(text, max = 90) {
   const line = (text || "").split("\n").find((l) => l.trim()) || "";
   return line.length > max ? line.slice(0, max) + "…" : line;
@@ -531,10 +650,21 @@ function renderUsage() {
 const LOG_KEEP = 400;
 async function refreshChars() {
   const d = await api("/state");
-  document.getElementById("ver").textContent = "v" + d.app;
+  setHost(d.host, d.app);
   if (d.rev === charsRev) return false;
   charsRev = d.rev; chars = d.characters;
+  officeData = d.officeAgent || null; folders = d.folders || []; homeDir = d.home || "";
   return true;
+}
+/** 머리에 이 앱이 도는 컴퓨터 이름을 보인다. 여러 기기의 상태판을 띄워 둘 때 가리기 쉽게 탭 제목에도 넣는다. */
+let hostShown = null;
+function setHost(host, app) {
+  const key = (host || "") + "|" + app;
+  if (key === hostShown) return;
+  hostShown = key;
+  document.getElementById("title").textContent = host || "Agent Office";
+  document.getElementById("ver").textContent = (host ? "Agent Office " : "") + "v" + app;
+  document.title = host ? `${host} · Agent Office` : "Agent Office";
 }
 /** 로그를 받아 쌓는다. "same"(새 항목 없음)·"append"(같은 세션에 이어짐)·"reset"(처음·새 세션). */
 async function refreshLog(agentId) {
@@ -559,14 +689,14 @@ async function tick() {
   busy = true;
   try {
     let changed = false;
-    if (view.tab === "chars") changed = await refreshChars();
+    if (view.tab === "chars" || hostShown == null) changed = await refreshChars();
     if (view.tab === "chars" && view.agent) {
       const agentId = view.agent;
       // 보지 않는 캐릭터의 로그는 들고 있지 않는다.
       for (const k of [...logs.keys()]) if (k !== agentId) logs.delete(k);
       const logMode = await refreshLog(agentId);
-      // 업무 목록을 못 받아도 상태·로그 갱신은 이어 간다.
-      tasksData = await api("/tasks").catch(() => tasksData);
+      // 업무 목록을 못 받아도 상태·로그 갱신은 이어 간다. 일반 에이전트는 보낸 업무가 없다.
+      if (agentId !== OFFICE) tasksData = await api("/tasks").catch(() => tasksData);
       if (view.agent === agentId) { updateAgentView(changed, logMode); refreshSent(); }
     } else if (view.tab === "talks") {
       if (view.talk) {
@@ -591,7 +721,7 @@ async function tick() {
  * 상태가 바뀌면 머리 카드와 보내기 버튼만, 로그는 새 항목만 맨 위에 붙인다.
  */
 function updateAgentView(changed, logMode) {
-  const c = (chars || []).find((x) => x.agentId === view.agent);
+  const c = currentChar();
   const head = document.getElementById("head");
   if (!c || !head || !document.getElementById("taskform")) { if (changed || logMode !== "same") render(); return; }
   if (changed) { head.replaceWith(renderHead(c)); refreshTaskActions(); }

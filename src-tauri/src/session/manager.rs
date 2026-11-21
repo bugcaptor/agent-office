@@ -295,6 +295,9 @@ impl SessionManager {
     /// `AGENT_OFFICE_HOOK_URL`·`AGENT_OFFICE_AGENT_ID`·persona를 빼고, 사무실 권한 설정 대신
     /// 대화용 설정을 붙인다. shim·PATH·공통 안내문은 그대로다.
     ///
+    /// 일반 에이전트(agentId `office-agent`): 캐릭터 세션과 같게 준비하되 `AGENT_OFFICE_AGENT_ID`만 뺀다
+    /// (persona는 애초에 없다).
+    ///
     /// 토의 세션(agentId `discuss-…`): 턴 종료를 받아야 하므로 관찰 훅은 그대로 두고,
     /// persona·사무실 안내문·`AGENT_OFFICE_AGENT_ID`·Codex 쓰기 허용 경로를 뺀다. 대신 제출
     /// 명령(`office-discuss`)과 참가자 env를 싣고 CLI별 읽기 전용 인자를 래퍼에 붙인다.
@@ -570,8 +573,8 @@ impl SessionManager {
         }
         // 업무 수신함: 업무 패널 설정과 무관하게 싣는다.
         // 수신함 규약은 패널이 꺼져 있어도 유효하다. 대화 세션은 `office-task`로 만든 업무가
-        // 가짜 담당으로 들어가지 않게 agentId를 싣지 않는다(미배정).
-        if !task_chat && !discussion {
+        // 가짜 담당으로 들어가지 않게 agentId를 싣지 않는다(미배정). 일반 에이전트도 캐릭터가 아니라 같다.
+        if !task_chat && !discussion && !crate::types::is_office_agent_id(agent_id) {
             env.push(("AGENT_OFFICE_AGENT_ID".into(), agent_id.to_string()));
         }
         // 토의 세션: 제출 명령이 어느 참가자인지 알게 하고 안내문에 박을 제출 명령 경로를 싣는다.

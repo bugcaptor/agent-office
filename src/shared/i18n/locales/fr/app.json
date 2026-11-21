@@ -85,6 +85,11 @@
       "autorun-start": "🌐 Web : exécution auto lancée — {{detail}}",
       "discuss-start": "🌐 Web : discussion lancée",
       "discuss-answer": "🌐 Web : réponse au modérateur",
+      "office-agent-send": "🌐 Web : instruction à l’agent général — {{detail}}",
+      "office-agent-follow-up": "🌐 Web : suite pour l’agent général — {{detail}}",
+      "office-agent-interrupt": "🌐 Web : agent général interrompu (Échap)",
+      "office-agent-ctrl-c": "🌐 Web : Ctrl-C à l’agent général",
+      "office-agent-terminate": "🌐 Web : agent général terminé",
       "other": "🌐 Web : {{op}}"
     }
   }

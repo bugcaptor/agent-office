@@ -109,6 +109,25 @@ export async function handleWebDashControl(request: WebDashControlRequest): Prom
       });
       return error ? { error } : {};
     }
+    case "office-agent-open": {
+      // 일반 에이전트를 연다. 기동·첫 프롬프트까지 5초를 넘기므로 막히는 이유만 보고 바로 답한다.
+      // 실패는 네이티브가 기억해 웹 상태에 실린다(`office_agent::last_error`).
+      const prompt = request.prompt ?? "";
+      if (!prompt.trim()) return { error: "empty" };
+      const restart = request.restartConfirmed === true;
+      // 터미널(xterm)을 끌어오므로 쓸 때만 읽는다.
+      const { officeAgentBlockedReason, openOfficeAgent } = await import("../officeAgent/officeAgentStore");
+      const blocked = officeAgentBlockedReason(restart);
+      if (blocked) return { error: blocked };
+      fireAndForget("office agent open", openOfficeAgent({ prompt, cli: request.cli ?? "claude", restart, ...(request.cwd ? { cwd: request.cwd } : {}) })
+        .then((error) => { if (error) console.warn("web dash: office agent open failed", error); }));
+      return {};
+    }
+    case "office-agent-close": {
+      const { closeOfficeAgent } = await import("../officeAgent/officeAgentStore");
+      fireAndForget("office agent close", closeOfficeAgent());
+      return {};
+    }
     default:
       return { error: "unknown-op" };
   }

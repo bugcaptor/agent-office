@@ -7,6 +7,8 @@
 // CLI 전사(JSONL)를 **읽기만** 하고, 손을 대는 일은 간접 명령으로만 한다:
 // 터미널 재시작·종료·이어하기, 작업 중단, Claude/Codex 실행, 업무 만들기·보내기·
 // 자동 진행, 토의 시작·답하기. 권한 승인 같은 CLI 안 입력은 다루지 않는다.
+// 예외 하나: 일반 에이전트(캐릭터 없는 `office-agent` 곁 세션, `crate::office_agent`)에는 지시를 쓰고,
+// CLI가 턴을 마치고 입력을 기다릴 때만 같은 세션에 다음 지시를 잇는다. 머리에는 컴퓨터 이름을 보인다.
 //
 // 보안: 설정에서 켜야 뜬다(기본 꺼짐). 고른 네트워크(tailnet/LAN)의 주소와
 // 루프백에만 귀를 열고, 모든 API는 앱이 발급한 토큰(`web-dash-token`, 0600)을
@@ -329,6 +331,33 @@ impl WebDashState {
             }
         });
     }
+}
+
+/// 이 컴퓨터의 이름. 웹 머리에 보여 어느 기기의 앱인지 가린다. macOS는 공유 설정의 컴퓨터 이름,
+/// Windows는 `COMPUTERNAME`, 그 밖은 호스트 이름이다. 처음 한 번만 읽는다(블로킹).
+pub fn computer_name() -> String {
+    static NAME: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+    NAME.get_or_init(|| read_computer_name().unwrap_or_default()).clone()
+}
+
+fn read_computer_name() -> Option<String> {
+    let run = |program: &str, args: &[&str]| -> Option<String> {
+        let out = std::process::Command::new(program).args(args).output().ok()?;
+        out.status.success().then(|| String::from_utf8_lossy(&out.stdout).trim().to_string()).filter(|s| !s.is_empty())
+    };
+    #[cfg(target_os = "macos")]
+    if let Some(name) = run("/usr/sbin/scutil", &["--get", "ComputerName"]) {
+        return Some(name);
+    }
+    #[cfg(windows)]
+    if let Some(name) = std::env::var("COMPUTERNAME").ok().filter(|s| !s.trim().is_empty()) {
+        return Some(name.trim().to_string());
+    }
+    #[cfg(target_os = "linux")]
+    if let Some(name) = std::fs::read_to_string("/etc/hostname").ok().map(|s| s.trim().to_string()).filter(|s| !s.is_empty()) {
+        return Some(name);
+    }
+    run("hostname", &[])
 }
 
 #[cfg(test)]

@@ -12,6 +12,9 @@
     "chatTooltip": "任务 {{id}}\n工作文件夹：{{cwd}}",
     "chatHome": "主文件夹",
     "chatClose": "结束对话",
+    "officeAgent": "通用智能体",
+    "officeAgentTooltip": "没有角色的智能体\n工作文件夹：{{cwd}}",
+    "officeAgentClose": "结束通用智能体",
     "discussionClose": "关闭讨论标签页"
   },
   "menu": {
@@ -35,6 +38,7 @@
     "exited": "进程已退出。",
     "relaunch": "重新启动",
     "chatEnded": "对话已结束。关闭此标签后可从任务中重新打开。",
+    "officeAgentEnded": "通用智能体会话已结束。从网页面板发送新指令即可重新打开。",
     "discussionEnded": "讨论会话已结束。请关闭标签页。"
   },
   "palette": {
@@ -59,5 +63,9 @@
       "tokenPairHint": "括号内为含缓存的总 token",
       "footnote": "按公开 API 费率折算的估值"
     }
+  },
+  "officeAgent": {
+    "close": { "title": "结束通用智能体", "body": "将结束通用智能体会话，终端中的 CLI 也会一并退出。", "confirm": "结束" },
+    "quitNotice": "退出时通用智能体会话也会结束。"
   }
 }

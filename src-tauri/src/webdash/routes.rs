@@ -22,7 +22,8 @@ use tokio::sync::oneshot;
 
 use crate::control::ControlContext;
 use crate::httpapi::{fail, ok, session_state_str};
-use crate::types::{AgentProfile, WorkAgent, WorkCli};
+use crate::control::turns::TurnPhase;
+use crate::types::{is_office_agent_id, AgentProfile, WorkAgent, WorkCli, WorkFollowUpRequest, OFFICE_AGENT_ID};
 
 use super::WebDashState;
 
@@ -63,6 +64,8 @@ pub(super) async fn serve(
     dash: Arc<WebDashState>,
 ) -> std::io::Result<oneshot::Sender<()>> {
     let listener = tokio::net::TcpListener::bind((ip, port)).await?;
+    // 컴퓨터 이름은 처음 한 번 프로세스를 띄워 읽는다. 첫 요청이 기다리지 않게 미리 읽어 둔다.
+    tokio::task::spawn_blocking(super::computer_name);
     let app = router(Arc::new(Dash { ctl, dash, probes: Mutex::new(HashMap::new()) }));
     let (tx, rx) = oneshot::channel::<()>();
     tokio::spawn(async move {
@@ -90,6 +93,8 @@ fn router(ctx: Arc<Dash>) -> Router {
         .route("/discussions/:id/start", post(start_discussion))
         .route("/discussions/:id/answer", post(answer_discussion))
         .route("/agents/:agent/:op", post(agent_command))
+        .route("/office-agent", post(office_agent_send))
+        .route("/office-agent/:op", post(office_agent_command))
         .layer(axum::middleware::from_fn_with_state(ctx.clone(), auth));
     Router::new()
         .route("/", get(page))
@@ -141,6 +146,19 @@ async fn page() -> Response {
 
 fn profile(ctx: &Dash, agent_id: &str) -> Option<AgentProfile> {
     ctx.ctl.store.load().agents.into_iter().find(|a| a.id == agent_id)
+}
+
+/// 일반 에이전트가 고를 수 있는 작업 폴더: 홈, 그다음 캐릭터들의 작업 폴더(겹치면 한 번).
+fn folders(ctx: &Dash) -> Vec<String> {
+    let mut out = vec![crate::session::manager::home_dir()];
+    for agent in ctx.ctl.store.load().agents {
+        let Some(cwd) = agent.cwd.filter(|c| !c.trim().is_empty()) else { continue };
+        let cwd = crate::session::manager::expand_tilde(cwd);
+        if !out.contains(&cwd) {
+            out.push(cwd);
+        }
+    }
+    out
 }
 
 /// 캐릭터 id → 이름.
@@ -213,13 +231,7 @@ async fn state(State(ctx): Ctx) -> Json<Value> {
             let session = live.get(&a.id);
             let turn = session.and_then(|(sid, _)| ctx.ctl.turns.get(sid));
             let probe = probes.get(&a.id).copied().unwrap_or_default();
-            let waiting: Vec<Value> = ctx
-                .ctl
-                .manager
-                .pending_notifications(&a.id)
-                .into_iter()
-                .map(|n| json!({ "source": n.source, "message": n.message, "at": n.at }))
-                .collect();
+            let waiting = waiting_of(&ctx, &a.id);
             json!({
                 "agentId": a.id,
                 "name": a.name,
@@ -237,8 +249,38 @@ async fn state(State(ctx): Ctx) -> Json<Value> {
             })
         })
         .collect();
-    let body = json!({ "app": env!("CARGO_PKG_VERSION"), "characters": characters });
+    let office_agent = {
+        let session = live.get(OFFICE_AGENT_ID);
+        let probe = probes.get(OFFICE_AGENT_ID).copied().unwrap_or_default();
+        json!({
+            "session": session.map(|(sid, st)| json!({ "sessionId": sid, "state": session_state_str(*st) })),
+            "turn": session.and_then(|(sid, _)| ctx.ctl.turns.get(sid)),
+            "cli": probe.cli,
+            "atPrompt": probe.at_prompt,
+            "cwd": session.and_then(|_| ctx.ctl.gate.sink().cwd_of(OFFICE_AGENT_ID)),
+            "opening": crate::office_agent::is_opening(),
+            "error": crate::office_agent::last_error(),
+        })
+    };
+    let body = json!({
+        "app": env!("CARGO_PKG_VERSION"),
+        "host": super::computer_name(),
+        "characters": characters,
+        "officeAgent": office_agent,
+        "folders": folders(&ctx),
+        "home": crate::session::manager::home_dir(),
+    });
     ok(with_rev(body))
+}
+
+/// 답을 기다리는 알림(권한 요청 등).
+fn waiting_of(ctx: &Dash, agent_id: &str) -> Vec<Value> {
+    ctx.ctl
+        .manager
+        .pending_notifications(agent_id)
+        .into_iter()
+        .map(|n| json!({ "source": n.source, "message": n.message, "at": n.at }))
+        .collect()
 }
 
 /// 내용이 같으면 같은 지문. 브라우저가 바뀐 것만 다시 그린다.
@@ -257,8 +299,14 @@ struct LogQuery {
 }
 
 async fn log(State(ctx): Ctx, Path(agent): Path<String>, Query(q): Query<LogQuery>) -> Json<Value> {
-    let Some(p) = profile(&ctx, &agent) else {
-        return fail("unknown-agent");
+    // 일반 에이전트는 프로필이 없다. 작업 폴더는 세션 것만 본다.
+    let profile_cwd = if is_office_agent_id(&agent) {
+        None
+    } else {
+        let Some(p) = profile(&ctx, &agent) else {
+            return fail("unknown-agent");
+        };
+        p.cwd
     };
     // Codex 전사는 작업 폴더로 찾는다. 세션이 cd 했으면 그 폴더가 맞다.
     let cwd = ctx
@@ -266,7 +314,7 @@ async fn log(State(ctx): Ctx, Path(agent): Path<String>, Query(q): Query<LogQuer
         .gate
         .sink()
         .cwd_of(&agent)
-        .or(p.cwd)
+        .or(profile_cwd)
         .unwrap_or_else(crate::session::manager::home_dir);
     let dash = ctx.dash.clone();
     match tokio::task::spawn_blocking(move || dash.logs.read(&agent, &cwd, q.after, q.epoch)).await {
@@ -468,6 +516,119 @@ async fn launch(ctx: &Dash, profile: &AgentProfile, cli: Option<&str>) -> Result
         SubmitOutcome::SessionChanged => Err("session-changed".into()),
         SubmitOutcome::NotRunning => Err("not-running".into()),
     }
+}
+
+// ── 일반 에이전트 ─────────────────────────────────────────────────────
+// 캐릭터 없는 사무실 세션 한 칸. 세션이 없으면(또는 CLI가 끝나 셸만 남았으면) 렌더러에 넘겨 곁 탭으로
+// 새로 열고, CLI가 턴을 마치고 입력을 기다리면 같은 세션에 지시를 잇는다. 작업 중·사람 대기면 거절한다.
+// `restart`는 웹에서 "지금 세션이 끊긴다" 경고를 확인한 새 세션 요청이다.
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct OfficeAgentSend {
+    text: String,
+    #[serde(default)]
+    cwd: Option<String>,
+    #[serde(default)]
+    cli: Option<String>,
+    #[serde(default)]
+    restart: bool,
+}
+
+async fn office_agent_send(State(ctx): Ctx, Json(b): Json<OfficeAgentSend>) -> Json<Value> {
+    if let Err(e) = crate::office_agent::check_prompt(&b.text) {
+        return fail(e);
+    }
+    let cli = b.cli.as_deref().unwrap_or("claude");
+    if cli != "claude" && cli != "codex" {
+        return fail("unknown-cli");
+    }
+    if crate::office_agent::is_opening() {
+        return fail("office-agent-busy");
+    }
+    let running = ctx.ctl.manager.is_running(OFFICE_AGENT_ID);
+    if running && !b.restart {
+        let probe = {
+            let ctx = ctx.clone();
+            tokio::task::spawn_blocking(move || probe_shells(&ctx, &[OFFICE_AGENT_ID.to_string()]))
+                .await
+                .unwrap_or_default()
+                .remove(OFFICE_AGENT_ID)
+                .unwrap_or_default()
+        };
+        if probe.cli.is_some() {
+            return match office_follow_up(&ctx, &b.text).await {
+                Ok(()) => {
+                    activity(&ctx, "office-agent-follow-up", None, Some(&first_line(&b.text)));
+                    ok(Value::Null)
+                }
+                Err(e) => fail(e),
+            };
+        }
+        if probe.at_prompt != Some(true) {
+            return fail("office-agent-shell-busy");
+        }
+        // CLI가 끝나 셸만 남았다. 끊길 대화가 없으니 새 세션으로 연다.
+    }
+    let cwd = match b.cwd.as_deref().filter(|c| !c.is_empty()) {
+        Some(c) if folders(&ctx).iter().any(|f| f == c) => Some(c.to_string()),
+        Some(_) => return fail("office-agent-invalid-cwd"),
+        None => None,
+    };
+    crate::office_agent::clear_last_error();
+    let payload = json!({
+        "op": "office-agent-open",
+        "prompt": b.text,
+        "cwd": cwd,
+        "cli": cli,
+        "restartConfirmed": running,
+    });
+    match bridged(&ctx, payload).await {
+        Ok(v) => {
+            activity(&ctx, "office-agent-send", None, Some(&first_line(&b.text)));
+            ok(v)
+        }
+        Err(e) => fail(e),
+    }
+}
+
+/// 입력을 기다리는 CLI에 다음 지시를 넣는다.
+async fn office_follow_up(ctx: &Dash, text: &str) -> Result<(), String> {
+    let session_id = ctx.ctl.manager.session_id_for(OFFICE_AGENT_ID).ok_or("not-running")?;
+    // 곁 세션의 알림은 렌더러가 걷지 않아 남아 있을 수 있다. 판정은 턴 관측만 본다.
+    match ctx.ctl.turns.get(&session_id).map(|t| t.phase) {
+        Some(TurnPhase::Idle) => {}
+        Some(TurnPhase::NeedsHuman) => return Err("office-agent-needs-human".into()),
+        _ => return Err("office-agent-working".into()),
+    }
+    ctx.ctl
+        .work_send
+        .follow_up(
+            &ctx.ctl.gate,
+            WorkFollowUpRequest { agent_id: OFFICE_AGENT_ID.to_string(), session_id, text: text.to_string() },
+        )
+        .await
+        .map(|_| ())
+}
+
+async fn office_agent_command(State(ctx): Ctx, Path(op): Path<String>) -> Json<Value> {
+    let result = match op.as_str() {
+        "interrupt" | "ctrl-c" => interrupt(&ctx, OFFICE_AGENT_ID, &op),
+        "terminate" if !ctx.ctl.manager.is_running(OFFICE_AGENT_ID) => Err("not-running".into()),
+        "terminate" => bridged(&ctx, json!({ "op": "office-agent-close" })).await.map(|_| ()),
+        _ => Err("unknown-op".into()),
+    };
+    match result {
+        Ok(()) => {
+            activity(&ctx, &format!("office-agent-{op}"), None, None);
+            ok(Value::Null)
+        }
+        Err(e) => fail(e),
+    }
+}
+
+fn first_line(text: &str) -> String {
+    clip(text.lines().map(str::trim).find(|l| !l.is_empty()).unwrap_or(""), 80)
 }
 
 #[derive(Deserialize)]

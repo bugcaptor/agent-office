@@ -225,7 +225,7 @@ export interface WebDashActivity {
 /** 웹 명령(`web-dash-control` 이벤트). 렌더러가 처리하고 webDashControlReply로 답한다. */
 export interface WebDashControlRequest {
   requestId: string;
-  op: "restart" | "terminate" | "resume" | "work-create" | "work-send" | "work-done" | "autorun-start" | "discuss-start" | "discuss-answer";
+  op: "restart" | "terminate" | "resume" | "work-create" | "work-send" | "work-done" | "autorun-start" | "discuss-start" | "discuss-answer" | "office-agent-open" | "office-agent-close";
   agentId?: string;
   itemId?: string;
   discussionId?: string;
@@ -237,6 +237,9 @@ export interface WebDashControlRequest {
   /** 웹에서 "터미널을 재시작하면 이전 세션이 끊긴다"를 확인했다. 앱 확인창 없이 재시작해 보낸다. */
   restartConfirmed?: boolean;
   text?: string;
+  /** office-agent-open: 첫 프롬프트와 작업 폴더. */
+  prompt?: string;
+  cwd?: string | null;
 }
 
 /** 웹 상태판에 넘기는 캐릭터 라벨(렌더러에만 있는 값). */

@@ -12,6 +12,7 @@ export const Commands = {
   sendWorkItem: "send_work_item",
   sendWorkFollowUp: "send_work_follow_up",
   openTaskChat: "open_task_chat",
+  openOfficeAgent: "open_office_agent",
   openDiscussionSession: "open_discussion_session",
   sendDiscussionTurn: "send_discussion_turn",
   collectDiscussionUtterance: "collect_discussion_utterance",

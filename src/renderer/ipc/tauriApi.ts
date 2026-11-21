@@ -64,6 +64,7 @@ export const tauriApi: AgentOfficeApi = {
   async sendWorkItem(request) { return await invoke(Commands.sendWorkItem, { request }); },
   async sendWorkFollowUp(request) { return await invoke(Commands.sendWorkFollowUp, { request }); },
   async openTaskChat(request) { return await invoke(Commands.openTaskChat, { request }); },
+  async openOfficeAgent(request, restart) { return await invoke(Commands.openOfficeAgent, { request, restart: restart ?? false }); },
   async openDiscussionSession(request) { return await invoke(Commands.openDiscussionSession, { request }); },
   async sendDiscussionTurn(request) { return await invoke(Commands.sendDiscussionTurn, { request }); },
   async collectDiscussionUtterance(request) { return await invoke(Commands.collectDiscussionUtterance, { request }); },

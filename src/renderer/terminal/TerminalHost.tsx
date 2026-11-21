@@ -20,6 +20,7 @@ import { ensureSession } from "../ipc/sessionBridge";
 import { terminalRegistry } from "./TerminalRegistry";
 import { useTaskChatStore } from "../workpanels/taskChatStore";
 import { useDiscussionSessionStore } from "../discussion/discussionSessionStore";
+import { useOfficeAgentStore } from "../officeAgent/officeAgentStore";
 
 const RESIZE_DEBOUNCE_MS = 120;
 
@@ -33,6 +34,8 @@ export function TerminalHost() {
   const chatIds = useTaskChatStore(useShallow((s) => s.order));
   // 토의 참가자 탭. 대화 탭과 같은 방식으로 붙는다.
   const discussionIds = useDiscussionSessionStore(useShallow((s) => s.order));
+  // 일반 에이전트 탭.
+  const officeIds = useOfficeAgentStore(useShallow((s) => s.order));
 
   return (
     <div className="terminal-host">
@@ -48,18 +51,22 @@ export function TerminalHost() {
       {discussionIds.map((id) => (
         <TerminalMount key={id} agentId={id} chat discussion />
       ))}
+      {officeIds.map((id) => (
+        <TerminalMount key={id} agentId={id} chat office />
+      ))}
     </div>
   );
 }
 
-function TerminalMount({ agentId, chat = false, discussion = false }: { agentId: string; chat?: boolean; discussion?: boolean }) {
+function TerminalMount({ agentId, chat = false, discussion = false, office = false }: { agentId: string; chat?: boolean; discussion?: boolean; office?: boolean }) {
   const { t } = useTranslation("terminal");
   const hostRef = useRef<HTMLDivElement>(null);
   const isActive = useAppStore((s) => s.activeTerminalAgentId === agentId);
   const appExited = useAppStore((s) => s.sessions[agentId]?.status === "exited");
   const chatExited = useTaskChatStore((s) => s.chats[agentId]?.status === "exited");
   const discussionExited = useDiscussionSessionStore((s) => s.sessions[agentId]?.status === "exited");
-  const isExited = discussion ? discussionExited : chat ? chatExited : appExited;
+  const officeExited = useOfficeAgentStore((s) => s.sessions[agentId]?.status === "exited");
+  const isExited = office ? officeExited : discussion ? discussionExited : chat ? chatExited : appExited;
   const setSessionSize = useAppStore((s) => s.setSessionSize);
 
   // First mount only: attach the (keep-alive) registry container. Never
@@ -114,7 +121,7 @@ function TerminalMount({ agentId, chat = false, discussion = false }: { agentId:
       {isExited && (
         <div className="terminal-exited-banner" role="alert">
           {/* 대화는 다시 띄우지 않는다 — 탭을 닫고 태스크에서 새로 연다(맥락 묶음이 새로 만들어진다). */}
-          <span>{discussion ? t("host.discussionEnded") : chat ? t("host.chatEnded") : t("host.exited")}</span>
+          <span>{office ? t("host.officeAgentEnded") : discussion ? t("host.discussionEnded") : chat ? t("host.chatEnded") : t("host.exited")}</span>
           {!chat && (
             <button type="button" className="pixel-btn primary" onClick={relaunch}>
               {t("host.relaunch")}

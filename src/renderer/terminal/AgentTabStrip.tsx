@@ -40,6 +40,7 @@ import {
   useDiscussionSessionStore,
 } from "../discussion/discussionSessionStore";
 import { useDiscussionStore } from "../discussion/discussionStore";
+import { officeAgentTitle, requestCloseOfficeAgent, useOfficeAgentStore } from "../officeAgent/officeAgentStore";
 import { useRoleStore } from "../discussion/roleStore";
 import { useWorkItemStore } from "../workpanels/workItemStore";
 import type { TerminalViewMode } from "./terminalViewMode";
@@ -56,6 +57,9 @@ const VIEW_MODE_BUTTON: Record<
   windowed: { icon: "⤢", labelKey: "tab.viewModeFill" },
   filled: { icon: "❐", labelKey: "tab.viewModeWindowed" },
 };
+
+/** 곁 탭 종류별 닫기 문구 키. */
+const SIDE_TAB_CLOSE = { chat: "tab.chatClose", discussion: "tab.discussionClose", office: "tab.officeAgentClose" } as const;
 
 export function AgentTabStrip() {
   const { t } = useTranslation("terminal");
@@ -150,8 +154,20 @@ export function AgentTabStrip() {
   const discussionSessions = useDiscussionSessionStore((s) => s.sessions);
   const discussions = useDiscussionStore((s) => s.discussions);
   const roles = useRoleStore((s) => s.roles);
+  // 일반 에이전트 탭(캐릭터 없는 사무실 세션). 대화 탭 앞에 둔다.
+  const officeIds = useOfficeAgentStore(useShallow((s) => s.order));
+  const officeSessions = useOfficeAgentStore((s) => s.sessions);
   const sideTabs = useMemo(
     () => [
+      ...officeIds
+        .map((id) => officeSessions[id])
+        .filter(Boolean)
+        .map((session) => ({
+          id: session.agentId,
+          name: officeAgentTitle(),
+          title: t("tab.officeAgentTooltip", { cwd: session.cwd ?? t("tab.chatHome") }),
+          kind: "office" as const,
+        })),
       ...chatTabs.map((tab) => ({ ...tab, kind: "chat" as const })),
       ...discussionIds
         .map((id) => discussionSessions[id])
@@ -164,11 +180,14 @@ export function AgentTabStrip() {
         })),
     ],
     // agents·discussions·roles: 제목이 읽는 이름·역할이 바뀌면 다시 계산한다.
-    [chatTabs, discussionIds, discussionSessions, agents, discussions, roles],
+    [officeIds, officeSessions, chatTabs, discussionIds, discussionSessions, agents, discussions, roles, t],
   );
   const closeSideTab = (id: string) =>
-    discussionSessions[id] ? requestCloseDiscussionSession(id) : requestCloseTaskChat(id);
-  const activeChat = activeId ? chats[activeId] : undefined;
+    officeSessions[id]
+      ? requestCloseOfficeAgent(id)
+      : discussionSessions[id] ? requestCloseDiscussionSession(id) : requestCloseTaskChat(id);
+  // 일반 에이전트 탭은 대화 탭처럼 다룬다(캐릭터 전용 버튼·메뉴가 없다).
+  const activeChat = activeId ? (chats[activeId] ?? officeSessions[activeId]) : undefined;
   const activeDiscussion = activeId ? discussionSessions[activeId] : undefined;
   const activeDiscussionCwd = activeDiscussion
     ? discussions.find((d) => d.id === activeDiscussion.discussionId)?.cwd
@@ -296,7 +315,9 @@ export function AgentTabStrip() {
       const discussion = discussionSessions[agentId];
       void tauriApi
         .exportTerminalOutput(
-          chat
+          officeSessions[agentId]
+            ? officeAgentTitle()
+            : chat
             ? taskChatTitle(chat)
             : discussion
               ? discussionSessionTitle(discussion)
@@ -307,7 +328,7 @@ export function AgentTabStrip() {
           console.warn("AgentTabStrip: shell output export failed", err),
         );
     },
-    [agents, chats, discussionSessions],
+    [agents, chats, discussionSessions, officeSessions],
   );
 
   useEffect(() => {
@@ -452,15 +473,15 @@ export function AgentTabStrip() {
                 onClick={() => openTerminal(tab.id)}
               >
                 <span className="agent-tab-chat-icon" aria-hidden="true">
-                  {tab.kind === "discussion" ? "🗣" : "💬"}
+                  {tab.kind === "office" ? "🤖" : tab.kind === "discussion" ? "🗣" : "💬"}
                 </span>
                 <span className="agent-tab-chat-name">{tab.name}</span>
               </button>
               <button
                 type="button"
                 className="agent-tab-chat-close"
-                aria-label={t(tab.kind === "discussion" ? "tab.discussionClose" : "tab.chatClose")}
-                title={t(tab.kind === "discussion" ? "tab.discussionClose" : "tab.chatClose")}
+                aria-label={t(SIDE_TAB_CLOSE[tab.kind])}
+                title={t(SIDE_TAB_CLOSE[tab.kind])}
                 onClick={() => closeSideTab(tab.id)}
               >
                 ×
@@ -549,7 +570,11 @@ export function AgentTabStrip() {
             },
             { separator: true as const },
             {
-              label: t(discussionSessions[chatMenu.agentId] ? "tab.discussionClose" : "tab.chatClose"),
+              label: t(
+                officeSessions[chatMenu.agentId]
+                  ? "tab.officeAgentClose"
+                  : discussionSessions[chatMenu.agentId] ? "tab.discussionClose" : "tab.chatClose",
+              ),
               icon: "⏹️",
               onSelect: () => closeSideTab(chatMenu.agentId),
             },

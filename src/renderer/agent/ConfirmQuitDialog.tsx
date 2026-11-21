@@ -24,6 +24,7 @@ import { isHandoffSupported } from "../quitGuard";
 import { terminalRegistry } from "../terminal/TerminalRegistry";
 import { useTaskChatStore } from "../workpanels/taskChatStore";
 import { useDiscussionSessionStore } from "../discussion/discussionSessionStore";
+import { useOfficeAgentStore } from "../officeAgent/officeAgentStore";
 import {
   pendingDiaryAgents,
   runQuitDiaryFlush,
@@ -51,13 +52,18 @@ export function ConfirmQuitDialog() {
   const liveDiscussionSessions = useDiscussionSessionStore((s) =>
     s.order.filter((id) => isLiveStatus(s.sessions[id]?.status)).length
   );
-  const chatNotice = (liveChats > 0 || liveDiscussionSessions > 0) && (
+  // 일반 에이전트도 핸드오프하지 않는다.
+  const liveOfficeAgent = useOfficeAgentStore((s) => s.order.some((id) => isLiveStatus(s.sessions[id]?.status)));
+  const chatNotice = (liveChats > 0 || liveDiscussionSessions > 0 || liveOfficeAgent) && (
     <>
       {liveChats > 0 && (
         <p className="confirm-quit-task-chats">{t("workpanels:taskChat.quitNotice", { count: liveChats })}</p>
       )}
       {liveDiscussionSessions > 0 && (
         <p className="confirm-quit-task-chats">{t("discussion:session.quitNotice", { count: liveDiscussionSessions })}</p>
+      )}
+      {liveOfficeAgent && (
+        <p className="confirm-quit-task-chats">{t("terminal:officeAgent.quitNotice")}</p>
       )}
     </>
   );

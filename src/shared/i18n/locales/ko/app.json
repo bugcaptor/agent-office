@@ -102,6 +102,11 @@
       "autorun-start": "🌐 웹: 자동 진행 시작 — {{detail}}",
       "discuss-start": "🌐 웹: 토의 시작",
       "discuss-answer": "🌐 웹: 토의 사회자에게 답함",
+      "office-agent-send": "🌐 웹: 일반 에이전트에 지시 — {{detail}}",
+      "office-agent-follow-up": "🌐 웹: 일반 에이전트에 이어서 지시 — {{detail}}",
+      "office-agent-interrupt": "🌐 웹: 일반 에이전트 작업 중단(Esc)",
+      "office-agent-ctrl-c": "🌐 웹: 일반 에이전트에 Ctrl-C",
+      "office-agent-terminate": "🌐 웹: 일반 에이전트 종료",
       "other": "🌐 웹: {{op}}"
     }
   }

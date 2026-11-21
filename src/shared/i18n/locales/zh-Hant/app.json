@@ -85,6 +85,11 @@
       "autorun-start": "🌐 網頁:開始自動推進 — {{detail}}",
       "discuss-start": "🌐 網頁:開始討論",
       "discuss-answer": "🌐 網頁:回答了主持人",
+      "office-agent-send": "🌐 網頁：向通用代理下達指令 — {{detail}}",
+      "office-agent-follow-up": "🌐 網頁：向通用代理繼續下達指令 — {{detail}}",
+      "office-agent-interrupt": "🌐 網頁：中斷通用代理（Esc）",
+      "office-agent-ctrl-c": "🌐 網頁：向通用代理送出 Ctrl-C",
+      "office-agent-terminate": "🌐 網頁：結束通用代理",
       "other": "🌐 網頁:{{op}}"
     }
   }

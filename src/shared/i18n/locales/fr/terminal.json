@@ -12,6 +12,9 @@
     "chatTooltip": "Tâche {{id}}\nDossier de travail : {{cwd}}",
     "chatHome": "Dossier personnel",
     "chatClose": "Terminer la discussion",
+    "officeAgent": "Agent général",
+    "officeAgentTooltip": "Agent sans personnage\nDossier : {{cwd}}",
+    "officeAgentClose": "Terminer l’agent général",
     "discussionClose": "Fermer l'onglet de discussion"
   },
   "menu": {
@@ -35,6 +38,7 @@
     "exited": "Le processus s’est terminé.",
     "relaunch": "Relancer",
     "chatEnded": "La discussion est terminée. Fermez l’onglet et rouvrez-la depuis la tâche.",
+    "officeAgentEnded": "La session de l’agent général est terminée. Envoyez une nouvelle instruction depuis le tableau web pour la rouvrir.",
     "discussionEnded": "La session de discussion est terminée. Fermez l'onglet."
   },
   "palette": {
@@ -59,5 +63,9 @@
       "tokenPairHint": "Entre parenthèses : total des tokens, cache inclus",
       "footnote": "Estimation au tarif API public"
     }
+  },
+  "officeAgent": {
+    "close": { "title": "Terminer l’agent général", "body": "Cela termine la session de l’agent général. Le CLI du terminal s’arrête aussi.", "confirm": "Terminer" },
+    "quitNotice": "La session de l’agent général se termine aussi en quittant."
   }
 }

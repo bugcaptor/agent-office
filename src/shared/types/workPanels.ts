@@ -195,6 +195,16 @@ export interface TaskChatContext {
 }
 export interface TaskChatLink { id: string; title: string; status: WorkStatus }
 export interface TaskChatResult { agentId: string; sessionId: string }
+/** 일반 에이전트 열기(웹 상태판 지시). Rust `OfficeAgentRequest`와 같다. 결과는 `TaskChatResult` 모양이다. */
+export interface OfficeAgentRequest {
+  /** 첫 프롬프트(웹에서 쓴 지시). */
+  prompt: string;
+  /** 작업 폴더(절대 경로). 없으면 홈. */
+  cwd?: string;
+  agent: WorkAgent;
+  cols?: number;
+  rows?: number;
+}
 export interface AutoRunJudgeRequest { sessionId: string; resume: boolean; prompt: string; model?: string }
 export interface AutoRunJudgeResult { decision: "next" | "followup" | "stop"; message: string; note: string; costUsd?: number }
 

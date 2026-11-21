@@ -178,6 +178,17 @@ pub async fn open_task_chat(
     crate::task_chat::open(&app_state, request).await
 }
 
+/// 일반 에이전트 열기. 캐릭터 없는 `office-agent` 세션을 만들고 지시를 첫 프롬프트로 넣는다.
+/// `restart`면 살아 있는 일반 에이전트 세션을 버리고 새로 연다.
+#[tauri::command(rename_all = "camelCase")]
+pub async fn open_office_agent(
+    request: crate::types::OfficeAgentRequest,
+    restart: Option<bool>,
+    app_state: State<'_, AppState>,
+) -> Result<crate::types::TaskChatResult, String> {
+    crate::office_agent::open(&app_state, request, restart.unwrap_or(false)).await
+}
+
 /// 토의 참가자 세션 열기. `discuss-<토의 id>.<참가자>` 세션을 만들고 역할 카드·토의 규칙·주제를
 /// 첫 프롬프트로 넣는다. 캐릭터 본 터미널과 업무 상태는 건드리지 않는다.
 #[tauri::command(rename_all = "camelCase")]

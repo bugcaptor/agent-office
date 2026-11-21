@@ -37,6 +37,7 @@
 | 라벨 요약·일기 생성(LLM 호출) | `summarizer/` |
 | 영속화(설정·프로필·업무 등) | `persistence/` |
 | 업무 보내기·자동 진행·태스크 대화 | `work_send.rs`, `work_send/`, `auto_run.rs`, `task_chat.rs` |
+| 일반 에이전트(캐릭터 없는 `office-agent` 곁 세션, 웹 상태판에서 지시) | `office_agent.rs`(열기·마지막 실패), 세션 준비는 `session/manager.rs`의 `prepare_session_plan`, 웹 라우트 `webdash/routes.rs`(`/api/office-agent`), 렌더러 `officeAgent/officeAgentStore.ts` |
 | 예약 명세 파싱(`office-task --at`·`--every`, 수신함 `schedule:`) | `persistence/work_inbox.rs`의 `normalize_schedule` |
 | 업무 수신함 `office-task`, 공통 안내문 | `work_inbox_cli.rs`, `persistence/work_inbox.rs`, `office_instructions.rs` |
 | 문서 뷰어 `office-md` | `doc_view.rs`, `doc_view_cli.rs` |
@@ -59,6 +60,7 @@
 | 예약(규칙 계산·실행기·팝업 영역) | `workpanels/workSchedule.ts`, `scheduleRunner.ts`, `WorkScheduleSection.tsx` |
 | 팀 토의 | `discussion/` — 아래 [팀 토의](#팀-토의) 절 |
 | 마스코트 창·신호등 | `mascot/`, `store/mascotLights.ts`, `ipc/mascotBridge.ts` |
+| 일반 에이전트 탭 | `officeAgent/officeAgentStore.ts`(탭·상태, 열기는 웹 상태판 요청 `office-agent-open`), gui 확인 `scripts/gui-steps/office-agent.mjs` |
 | 웹 상태판 | `webdash/` — 쓰기 요청 처리 `webDashControl.ts`(`web-dash-control` 이벤트), 접속 표시·알림·라벨 넘기기 `webDashStore.ts`·`WebDashIndicator.tsx`, 설정 `settings/WebDashSection.tsx` |
 | 그 밖의 기능 | 기능 이름의 폴더(`usage/`, `analytics/`, `sessionlog/`, `awards/`, `workdir/`, `markdown/`, `diary/`, `settings/` …) |
 | 다국어 | 카탈로그 `src/shared/i18n/locales/`, 하드코딩 검사 `__tests__/noHardcodedHangul.test.ts` |

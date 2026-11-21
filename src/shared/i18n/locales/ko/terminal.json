@@ -12,6 +12,9 @@
     "chatTooltip": "태스크 {{id}}\n작업 폴더: {{cwd}}",
     "chatHome": "홈 폴더",
     "chatClose": "대화 끝내기",
+    "officeAgent": "일반 에이전트",
+    "officeAgentTooltip": "캐릭터 없는 에이전트\n작업 폴더: {{cwd}}",
+    "officeAgentClose": "일반 에이전트 끝내기",
     "discussionClose": "토의 탭 닫기"
   },
   "menu": {
@@ -35,6 +38,7 @@
     "exited": "프로세스가 종료되었습니다.",
     "relaunch": "다시 띄우기",
     "chatEnded": "대화가 끝났습니다. 탭을 닫고 태스크에서 다시 열 수 있습니다.",
+    "officeAgentEnded": "일반 에이전트 세션이 끝났습니다. 웹 상태판에서 새 지시를 보내면 다시 열립니다.",
     "discussionEnded": "토의 세션이 끝났습니다. 탭을 닫으세요."
   },
   "palette": {
@@ -59,5 +63,9 @@
       "tokenPairHint": "괄호 안은 캐시 포함 전체 토큰",
       "footnote": "공개 API 요율 기준 추정치"
     }
+  },
+  "officeAgent": {
+    "close": { "title": "일반 에이전트 끝내기", "body": "일반 에이전트 세션을 끝냅니다. 터미널의 CLI도 함께 종료됩니다.", "confirm": "끝내기" },
+    "quitNotice": "일반 에이전트 세션도 종료와 함께 끝납니다."
   }
 }

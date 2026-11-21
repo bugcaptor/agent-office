@@ -248,6 +248,15 @@ const impl: Partial<AgentOfficeApi> = {
     pushOutput(agentId, `\x1b[1;36m> ${request.context.task.title}\x1b[0m\r\n${request.cwd ?? "~"} · ${request.agent.cli}\r\n`);
     return { agentId, sessionId };
   },
+  // 일반 에이전트: 세션을 띄우고 지시를 넣은 것처럼 찍는다.
+  async openOfficeAgent(request) {
+    const agentId = "office-agent";
+    const sessionId = `s${sessionSeq++}`;
+    sessions.set(agentId, sessionId);
+    emitSessionState(agentId, "running");
+    pushOutput(agentId, `\x1b[1;36m> ${request.prompt}\x1b[0m\r\n${request.cwd ?? "~"} · ${request.agent.cli}\r\n`);
+    return { agentId, sessionId };
+  },
   // 토의 참가자 세션: 세션을 띄우고 첫 프롬프트를 넣은 것처럼 주제를 찍는다.
   async openDiscussionSession(request) {
     const agentId = discussionSessionAgentId(request.discussionId, request.agentId);
@@ -348,6 +357,8 @@ Object.assign(harness, {
   /** 태스크 대화 스토어(예: `openTaskChat`). */
   taskChatStore: async () => await import("../workpanels/taskChatStore"),
   taskChatRequests,
+  /** 일반 에이전트 스토어(예: `openOfficeAgent`). */
+  officeAgentStore: async () => await import("../officeAgent/officeAgentStore"),
   /** 토의 참가자 세션 스토어(예: `openDiscussionSession`). */
   discussionSessionStore: async () => await import("../discussion/discussionSessionStore"),
   /** 토의 목록 스토어와 실행기(예: 상태를 바꿔 질문 대기 장면 만들기, `startDiscussion`). */

@@ -598,10 +598,19 @@ pub fn is_discussion_session_id(agent_id: &str) -> bool {
     agent_id.starts_with(DISCUSSION_SESSION_PREFIX)
 }
 
-/// 캐릭터가 아닌 전용 탭 세션(태스크 대화·토의)인가. 핸드오프·셸 작업중 감시·
-/// 리줌 기록·캐릭터 상태에서 뺀다.
+/// 일반 에이전트(캐릭터 없는 사무실 세션)의 agentId. 웹 상태판에서 지시하는 한 칸짜리 세션이다.
+/// 캐릭터처럼 관찰 훅·사무실 안내문을 다 싣되 persona·`AGENT_OFFICE_AGENT_ID`는 없다.
+pub const OFFICE_AGENT_ID: &str = "office-agent";
+
+/// 일반 에이전트 세션의 agentId인가.
+pub fn is_office_agent_id(agent_id: &str) -> bool {
+    agent_id == OFFICE_AGENT_ID
+}
+
+/// 캐릭터가 아닌 전용 탭 세션(태스크 대화·토의·일반 에이전트)인가. 핸드오프·셸 작업중 감시·
+/// 캐릭터 상태에서 뺀다.
 pub fn is_side_session_id(agent_id: &str) -> bool {
-    is_task_chat_id(agent_id) || is_discussion_session_id(agent_id)
+    is_task_chat_id(agent_id) || is_discussion_session_id(agent_id) || is_office_agent_id(agent_id)
 }
 
 /// createSession 응답.
@@ -1770,6 +1779,18 @@ pub struct TaskChatNote {
 #[derive(Debug, Clone, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TaskChatResult { pub agent_id: String, pub session_id: String }
+/// 일반 에이전트 열기. 렌더러가 웹 상태판의 지시를 받아 탭을 마련한 뒤 넘긴다.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct OfficeAgentRequest {
+    /// 첫 프롬프트(웹에서 쓴 지시).
+    pub prompt: String,
+    /// 작업 폴더(절대 경로). 없으면 홈.
+    #[serde(default)] pub cwd: Option<String>,
+    pub agent: WorkAgent,
+    #[serde(default)] pub cols: Option<u16>,
+    #[serde(default)] pub rows: Option<u16>,
+}
 /// 토의 참가자 세션 열기. 토의·역할·프로필은 네이티브가 저장소에서 읽는다.
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]

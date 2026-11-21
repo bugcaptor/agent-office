@@ -85,6 +85,11 @@
       "autorun-start": "🌐 Web: 自動進行を開始 — {{detail}}",
       "discuss-start": "🌐 Web: 議論を開始",
       "discuss-answer": "🌐 Web: 司会に回答",
+      "office-agent-send": "🌐 Web: 汎用エージェントに指示 — {{detail}}",
+      "office-agent-follow-up": "🌐 Web: 汎用エージェントに続けて指示 — {{detail}}",
+      "office-agent-interrupt": "🌐 Web: 汎用エージェントの作業を中断(Esc)",
+      "office-agent-ctrl-c": "🌐 Web: 汎用エージェントに Ctrl-C",
+      "office-agent-terminate": "🌐 Web: 汎用エージェントを終了",
       "other": "🌐 Web: {{op}}"
     }
   }

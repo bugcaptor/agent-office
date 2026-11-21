@@ -12,6 +12,9 @@
     "chatTooltip": "タスク {{id}}\n作業フォルダ: {{cwd}}",
     "chatHome": "ホームフォルダ",
     "chatClose": "チャットを終了",
+    "officeAgent": "汎用エージェント",
+    "officeAgentTooltip": "キャラクターなしのエージェント\n作業フォルダ: {{cwd}}",
+    "officeAgentClose": "汎用エージェントを終了",
     "discussionClose": "議論タブを閉じる"
   },
   "menu": {
@@ -35,6 +38,7 @@
     "exited": "プロセスが終了しました。",
     "relaunch": "もう一度起動",
     "chatEnded": "チャットは終了しました。タブを閉じて、タスクからもう一度開けます。",
+    "officeAgentEnded": "汎用エージェントのセッションが終了しました。Web ダッシュボードから新しい指示を送ると再び開きます。",
     "discussionEnded": "議論セッションが終わりました。タブを閉じてください。"
   },
   "palette": {
@@ -59,5 +63,9 @@
       "tokenPairHint": "括弧内はキャッシュを含む総トークン",
       "footnote": "公開 API 料金換算の推定値"
     }
+  },
+  "officeAgent": {
+    "close": { "title": "汎用エージェントを終了", "body": "汎用エージェントのセッションを終了します。ターミナルの CLI も終了します。", "confirm": "終了" },
+    "quitNotice": "汎用エージェントのセッションも終了とともに終わります。"
   }
 }

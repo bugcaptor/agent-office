@@ -3,7 +3,7 @@
 // Domain slice: the renderer-facing AgentOfficeApi surface itself.
 // See src/shared/types.ts for the frozen-contract overview.
 
-import type { InboxEntry, InboxRejection, InboxWarning, WorkItem, SessionSummary, WorkSendTarget, WorkSendRequest, WorkSendResult, WorkFollowUpRequest, AutoRunJudgeRequest, AutoRunJudgeResult, TaskChatRequest, TaskChatResult } from './workPanels';
+import type { InboxEntry, InboxRejection, InboxWarning, WorkItem, SessionSummary, WorkSendTarget, WorkSendRequest, WorkSendResult, WorkFollowUpRequest, AutoRunJudgeRequest, AutoRunJudgeResult, TaskChatRequest, TaskChatResult, OfficeAgentRequest } from './workPanels';
 import type { AgentId } from './common';
 import type { RolesFile } from './role';
 import type { Discussion, DiscussionSessionRequest, DiscussionSessionResult, DiscussionCollectRequest, CollectedUtterance } from './discussion';
@@ -80,6 +80,8 @@ export interface AgentOfficeApi {
   sendWorkFollowUp(request: WorkFollowUpRequest): Promise<WorkSendResult>;
   /** 태스크 대화 세션(`task-chat-<taskId>`)을 만들고 맥락 묶음을 첫 프롬프트로 넣는다. 업무 상태는 바꾸지 않는다. */
   openTaskChat(request: TaskChatRequest): Promise<TaskChatResult>;
+  /** 일반 에이전트 세션(`office-agent`)을 만들고 지시를 첫 프롬프트로 넣는다. `restart`면 살아 있는 세션을 버리고 연다. */
+  openOfficeAgent(request: OfficeAgentRequest, restart?: boolean): Promise<TaskChatResult>;
   /** 토의 참가자 세션(`discuss-<토의 id>.<참가자>`)을 만들고 역할 카드·규칙·주제를 첫 프롬프트로 넣는다. */
   openDiscussionSession(request: DiscussionSessionRequest): Promise<DiscussionSessionResult>;
   /** 토의 세션에 차례 지시 하나를 넣는다. submittedAt이 발언 수집의 since다. */

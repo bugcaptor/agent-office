@@ -80,9 +80,13 @@ export function isTaskChatId(agentId: string): boolean { return agentId.startsWi
 export const DISCUSSION_SESSION_PREFIX = "discuss-";
 /** 토의 참가자 세션인가. */
 export function isDiscussionSessionId(agentId: string): boolean { return agentId.startsWith(DISCUSSION_SESSION_PREFIX); }
-/** 캐릭터가 아닌 전용 탭 세션(태스크 대화·토의)인가. 캐릭터 중심 스토어는 이런 세션의 이벤트를 무시한다.
+/** 일반 에이전트(캐릭터 없는 사무실 세션 한 칸)의 agentId. Rust `OFFICE_AGENT_ID`와 같다. */
+export const OFFICE_AGENT_ID = "office-agent";
+/** 일반 에이전트 세션인가. */
+export function isOfficeAgentId(agentId: string): boolean { return agentId === OFFICE_AGENT_ID; }
+/** 캐릭터가 아닌 전용 탭 세션(태스크 대화·토의·일반 에이전트)인가. 캐릭터 중심 스토어는 이런 세션의 이벤트를 무시한다.
  * Rust `is_side_session_id`와 같다. */
-export function isSideSessionId(agentId: string): boolean { return isTaskChatId(agentId) || isDiscussionSessionId(agentId); }
+export function isSideSessionId(agentId: string): boolean { return isTaskChatId(agentId) || isDiscussionSessionId(agentId) || isOfficeAgentId(agentId); }
 
 /**
  * Wire payload for the `create_session` command (camelCase args).

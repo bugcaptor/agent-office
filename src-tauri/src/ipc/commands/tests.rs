@@ -1153,6 +1153,33 @@
             .unwrap();
         assert_eq!(unknown["error"], "unknown-agent");
 
+        // 일반 에이전트: 상태에 컴퓨터 이름·작업 폴더 목록이 실리고, 빈 지시·목록 밖 폴더·꺼진 세션 명령은 거절된다.
+        assert!(body["data"]["host"].is_string());
+        assert!(body["data"]["officeAgent"]["session"].is_null());
+        assert_eq!(body["data"]["folders"][0], crate::session::manager::home_dir());
+        let post = |path: &str, json: serde_json::Value| {
+            let req = client.post(format!("{base}{path}")).bearer_auth(&token).json(&json);
+            async move { req.send().await.unwrap().json::<serde_json::Value>().await.unwrap() }
+        };
+        assert_eq!(post("/api/office-agent", serde_json::json!({ "text": "  " })).await["error"], "empty");
+        assert_eq!(
+            post("/api/office-agent", serde_json::json!({ "text": "go", "cwd": "/not/a/listed/folder" })).await["error"],
+            "office-agent-invalid-cwd"
+        );
+        assert_eq!(post("/api/office-agent", serde_json::json!({ "text": "go", "cli": "pi" })).await["error"], "unknown-cli");
+        assert_eq!(post("/api/office-agent/interrupt", serde_json::json!({})).await["error"], "not-running");
+        assert_eq!(post("/api/office-agent/terminate", serde_json::json!({})).await["error"], "not-running");
+        let log: serde_json::Value = client
+            .get(format!("{base}/api/log/office-agent"))
+            .bearer_auth(&token)
+            .send()
+            .await
+            .unwrap()
+            .json()
+            .await
+            .unwrap();
+        assert_eq!(log["ok"], true);
+
         // 토큰을 새로 만들면 이전 토큰은 끊긴다.
         dash.rotate_token().unwrap();
         let old = client.get(format!("{base}/api/state")).bearer_auth(&token).send().await.unwrap();
