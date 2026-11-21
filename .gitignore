@@ -37,3 +37,6 @@ AGENTS.md
 .env
 .env.production
 
+
+# Local reports (architecture review etc.), not tracked
+reports/
