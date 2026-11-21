@@ -766,6 +766,22 @@ impl InjectGate {
         since
     }
 
+    /// 미제출 표식이 사람 대기 상한보다 오래됐으면 해제한다. 아직 막혀 있으면 true.
+    /// 메뉴 숫자·화살표처럼 CR 없이 끝나는 키가 남긴 표식이 자동 진행을 영영 막지 않게 한다.
+    pub fn release_stale_uncommitted(&self, agent_id: &str) -> bool {
+        let gate = self.get_agent_gate(agent_id);
+        let mut inner = gate.inner.lock();
+        if !inner.human_uncommitted {
+            return false;
+        }
+        if now_ms().saturating_sub(inner.uncommitted_since_ms) < self.human_hold_max_ms {
+            return true;
+        }
+        inner.human_uncommitted = false;
+        inner.forced_submission_count = inner.forced_submission_count.wrapping_add(1);
+        false
+    }
+
     /// 배너의 `계속` 버튼 클릭 시 미제출 플래그만 해제.
     pub fn clear_uncommitted(&self, agent_id: &str) {
         let gate = self.get_agent_gate(agent_id);
@@ -933,6 +949,20 @@ mod tests {
             .await;
         assert_eq!(res, SubmitOutcome::NotRunning);
         assert!(sink.recorded_writes().is_empty());
+    }
+
+    #[test]
+    fn stale_uncommitted_is_released_only_after_hold_max() {
+        let sink = Arc::new(RecordingSink::default());
+        let gate = InjectGate::with_hold_max(sink, Arc::new(BotPromptArms::new()), 30);
+        assert!(!gate.release_stale_uncommitted("a1"));
+        gate.note_human("a1", "1");
+        assert!(gate.release_stale_uncommitted("a1"));
+        assert!(gate.has_uncommitted("a1"));
+        std::thread::sleep(std::time::Duration::from_millis(40));
+        assert!(!gate.release_stale_uncommitted("a1"));
+        assert!(!gate.has_uncommitted("a1"));
+        assert_eq!(gate.forced_submission_count("a1"), 1);
     }
 
     #[tokio::test]

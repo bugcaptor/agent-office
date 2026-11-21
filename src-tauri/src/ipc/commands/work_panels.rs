@@ -64,6 +64,8 @@ pub async fn send_work_follow_up(
     app_state: State<'_, AppState>,
 ) -> Result<WorkSendResult, String> {
     validate_target(&app_state, &request.agent_id)?;
+    // 플랜 자동 진행은 사람 입력으로 멈추지 않는다. 오래 묵은 미제출 표식은 풀고 넣는다.
+    app_state.gate.release_stale_uncommitted(&request.agent_id);
     app_state.work_send_runtime.follow_up(&app_state.gate, request).await
 }
 /// 그 캐릭터 세션의 마지막 에이전트 응답. Claude는 훅이 알려 준 전사, Codex는 cwd의 최신 rollout.

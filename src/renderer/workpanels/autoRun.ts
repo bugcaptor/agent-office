@@ -4,6 +4,8 @@
 // 세션)에게 next·followup·stop 중 하나를 받아 적용한다. 루프와 상태는 여기만 쥔다.
 // 태스크·후속 지시·판단자를 보내기 전마다 구독 사용량을 예측해(usage/usageForecast.ts),
 // 모자랄 것 같으면 한도 창 리셋까지 기다렸다가 스스로 이어 간다.
+// 사람이 진행자 터미널에 입력해도 멈추지 않는다. 멈출 뜻이면 사람이 실행을 멈춘다.
+// 쓰다 만 입력과 겹치면 잠시 뒤 다시 보낸다.
 import type { AgentProfile, AutoRun, AutoRunJudgeResult, AutoRunLogEntry, AutoRunPauseReason, AutoRunUsageWait, WorkItem } from "@shared/types";
 import { t } from "../i18n";
 import { tauriApi } from "../ipc/tauriApi";
@@ -31,6 +33,8 @@ const VIA_CTL = "ctl";
 const MAX_LOG = 200;
 const MAX_NOTES = 20;
 const MAX_MEMO_CHARS = 16_000;
+/** 사람 입력과 겹쳐 보내지 못했을 때 다시 보내 보는 간격. */
+const HUMAN_INPUT_RETRY_MS = 5_000;
 
 /** 루트가 직접·간접으로 기다리는 업무 전부(선행 작업의 전이 폐포), 진행 순서대로. */
 export function planItems(root: WorkItem, items: WorkItem[]): WorkItem[] {
@@ -180,6 +184,13 @@ function running(rootId: string): AutoRun | undefined {
   const run = find(rootId)?.autoRun;
   return run?.state === "running" ? run : undefined;
 }
+const retrying = new Set<string>();
+/** 사람 입력과 겹쳐 보내지 못했다. 멈추지 않고 잠시 뒤 같은 단계를 다시 돈다. 그 전의 깨움은 보내지 않는다. */
+function retryAfterHumanInput(rootId: string): void {
+  if (retrying.has(rootId)) return;
+  retrying.add(rootId);
+  setTimeout(() => { retrying.delete(rootId); if (running(rootId)) kick(rootId); }, HUMAN_INPUT_RETRY_MS);
+}
 
 /** 태스크를 맡을 CLI. 보내기(workSendStore)와 같은 규칙이다. */
 function taskCli(item: WorkItem, profile: AgentProfile | undefined) {
@@ -321,6 +332,8 @@ export async function stepAutoRun(rootId: string): Promise<void> {
     if (current.status === "in_progress") {
       const session = lastSession(current);
       if (session && useWorkMonitorStore.getState().sessions[session]?.phase === "ended") return pause(rootId, "session-ended", workItemTitle(current));
+      // 미뤄 둔 후속 지시가 있는데 사람이 새 턴을 시작했다. 그 턴이 끝나면 다시 판단한다.
+      if (run.pendingFollowUp) update(rootId, (latest) => ({ ...latest, pendingFollowUp: undefined }));
       return; // 턴이 끝나기를 기다린다.
     }
     if (current.status === "review") {
@@ -328,12 +341,13 @@ export async function stepAutoRun(rootId: string): Promise<void> {
       const observed = useWorkMonitorStore.getState().sessions[lastSession(current) ?? ""];
       if (observed && run.sentAt && observed.at < run.sentAt) return;
       // 판단은 끝났고 사용량 때문에 후속 지시만 미뤄 뒀다. 다시 판단하지 않고 보낸다.
-      if (run.pendingFollowUp) return sendFollowUp(rootId, current, run.pendingFollowUp);
+      if (run.pendingFollowUp) return retrying.has(rootId) ? undefined : sendFollowUp(rootId, current, run.pendingFollowUp);
       return judge(rootId, current);
     }
     // 사람이 완료로 바꿨다. 다음으로 넘어간다.
     update(rootId, (latest) => withLog({ ...latest, currentId: undefined, followUps: 0, sentAt: undefined, pendingFollowUp: undefined, taskMark: undefined, turnMark: undefined }, { kind: "human-done", taskId: current.id }));
   }
+  if (retrying.has(rootId)) return;
   return pickAndSend(rootId);
 }
 
@@ -363,7 +377,7 @@ async function pickAndSend(rootId: string): Promise<void> {
   const mark = { ...costMark(runner), judgeCost: run.costUsd };
   update(rootId, (latest) => withLog({ ...latest, currentId: next.id, followUps: 0, sentAt: Date.now(), pendingFollowUp: undefined, taskMark: mark, turnMark: mark }, { kind: "send", taskId: next.id }));
   const before = next.sessionIds.length;
-  await requestWorkSend(next.id, { auto: true, appendBody: workerContext(root, plan, next, run.log) });
+  await requestWorkSend(next.id, { auto: true, overHumanInput: true, appendBody: workerContext(root, plan, next, run.log) });
   const sent = find(next.id);
   if (!sent || sent.lastError || sent.sessionIds.length <= before) {
     // 사람이 그 사이 멈췄으면 사유를 덮지 않는다.
@@ -371,7 +385,8 @@ async function pickAndSend(rootId: string): Promise<void> {
     const error = sent?.lastError;
     // 보내지 못했으면 태스크는 할 일로 남으므로 현재 태스크에서 뺀다. 계속을 누르면 다시 보낸다.
     update(rootId, (latest) => ({ ...latest, currentId: undefined }));
-    return pause(rootId, error === "work-send-human-input" ? "human-input" : "send-failed", error);
+    if (error === "work-send-human-input") return retryAfterHumanInput(rootId);
+    return pause(rootId, "send-failed", error);
   }
 }
 
@@ -439,11 +454,15 @@ async function sendFollowUp(rootId: string, current: WorkItem, message: string):
     ({ submittedAt } = await tauriApi.sendWorkFollowUp({ agentId: runner, sessionId: session, text: message }));
   } catch (error) {
     const code = error instanceof Error ? error.message : String(error);
-    // 계속을 누르면 같은 턴을 다시 판단한다.
-    if (running(rootId)) {
-      update(rootId, (r) => ({ ...r, pendingFollowUp: undefined }));
-      pause(rootId, code === "work-send-human-input" ? "human-input" : "send-failed", code);
+    if (!running(rootId)) return;
+    // 사람이 쓰는 중이면 지시를 남겨 두고 다시 보낸다. 다시 판단하지 않는다.
+    if (code === "work-send-human-input") {
+      update(rootId, (r) => ({ ...r, pendingFollowUp: message }));
+      return retryAfterHumanInput(rootId);
     }
+    // 계속을 누르면 같은 턴을 다시 판단한다.
+    update(rootId, (r) => ({ ...r, pendingFollowUp: undefined }));
+    pause(rootId, "send-failed", code);
     return;
   }
   update(rootId, (r) => withLog({ ...r, followUps: r.followUps + 1, sentAt: submittedAt, pendingFollowUp: undefined, turnMark: mark }, { kind: "followup", taskId: current.id, text: message }));

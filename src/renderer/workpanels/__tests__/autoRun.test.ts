@@ -56,7 +56,9 @@ beforeEach(() => {
   useWorkSendStore.setState({ busy: {}, confirmation: null }); useWorkMonitorStore.setState({ sessions: {} });
   off = installAutoRun();
 });
-afterEach(async () => { off(); await settleWorkSends(); await useWorkItemStore.getState().flush(); });
+afterEach(async () => { vi.useRealTimers(); off(); await settleWorkSends(); await useWorkItemStore.getState().flush(); });
+/** 사람 입력 재시도 타이머만 가짜로 돌린다. */
+const fakeRetryTimer = () => vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
 
 describe("자동 진행 계획", () => {
   it("루트가 간접으로 기다리는 업무까지 선행 작업 순서로 모은다", () => {
@@ -208,22 +210,36 @@ describe("자동 진행 루프", () => {
     expect(api.autoRunJudge.mock.calls[2][0].prompt).toContain("Task 3/3");
   });
 
-  it("CLI가 돌고 있으면 확인 없이 재시작하되 미제출 입력이 있으면 건드리지 않고 멈춘다", async () => {
+  it("CLI가 돌고 있으면 확인 없이 재시작하고, 옛 세션에 쓰다 만 입력이 있어도 멈추지 않는다", async () => {
     const { a, root } = plan();
-    api.inspectWorkSendTarget.mockResolvedValue({ ...shell, restartRequired: true, hasUncommitted: true });
+    api.inspectWorkSendTarget.mockResolvedValueOnce({ ...shell, restartRequired: true, hasUncommitted: true })
+      .mockResolvedValueOnce({ ...shell, restartRequired: true, hasUncommitted: true }).mockResolvedValue(shell);
     startAutoRun(root);
-    await vi.waitFor(() => expect(get(root).autoRun?.state).toBe("paused"));
-    expect(get(root).autoRun).toMatchObject({ pauseReason: "human-input", currentId: undefined });
-    expect(restart).not.toHaveBeenCalled(); expect(useWorkSendStore.getState().confirmation).toBeNull();
-    expect(get(a).status).toBe("todo");
-
-    api.inspectWorkSendTarget.mockResolvedValueOnce({ ...shell, restartRequired: true }).mockResolvedValue(shell);
-    resumeAutoRun(root);
     await vi.waitFor(() => expect(api.sendWorkItem).toHaveBeenCalledTimes(1));
     expect(restart).toHaveBeenCalledTimes(1); expect(useWorkSendStore.getState().confirmation).toBeNull();
+    expect(get(root).autoRun?.state).toBe("running");
+    expect(get(a).status).toBe("in_progress");
   });
 
-  it("판단자 첫 호출이 실패하면 새 세션 id로 바꿔 멈추고, 사람 입력 중에는 후속 지시를 넣지 않는다", async () => {
+  it("사람 입력과 겹쳐 보내지 못해도 멈추지 않고 다시 보낸다", async () => {
+    const { a, root } = plan();
+    fakeRetryTimer();
+    api.sendWorkItem.mockRejectedValueOnce(new Error("work-send-human-input"));
+    startAutoRun(root);
+    await vi.waitFor(() => expect(api.sendWorkItem).toHaveBeenCalledTimes(1));
+    await settled(root);
+    expect(get(root).autoRun).toMatchObject({ state: "running", currentId: undefined });
+    expect(get(a).status).toBe("todo");
+    // 타이머 전의 깨움은 다시 보내지 않는다(헛돌지 않게).
+    useWorkItemStore.getState().edit(root, { body: "Use Postgres 16." });
+    await settled(root);
+    expect(api.sendWorkItem).toHaveBeenCalledTimes(1);
+    await vi.advanceTimersByTimeAsync(5_000);
+    await vi.waitFor(() => expect(api.sendWorkItem).toHaveBeenCalledTimes(2));
+    expect(get(root).autoRun?.state).toBe("running");
+  });
+
+  it("판단자 첫 호출이 실패하면 새 세션 id로 바꿔 멈추고, 사람이 쓰는 중이면 후속 지시를 남겨 두고 다시 넣는다", async () => {
     const { a, root } = plan();
     api.autoRunJudge.mockRejectedValueOnce(new Error("claude-not-found")).mockResolvedValueOnce(judged("followup", "Fix lint"));
     startAutoRun(root);
@@ -235,12 +251,43 @@ describe("자동 진행 루프", () => {
     expect(get(root).autoRun).toMatchObject({ pauseReason: "judge-failed", pauseDetail: "claude-not-found", judgeStarted: false });
     expect(get(root).autoRun!.judgeSessionId).not.toBe(firstId);
 
+    fakeRetryTimer();
     api.sendWorkFollowUp.mockRejectedValueOnce(new Error("work-send-human-input"));
     resumeAutoRun(root);
-    await vi.waitFor(() => expect(get(root).autoRun?.pauseReason).toBe("human-input"));
+    await vi.waitFor(() => expect(get(root).autoRun?.pendingFollowUp).toBe("Fix lint"));
+    await settled(root);
+    expect(get(root).autoRun?.state).toBe("running");
     expect(api.autoRunJudge.mock.calls[1][0]).toMatchObject({ resume: false });
     expect(get(a).status).toBe("review");
     expect(get(root).autoRun!.followUps).toBe(0);
+
+    // 잠시 뒤 판단자를 다시 부르지 않고 남긴 지시를 넣는다.
+    await vi.advanceTimersByTimeAsync(5_000);
+    await vi.waitFor(() => expect(api.sendWorkFollowUp).toHaveBeenCalledTimes(2));
+    expect(api.autoRunJudge).toHaveBeenCalledTimes(2);
+    expect(api.sendWorkFollowUp.mock.calls[1][0]).toMatchObject({ text: "Fix lint" });
+    await vi.waitFor(() => expect(get(root).autoRun).toMatchObject({ followUps: 1, pendingFollowUp: undefined }));
+  });
+
+  it("미뤄 둔 후속 지시가 있는데 사람이 새 턴을 시작하면 지시를 버리고 그 턴 뒤에 다시 판단한다", async () => {
+    const { a, root } = plan();
+    fakeRetryTimer();
+    api.autoRunJudge.mockResolvedValueOnce(judged("followup", "Fix lint")).mockResolvedValue(judged("next"));
+    api.sendWorkFollowUp.mockRejectedValueOnce(new Error("work-send-human-input"));
+    startAutoRun(root);
+    await vi.waitFor(() => expect(api.sendWorkItem).toHaveBeenCalledTimes(1));
+    await settled(root);
+    turnEnded(a);
+    await vi.waitFor(() => expect(get(root).autoRun?.pendingFollowUp).toBe("Fix lint"));
+    await settled(root);
+    // 사람이 Enter로 직접 지시해 새 턴이 돈다.
+    useWorkItemStore.getState().edit(a, { status: "in_progress" });
+    await vi.waitFor(() => expect(get(root).autoRun?.pendingFollowUp).toBeUndefined());
+    await vi.advanceTimersByTimeAsync(5_000);
+    turnEnded(a);
+    await vi.waitFor(() => expect(get(a).status).toBe("done"));
+    expect(api.autoRunJudge).toHaveBeenCalledTimes(2);
+    expect(api.sendWorkFollowUp).toHaveBeenCalledTimes(1);
   });
 
   it("진행 중에는 사람이 진행자에게 다른 업무를 보낼 수 없고, 일시정지하면 다시 보낼 수 있다", async () => {
