@@ -102,6 +102,8 @@
     "cancelled": "Envoi annulé.",
     "restartRequired": "Redémarrez le terminal avant un nouvel envoi.",
     "createFailed": "Impossible de créer une session.",
+    "cwdMissing": "Le dossier de départ n’existe plus, aucune session ouverte : {{detail}}. Vérifiez le dossier de départ du personnage.",
+    "cliExited": "Le CLI s’est arrêté juste après l’envoi (code {{detail}}). Il a pu quitter à une question de démarrage (confiance du dossier) ; voir le terminal.",
     "saveFailed": "Enregistrez la tâche et le profil.",
     "promptInvalid": "Caractères de contrôle incompatibles ou texte de plus de 256 Kio.",
     "modelInvalid": "Nom du modèle invalide.",

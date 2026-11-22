@@ -80,7 +80,7 @@ vi.mock("../osNotify", () => ({ maybeSendOsNotification }));
 import { useAppStore } from "../../store/appStore";
 import { useAwardsStore } from "../../awards/awardsStore";
 import type { AgentProfile } from "../../store/types";
-import { installSessionBridge, officeBus } from "../sessionBridge";
+import { installSessionBridge, officeBus, runGuardedCreateSession } from "../sessionBridge";
 import {
   resetNotifySuppression,
   suppressNotifications,
@@ -729,5 +729,38 @@ describe("installSessionBridge / 태스크 대화 세션", () => {
     expect(after.taskLabels).toBe(before.taskLabels);
     expect(mockApi.setBadgeCount).not.toHaveBeenCalled();
     expect(maybeSendOsNotification).not.toHaveBeenCalled();
+  });
+});
+
+describe("runGuardedCreateSession / 지워진 시작 폴더", () => {
+  const gone = (path: string) => `session-cwd-missing:${path}`;
+  beforeEach(() => { vi.spyOn(console, "warn").mockImplementation(() => {}); });
+
+  it("이어받은 위치가 지워졌으면 프로필 시작 폴더로 다시 연다", async () => {
+    useAppStore.getState().hydrate({ agents: [mkProfile({ id: "a1", cwd: "/work" })], version: 1 });
+    mockApi.createSession.mockRejectedValueOnce(gone("/work/.worktrees/t-1/scripts")).mockResolvedValueOnce({ sessionId: "s1", state: "running" });
+
+    const res = await runGuardedCreateSession("a1", { cwd: "/work/.worktrees/t-1/scripts" }, { strictCwd: true });
+
+    expect(res).toEqual({ sessionId: "s1", state: "running" });
+    expect(mockApi.createSession.mock.calls.map((c) => c[1]?.cwd)).toEqual(["/work/.worktrees/t-1/scripts", "/work"]);
+  });
+
+  it("strictCwd면 프로필 시작 폴더도 없을 때 홈으로 가지 않고 이유를 던진다", async () => {
+    useAppStore.getState().hydrate({ agents: [mkProfile({ id: "a1", cwd: "/work" })], version: 1 });
+    mockApi.createSession.mockRejectedValue(gone("/work"));
+
+    await expect(runGuardedCreateSession("a1", { cwd: "/elsewhere" }, { strictCwd: true })).rejects.toThrow("work-send-cwd-missing:/work");
+    expect(mockApi.createSession.mock.calls.map((c) => c[1]?.cwd)).toEqual(["/elsewhere", "/work"]);
+    expect(useAppStore.getState().sessions.a1.status).toBe("exited");
+  });
+
+  it("사람이 여는 터미널은 시작 폴더가 없으면 홈에서 연다", async () => {
+    useAppStore.getState().hydrate({ agents: [mkProfile({ id: "a1", cwd: "/work" })], version: 1 });
+    mockApi.createSession.mockRejectedValueOnce(gone("/work")).mockResolvedValueOnce({ sessionId: "s1", state: "running" });
+
+    await runGuardedCreateSession("a1");
+
+    expect(mockApi.createSession.mock.calls.map((c) => c[1]?.cwd)).toEqual(["/work", undefined]);
   });
 });

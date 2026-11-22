@@ -122,6 +122,10 @@ pub struct PtySpawnOptions {
     pub env: Vec<(String, String)>,
 }
 
+/// 세션 시작 폴더가 없을 때 spawn 오류 문자열의 접두사(`session-cwd-missing:<경로>`).
+/// 프런트가 이 접두사를 보고 프로필 시작 폴더로 다시 시도한다.
+pub const CWD_MISSING: &str = "session-cwd-missing";
+
 /// 부작용 경계. SessionManager는 이 트레잇만 안다. 테스트는 FakePtyFactory 주입.
 pub trait PtyFactory: Send + Sync {
     fn spawn(&self, opts: PtySpawnOptions) -> io::Result<SpawnedPty>;
@@ -182,6 +186,15 @@ impl PtyWaiter for RealWaiter {
 
 impl PtyFactory for PortablePtyFactory {
     fn spawn(&self, o: PtySpawnOptions) -> io::Result<SpawnedPty> {
+        // portable-pty는 cwd가 디렉터리가 아니면 말없이 홈에서 셸을 띄운다. 그러면
+        // 지워진 작업 폴더를 이어받은 세션이 홈에서 CLI를 기동해 신뢰 확인에서
+        // 꺼진다(2026-11-22 실사고). 홈으로 떨어지지 않고 이유를 돌려준다.
+        if !std::path::Path::new(&o.cwd).is_dir() {
+            return Err(io::Error::new(
+                io::ErrorKind::NotFound,
+                format!("{CWD_MISSING}:{}", o.cwd),
+            ));
+        }
         let sys = native_pty_system();
         let pair = sys
             .openpty(PtySize { rows: o.rows, cols: o.cols, pixel_width: 0, pixel_height: 0 })
@@ -746,7 +759,7 @@ pub mod fake {
 #[cfg(test)]
 mod tests {
     use super::fake::FakePtyFactory;
-    use super::{PtyFactory, PtySpawnOptions};
+    use super::{PortablePtyFactory, PtyFactory, PtySpawnOptions, CWD_MISSING};
     use std::io::{Read, Write};
 
     #[cfg(windows)]
@@ -1039,5 +1052,22 @@ mod tests {
             combined, expected,
             "handoff must not lose or duplicate bytes across the interrupt boundary"
         );
+    }
+    #[test]
+    fn real_factory_refuses_a_missing_cwd_instead_of_starting_in_home() {
+        let dir = tempfile::tempdir().unwrap();
+        let gone = dir.path().join("removed-worktree");
+        let err = PortablePtyFactory
+            .spawn(PtySpawnOptions {
+                shell: "/bin/sh".into(),
+                args: vec![],
+                cols: 80,
+                rows: 24,
+                cwd: gone.to_string_lossy().into_owned(),
+                env: vec![],
+            })
+            .err()
+            .expect("missing cwd must not spawn");
+        assert_eq!(err.to_string(), format!("{CWD_MISSING}:{}", gone.display()));
     }
 }

@@ -4,7 +4,7 @@ const KEYS: Record<string, string> = {
   "work-send-profile-unsupported": "unsupportedProfile", "work-send-shell-unsupported": "unsupportedShell",
   "work-send-producer-running": "producerRunning", "work-send-human-input": "humanInput", "work-send-session-changed": "sessionChanged",
   "work-send-partial-submission": "partialSubmission", "work-send-launch-timeout": "launchTimeout", "work-send-cli-returned": "cliReturned",
-  "work-send-cancelled": "cancelled", "work-send-restart-required": "restartRequired", "work-send-create-failed": "createFailed",
+  "work-send-cancelled": "cancelled", "work-send-restart-required": "restartRequired", "work-send-create-failed": "createFailed", "work-send-cwd-missing": "cwdMissing", "work-send-cli-exited": "cliExited",
   "work-send-save-failed": "saveFailed", "work-send-blocked": "blocked", "work-send-plan-root": "planRoot", "work-send-schedule-template": "scheduleTemplate", "work-send-auto-run": "autoRunActive", "work-send-prompt-invalid": "promptInvalid", "work-send-model-invalid": "modelInvalid",
   "automation-agy-effort-invalid": "effortInvalid", "automation-effort-invalid": "effortInvalid",
   "automation-agy-model-catalog-unavailable": "modelCatalog", "automation-agy-model-unavailable": "modelCatalog",
@@ -16,6 +16,7 @@ export function codeText(t: (key: string, options?: Record<string, unknown>) => 
   return code;
 }
 export function sendErrorText(error: string): string {
-  const key = KEYS[error.split(":")[0]];
-  return key ? t(`workpanels:sendErrors.${key}`) : t("workpanels:sendError", { error });
+  const at = error.indexOf(":");
+  const key = KEYS[at < 0 ? error : error.slice(0, at)];
+  return key ? t(`workpanels:sendErrors.${key}`, { detail: at < 0 ? "" : error.slice(at + 1) }) : t("workpanels:sendError", { error });
 }

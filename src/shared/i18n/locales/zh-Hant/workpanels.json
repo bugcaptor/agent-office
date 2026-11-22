@@ -102,6 +102,8 @@
     "cancelled": "傳送已取消。",
     "restartRequired": "再次傳送前請重新啟動終端。",
     "createFailed": "無法建立新終端工作階段。",
+    "cwdMissing": "起始資料夾不存在，無法開啟新工作階段：{{detail}}。請檢查角色的起始資料夾。",
+    "cliExited": "CLI 收到提示後立即結束（結束代碼 {{detail}}）。可能在資料夾信任確認等啟動問題處結束，請查看終端。",
     "saveFailed": "請先儲存任務與角色設定。",
     "promptInvalid": "包含不支援的控制字元或超過 256 KiB。",
     "modelInvalid": "模型名稱無效。",

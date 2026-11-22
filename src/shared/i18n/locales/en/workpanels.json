@@ -102,6 +102,8 @@
     "cancelled": "Sending was cancelled.",
     "restartRequired": "Restart the terminal before sending again.",
     "createFailed": "Could not create a new terminal session.",
+    "cwdMissing": "The start folder is gone, so no new session was opened: {{detail}}. Check the character’s start folder.",
+    "cliExited": "The CLI exited right after the prompt (exit code {{detail}}). It may have quit at a startup question such as the folder trust check; see the terminal.",
     "saveFailed": "Save the work and profile before sending.",
     "promptInvalid": "The title or body contains unsupported control characters or exceeds 256 KiB.",
     "modelInvalid": "The model name is invalid.",

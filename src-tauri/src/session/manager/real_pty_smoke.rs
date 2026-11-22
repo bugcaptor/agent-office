@@ -243,6 +243,80 @@ return
         let _ = std::fs::remove_dir_all(&cwd_dir);
     }
 
+    /// 2026-11-22 사고 재현: 직전 세션이 들어갔다 지운 워크트리 폴더를 시작 위치로
+    /// 받으면 portable-pty가 말없이 홈에서 셸을 띄웠다. 이제는 생성이 거절되고,
+    /// 프로필 시작 폴더로 다시 만들면 셸이 그 폴더에서 뜬다.
+    #[cfg(unix)]
+    #[tokio::test]
+    #[ignore = "real PTY; run explicitly"]
+    async fn real_shell_refuses_a_removed_cwd_and_starts_in_the_profile_folder() {
+        let events = Arc::new(RecordingEvents::default());
+        let registry = Arc::new(SessionRegistry::new());
+        let hub = Arc::new(NotificationHub::new(
+            registry.clone(),
+            events.clone() as Arc<dyn AppEvents>,
+            Arc::new(SystemClock),
+            Duration::from_millis(3000),
+        ));
+        let observer = Arc::new(ObserverRuntime::new(hub.clone(), vec![]));
+        let profile_dir = scratch_dir("profile-cwd");
+        let worktree = profile_dir.join(".worktrees/t-1/scripts");
+        std::fs::create_dir_all(&worktree).unwrap();
+        std::fs::remove_dir_all(profile_dir.join(".worktrees")).unwrap();
+        let mgr = Arc::new(SessionManager::new(
+            Arc::new(PortablePtyFactory),
+            observer,
+            registry,
+            events.clone() as Arc<dyn AppEvents>,
+            hub,
+            Arc::new(|| None),
+        ));
+        let request = |cwd: &std::path::Path| CreateSessionRequest {
+            agent_id: "gone".into(),
+            cols: Some(80),
+            rows: Some(24),
+            cwd: Some(cwd.to_string_lossy().into_owned()),
+            shell: None,
+            startup_command: None,
+            personality_prompt: None,
+            autostart_claude: Some(false),
+            task_chat: false,
+        };
+
+        let err = mgr.create(request(&worktree)).unwrap_err();
+        assert_eq!(err, format!("session-cwd-missing:{}", worktree.display()));
+
+        mgr.create(request(&profile_dir)).expect("profile folder spawns");
+        let output = Arc::new(Mutex::new(String::new()));
+        let sink = output.clone();
+        mgr.attach_output(
+            "gone",
+            Channel::new(move |body| {
+                if let InvokeResponseBody::Json(json) = body {
+                    if let Ok(value) = serde_json::from_str::<serde_json::Value>(&json) {
+                        if let Some(data) = value.get("data").and_then(|d| d.as_str()) {
+                            sink.lock().push_str(data);
+                        }
+                    }
+                }
+                Ok(())
+            }),
+        );
+        let expected = std::fs::canonicalize(&profile_dir).unwrap();
+        let marker = format!("cwd=[{}]", expected.display());
+        let deadline = tokio::time::Instant::now() + Duration::from_secs(10);
+        loop {
+            mgr.write_input("gone", "printf 'cwd=[%s]\\n' \"$(pwd -P)\"\r");
+            tokio::time::sleep(Duration::from_millis(500)).await;
+            if output.lock().contains(&marker) {
+                break;
+            }
+            assert!(tokio::time::Instant::now() < deadline, "shell never reported {marker}: {}", output.lock());
+        }
+        mgr.dispose("gone");
+        let _ = std::fs::remove_dir_all(&profile_dir);
+    }
+
     /// 실 PTY + 실 sessiond 프로세스로 handoff_all -> adopt_detached 왕복
     /// 전체를 검증한다. 데몬을
     /// `client::connect_or_spawn`의 스폰 경로에 맡기지 않고 미리 띄워 둔다
@@ -510,7 +584,7 @@ return
             agent_id: "mash".into(),
             cols: Some(80),
             rows: Some(24),
-            cwd: Some("/definitely/not/a/real/dir".into()),
+            cwd: Some(home_dir()),
             shell: None,
             startup_command: Some("echo mash-marker".into()),
             personality_prompt: None,

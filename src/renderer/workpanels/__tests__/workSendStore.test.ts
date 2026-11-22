@@ -72,8 +72,31 @@ describe("업무 보내기", () => {
     api.sendWorkItem.mockResolvedValueOnce({ sessionId: "new", submittedAt: 100 });
     useAppStore.setState({ taskLabels: { a: { sessionId: "s", cwd: "/current" } } });
     const job = requestWorkSend(id); await confirming(); decideWorkSend(true); await job;
-    expect(restart).toHaveBeenCalledWith("a", { cwd: "/current", expected: { sessionId: "s", humanInputRevision: 5 } });
+    expect(restart).toHaveBeenCalledWith("a", { cwd: "/current", strictCwd: true, expected: { sessionId: "s", humanInputRevision: 5 } });
     expect(api.sendWorkItem.mock.calls[0][0]).toMatchObject({ sessionId: "new", freshSession: true });
+  });
+  it("새 세션 위치: 시작 폴더 안을 돌던 위치와 자동 진행은 시작 폴더에서, 시작 폴더 밖으로 옮긴 위치는 사람이 보낼 때만 이어 간다", async () => {
+    const old = { ...shell, restartRequired: true };
+    const send = async (cwd: string, auto: boolean) => {
+      restart.mockClear();
+      const id = item();
+      api.inspectWorkSendTarget.mockResolvedValueOnce(old).mockResolvedValueOnce(old).mockResolvedValueOnce({ ...shell, sessionId: "new" });
+      api.sendWorkItem.mockResolvedValueOnce({ sessionId: "new", submittedAt: 100 });
+      useAppStore.setState({ taskLabels: { a: { sessionId: "s", cwd } } });
+      await requestWorkSend(id, auto ? { auto: true } : { restartConfirmed: true });
+      return restart.mock.calls[0]?.[1]?.cwd;
+    };
+    expect(await send("/work/.worktrees/t-1/scripts", false)).toBeUndefined();
+    expect(await send("/elsewhere", false)).toBe("/elsewhere");
+    expect(await send("/elsewhere", true)).toBeUndefined();
+  });
+  it("시작 폴더가 없으면 홈으로 가지 않고 그 이유를 남긴다", async () => {
+    const id = item(); const old = { ...shell, restartRequired: true };
+    api.inspectWorkSendTarget.mockResolvedValue(old);
+    restart.mockRejectedValueOnce(new Error("work-send-cwd-missing:/work"));
+    await requestWorkSend(id, { auto: true });
+    expect(api.sendWorkItem).not.toHaveBeenCalled();
+    expect(useWorkItemStore.getState().items[0]).toMatchObject({ status: "todo", lastError: "work-send-cwd-missing:/work" });
   });
   it("웹에서 재시작을 확인했으면 앱 확인창 없이 재시작해 보내고, 쓰다 만 입력이 있으면 재시작하지 않는다", async () => {
     const id = item(); const old = { ...shell, restartRequired: true };
@@ -99,7 +122,7 @@ describe("업무 보내기", () => {
   it("세션이 없으면 생성하고 생성 중 교체됐으면 교체된 세션에 입력하지 않는다", async () => {
     const id = item(); api.inspectWorkSendTarget.mockResolvedValueOnce({ ...shell, sessionId: undefined }).mockResolvedValueOnce({ ...shell, sessionId: "replacement" });
     await requestWorkSend(id);
-    expect(create).toHaveBeenCalledWith("a"); expect(reserve).toHaveBeenCalledWith("a"); expect(api.sendWorkItem).not.toHaveBeenCalled();
+    expect(create).toHaveBeenCalledWith("a", undefined, { strictCwd: true }); expect(reserve).toHaveBeenCalledWith("a"); expect(api.sendWorkItem).not.toHaveBeenCalled();
     expect(useWorkItemStore.getState().items[0].lastError).toBe("work-send-session-changed");
   });
   it("프로필이나 저장이 바뀌면 입력 전에 중단하고 퇴근/시작 명령은 차단한다", async () => {

@@ -1,5 +1,5 @@
-//! 업무 보내기: CLI 기동/ACK/10초 대기/첫 프롬프트만 수행한다.
-//! 결과 파일 감시·CLI 종료는 없다. 세션과 사람 revision을 모든 입력 전에 고정한다.
+//! 업무 보내기: CLI 기동/ACK/10초 대기/첫 프롬프트, 제출 직후 2초 CLI 반환 확인만 수행한다.
+//! 그 뒤 결과 파일 감시·CLI 종료는 없다. 세션과 사람 revision을 모든 입력 전에 고정한다.
 pub(crate) mod cli_transition;
 mod launch;
 
@@ -20,6 +20,9 @@ use std::{
 
 /// 새 세션 셸이 시작 스크립트를 마치고 빈 프롬프트가 되기를 기다리는 최대 시간.
 const FRESH_SHELL_SETTLE: Duration = Duration::from_secs(10);
+/// 첫 프롬프트를 넣은 뒤 CLI가 곧바로 끝나지 않는지 지켜보는 시간.
+/// 기동 대기(`startup`)보다 길게 잡지 않는다.
+const POST_SUBMIT_WATCH: Duration = Duration::from_secs(2);
 
 #[derive(Default)]
 pub struct WorkSendRuntime {
@@ -296,6 +299,19 @@ impl WorkSendRuntime {
             )
             .await,
         )?;
+        // 제출 직후 CLI가 셸로 돌아왔다면 프롬프트는 CLI가 아니라 시작 대화상자가
+        // 받은 것이다(예: 폴더 신뢰 확인의 기본값 "No, exit"). 보내기는 성공처럼
+        // 보이지만 턴이 시작되지 않아 자동 진행이 영영 기다리므로 실패로 돌려준다.
+        let watch = tokio::time::Instant::now() + POST_SUBMIT_WATCH.min(startup);
+        loop {
+            if let ReceiptRead::Returned { exit_code } = transition.poll_receipt(&launch) {
+                return Err(format!("work-send-cli-exited:{exit_code}"));
+            }
+            if tokio::time::Instant::now() >= watch {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(50)).await;
+        }
         Ok(WorkSendResult {
             session_id: request.session_id,
             submitted_at,
@@ -526,6 +542,8 @@ mod tests {
         launch: Mutex<Option<String>>,
         children: Mutex<Vec<std::process::Child>>,
         exit_immediately: bool,
+        /// 정해지면 CLI가 이 시간(ms) 뒤 종료 코드 1로 끝난다.
+        exit_after_ms: Option<u64>,
         /// 남은 '사용 중' 응답 수. 0이면 조회 불가(None)로 답한다.
         busy_polls: std::sync::atomic::AtomicUsize,
     }
@@ -536,6 +554,17 @@ mod tests {
                 launch: Mutex::new(None),
                 children: Mutex::new(vec![]),
                 exit_immediately,
+                exit_after_ms: None,
+                busy_polls: Default::default(),
+            })
+        }
+        fn exits_after(ms: u64) -> Arc<Self> {
+            Arc::new(Self {
+                recorded: recording(),
+                launch: Mutex::new(None),
+                children: Mutex::new(vec![]),
+                exit_immediately: false,
+                exit_after_ms: Some(ms),
                 busy_polls: Default::default(),
             })
         }
@@ -557,17 +586,21 @@ mod tests {
                 if let Some(command) = self.launch.lock().unwrap().take() {
                     #[cfg(unix)]
                     let mut process = {
-                        let body = if self.exit_immediately { "return 127" } else { "sleep 1" };
+                        let body = match self.exit_after_ms {
+                            Some(ms) => format!("sleep {}; return 1", ms as f64 / 1000.0),
+                            None if self.exit_immediately => "return 127".into(),
+                            None => "sleep 1".into(),
+                        };
                         let mut process = std::process::Command::new("/bin/bash");
                         process.arg("-c").arg(format!("claude() {{ {body}; }}; {command}"));
                         process
                     };
                     #[cfg(windows)]
                     let mut process = {
-                        let body = if self.exit_immediately {
-                            "cmd /c exit 127"
-                        } else {
-                            "Start-Sleep -Seconds 1"
+                        let body = match self.exit_after_ms {
+                            Some(ms) => format!("Start-Sleep -Milliseconds {ms}; cmd /c exit 1"),
+                            None if self.exit_immediately => "cmd /c exit 127".into(),
+                            None => "Start-Sleep -Seconds 1".into(),
                         };
                         let mut process = std::process::Command::new(SUPPORTED_SHELL);
                         process
@@ -701,6 +734,23 @@ mod tests {
             "work-send-cli-returned"
         );
         assert_eq!(sink.recorded.recorded_writes().len(), 2);
+    }
+    #[tokio::test]
+    async fn cli_exit_right_after_the_prompt_fails_the_send() {
+        // 폴더 신뢰 확인처럼 첫 프롬프트를 받자마자 CLI가 끝나면 성공으로 넘기지 않는다.
+        let root = tempfile::tempdir().unwrap();
+        let sink = ExecutingSink::exits_after(1500);
+        let gate = InjectGate::new(sink.clone(), Arc::new(BotPromptArms::default()));
+        let runtime = WorkSendRuntime::default();
+        assert_eq!(
+            runtime
+                .send_with_wait(&gate, root.path().into(), request(), Duration::from_secs(1))
+                .await
+                .unwrap_err(),
+            "work-send-cli-exited:1"
+        );
+        // 기동 명령과 Enter, 프롬프트 붙여넣기와 Enter까지는 갔다.
+        assert_eq!(sink.recorded.recorded_writes().len(), 4);
     }
     #[tokio::test]
     async fn duplicate_send_is_rejected_and_other_producers_wait_until_cancelled() {

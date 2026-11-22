@@ -102,6 +102,8 @@
     "cancelled": "发送已取消。",
     "restartRequired": "再次发送前请重启终端。",
     "createFailed": "无法创建新终端会话。",
+    "cwdMissing": "起始文件夹不存在，未能打开新会话：{{detail}}。请检查角色的起始文件夹。",
+    "cliExited": "CLI 收到提示后立即退出（退出码 {{detail}}）。可能在文件夹信任确认等启动问题处退出，请查看终端。",
     "saveFailed": "请先保存任务和角色配置。",
     "promptInvalid": "包含不支持的控制字符或超过 256 KiB。",
     "modelInvalid": "模型名称无效。",

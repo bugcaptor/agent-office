@@ -11,6 +11,7 @@ import { reconcileWorkMonitor } from "./workMonitor";
 import { linkWorkSession } from "./sessionSummaryStore";
 import { pendingPrerequisites } from "./workDependencies";
 import { scheduleTemplateOf } from "./workSchedule";
+import { isInsideCwd } from "../labels/labelText";
 
 interface Confirmation { itemId: string; title: string; agentName: string; target: WorkSendTarget }
 export const useWorkSendStore = create<{ busy: Record<string, string>; confirmation: Confirmation | null }>(() => ({ busy: {}, confirmation: null }));
@@ -37,6 +38,15 @@ function profileError(agent: AgentProfile | undefined, auto = false): string | u
   if (agent.clockedOut) return "work-send-clocked-out";
   if (agent.startupCommand?.trim()) return "work-send-profile-unsupported";
   return undefined;
+}
+/** 사람이 보낸 업무로 새 세션을 열 위치. 시작 폴더 밖으로 옮겨 간 위치만 이어 가고,
+ * 시작 폴더 안을 돌아다니던 위치(하위 폴더·워크트리)는 시작 폴더로 되돌린다.
+ * 자동 진행은 늘 프로필 시작 폴더에서 연다. */
+function sendCwd(agentId: string): string | undefined {
+  const { taskLabels, agents } = useAppStore.getState();
+  const current = taskLabels[agentId]?.cwd;
+  const start = agents[agentId]?.cwd;
+  return current && start && !isInsideCwd(current, start) ? current : undefined;
 }
 export function workSendDisabledReason(agent: AgentProfile | undefined): string | undefined { return profileError(agent); }
 /** 자동 진행·웹 상태판이 쓰는 보내기 옵션. */
@@ -99,7 +109,7 @@ export function requestWorkSend(itemId: string, options: WorkSendOptions = {}): 
         if (current.sessionId !== confirmed.sessionId || current.humanInputRevision !== confirmed.humanInputRevision) throw new Error("work-send-human-input");
         const { restartAgentSession } = await import("../agent/restartAgentSession");
         unchanged();
-        const result = await restartAgentSession(agent.id, { cwd: useAppStore.getState().taskLabels[agent.id]?.cwd, expected: { sessionId: confirmed.sessionId!, humanInputRevision: confirmed.humanInputRevision } });
+        const result = await restartAgentSession(agent.id, { cwd: options.auto ? undefined : sendCwd(agent.id), strictCwd: true, expected: { sessionId: confirmed.sessionId!, humanInputRevision: confirmed.humanInputRevision } });
         if (!result || result.state !== "running") throw new Error("work-send-create-failed");
         target = await tauriApi.inspectWorkSendTarget(agent.id);
         if (target.sessionId !== result.sessionId) throw new Error("work-send-session-changed");
@@ -110,7 +120,7 @@ export function requestWorkSend(itemId: string, options: WorkSendOptions = {}): 
         let result;
         try {
           useAppStore.getState().setSessionState({ agentId: agent.id, status: "starting" });
-          result = await runGuardedCreateSession(agent.id);
+          result = await runGuardedCreateSession(agent.id, undefined, { strictCwd: true });
         } finally { release(); }
         if (!result || result.state !== "running") throw new Error("work-send-create-failed");
         target = await tauriApi.inspectWorkSendTarget(agent.id);

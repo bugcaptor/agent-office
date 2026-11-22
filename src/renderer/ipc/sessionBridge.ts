@@ -146,44 +146,76 @@ function withTimeout<T>(p: Promise<T>, ms: number, label: string): Promise<T> {
  *
  * overrides는 이번 1회 생성에만 프로필 값을 대체한다. `startupCommand`는
  * Claude 세션 이어하기에, `cwd`는 현재 작업 폴더에서의 재시작에 쓰인다.
+ *
+ * 시작 폴더가 지워졌으면(백엔드 `session-cwd-missing:<경로>`) 프로필 시작
+ * 폴더로 다시 시도한다. 그것도 없으면 사람이 여는 터미널은 홈에서 열고,
+ * `strictCwd`(업무 보내기)는 홈에서 CLI를 띄우지 않도록
+ * `work-send-cwd-missing:<경로>`를 던진다. 다른 실패는 undefined로 끝난다.
  */
 export async function runGuardedCreateSession(
   agentId: string,
   overrides?: { startupCommand?: string; cwd?: string },
+  options?: { strictCwd?: boolean },
 ): Promise<import("@shared/types").CreateSessionResult | undefined> {
-  const state = useAppStore.getState();
-  const agent = state.agents[agentId];
-  const opts = sessionOptsFor(agent, overrides);
-  // 새 세션의 첫 prompt hook 전까지 이전 세션 라벨이 남을 수 있다. VS Code는
-  // 라벨 cwd를 현재 폴더로 우선하므로, 모든 공통 생성 경로(재시작·이어하기·
-  // ensureSession)에서 실제 시작 cwd로 즉시 맞춘다.
-  const previousLabel = state.taskLabels[agentId];
-  if (previousLabel) {
-    useAppStore.setState({
-      taskLabels: {
-        ...state.taskLabels,
-        [agentId]: { ...previousLabel, cwd: opts?.cwd },
-      },
-    });
+  const agent = useAppStore.getState().agents[agentId];
+  // 시작 폴더 후보: 이번 위치 → 프로필 시작 폴더 → (사람이 여는 터미널만) 홈.
+  const wanted = [sessionOptsFor(agent, overrides)];
+  if (overrides?.cwd) wanted.push(sessionOptsFor(agent, { ...overrides, cwd: undefined }));
+  const fallback = wanted[wanted.length - 1];
+  if (!options?.strictCwd && fallback?.cwd) {
+    const { cwd: _cwd, ...rest } = fallback;
+    wanted.push(Object.keys(rest).length ? rest : undefined);
   }
-  try {
-    const res = await withTimeout(
-      tauriApi.createSession(agentId, opts),
-      CREATE_SESSION_TIMEOUT_MS,
-      `createSession(${agentId})`,
-    );
-    const cur = useAppStore.getState().sessions[agentId]?.status;
-    if (cur === "starting" && res?.state) {
-      useAppStore.getState().setSessionState({
-        agentId,
-        status: res.state === "disposed" ? "exited" : res.state,
+  const candidates = wanted.filter((o, i) => wanted.findIndex((p) => p?.cwd === o?.cwd) === i);
+  for (const [index, opts] of candidates.entries()) {
+    const last = index === candidates.length - 1;
+    // 새 세션의 첫 prompt hook 전까지 이전 세션 라벨이 남을 수 있다. VS Code는
+    // 라벨 cwd를 현재 폴더로 우선하므로, 모든 공통 생성 경로(재시작·이어하기·
+    // ensureSession)에서 실제 시작 cwd로 즉시 맞춘다.
+    const state = useAppStore.getState();
+    const previousLabel = state.taskLabels[agentId];
+    if (previousLabel) {
+      useAppStore.setState({
+        taskLabels: {
+          ...state.taskLabels,
+          [agentId]: { ...previousLabel, cwd: opts?.cwd },
+        },
       });
     }
-    return res;
-  } catch (err) {
-    useAppStore.getState().setSessionState({ agentId, status: "exited" });
-    console.warn(`createSession failed for ${agentId}`, err);
+    try {
+      const res = await withTimeout(
+        tauriApi.createSession(agentId, opts),
+        CREATE_SESSION_TIMEOUT_MS,
+        `createSession(${agentId})`,
+      );
+      const cur = useAppStore.getState().sessions[agentId]?.status;
+      if (cur === "starting" && res?.state) {
+        useAppStore.getState().setSessionState({
+          agentId,
+          status: res.state === "disposed" ? "exited" : res.state,
+        });
+      }
+      return res;
+    } catch (err) {
+      const missing = missingCwd(err);
+      if (missing !== undefined && !last) {
+        console.warn(`createSession(${agentId}): start folder is gone, trying the next one`, missing);
+        continue;
+      }
+      useAppStore.getState().setSessionState({ agentId, status: "exited" });
+      console.warn(`createSession failed for ${agentId}`, err);
+      if (missing !== undefined && options?.strictCwd) throw new Error(`work-send-cwd-missing:${missing}`);
+      return;
+    }
   }
+}
+
+/** 백엔드 spawn 오류가 시작 폴더 없음이면 그 경로. */
+function missingCwd(err: unknown): string | undefined {
+  const text = err instanceof Error ? err.message : String(err);
+  const marker = "session-cwd-missing:";
+  const at = text.indexOf(marker);
+  return at < 0 ? undefined : text.slice(at + marker.length);
 }
 
 /**

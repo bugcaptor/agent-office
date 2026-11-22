@@ -20,10 +20,11 @@ import { terminalRegistry } from "../terminal/TerminalRegistry";
 import { runGuardedCreateSession, reserveSessionReplacement } from "../ipc/sessionBridge";
 import { sharedDiaryFlusher } from "../diary/diaryFlusher";
 
-/** `cwd`는 이번 create에만 쓰는 재시작 위치이며 프로필을 바꾸지 않는다. */
+/** `cwd`는 이번 create에만 쓰는 재시작 위치이며 프로필을 바꾸지 않는다.
+ * `strictCwd`는 시작 폴더가 모두 없을 때 홈으로 가지 않고 던진다(runGuardedCreateSession). */
 export async function restartAgentSession(
   agentId: string,
-  overrides?: { cwd?: string; expected?: { sessionId: string; humanInputRevision: number } },
+  overrides?: { cwd?: string; strictCwd?: boolean; expected?: { sessionId: string; humanInputRevision: number } },
 ): Promise<import("@shared/types").CreateSessionResult | undefined> {
   const release = reserveSessionReplacement(agentId);
   if (!release) return;
@@ -70,7 +71,7 @@ export async function restartAgentSession(
     //     fire-and-forget — 재시작을 블록하지 않는다.
     void sharedDiaryFlusher().flushAgent(agentId, { includeLive: false, source: "session-end" });
 
-    return await runGuardedCreateSession(agentId, overrides);
+    return await runGuardedCreateSession(agentId, overrides, { strictCwd: overrides?.strictCwd });
   } finally {
     release();
   }
