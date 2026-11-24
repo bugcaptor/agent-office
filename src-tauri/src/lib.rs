@@ -253,7 +253,7 @@ where
 fn forwarder_executable_path() -> std::path::PathBuf {
     if let Some(appimage) = std::env::var_os("APPIMAGE") {
         let path = std::path::PathBuf::from(appimage);
-        // forwarder_shell_command가 절대 경로를 요구한다 — 이상한 값이면 무시.
+        // forwarder_path가 절대 경로를 요구한다 — 이상한 값이면 무시.
         if path.is_absolute() {
             return path;
         }
@@ -1056,7 +1056,7 @@ mod tests {
         );
 
         // 상대 경로 APPIMAGE는 무시하고 current_exe로 폴백한다
-        // (forwarder_shell_command가 절대 경로를 요구).
+        // (forwarder_path가 절대 경로를 요구).
         std::env::set_var("APPIMAGE", "relative.AppImage");
         assert_eq!(
             forwarder_executable_path(),

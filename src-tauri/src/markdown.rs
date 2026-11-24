@@ -21,7 +21,7 @@
 // `Err("CONFLICT: ...")`로 접두사가 "CONFLICT"인 에러를 돌려준다(프런트가
 // 접두사로 충돌을 판별).
 
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::time::UNIX_EPOCH;
 
 use crate::file_scan::walk_files;
@@ -142,18 +142,6 @@ pub fn list_markdown_files_with_backend(
         // es.exe 부재/실패/타임아웃 -- 조용히 워커로 폴백.
     }
     list_markdown_files(root)
-}
-
-/// 확장자가 md/mdx/markdown 중 하나인지(대소문자 무시). `file_scan::walk_files`의
-/// 확장자 필터와 별개로, 등가성 테스트 등에서 개별 경로를 확인할 때 쓴다.
-fn has_markdown_extension(path: &Path) -> bool {
-    match path.extension().and_then(|e| e.to_str()) {
-        Some(ext) => {
-            let lower = ext.to_ascii_lowercase();
-            MARKDOWN_EXTENSIONS.contains(&lower.as_str())
-        }
-        None => false,
-    }
 }
 
 /// root 기준 rel_path 파일을 읽는다. 경로 봉쇄를 적용하고, 2 MiB 초과·

@@ -76,7 +76,7 @@ pub(crate) async fn model_catalog_stdout(
     let mut child = command.spawn().ok()?;
 
     tokio::time::timeout(timeout, async {
-        let mut stdout = child.stdout.take()?;
+        let stdout = child.stdout.take()?;
         let mut output = Vec::new();
         stdout
             .take(MODEL_CATALOG_STDOUT_MAX_BYTES + 1)

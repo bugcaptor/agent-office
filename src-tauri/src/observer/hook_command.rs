@@ -82,6 +82,13 @@ fn short_path(path: &str) -> Option<String> {
     }
 }
 
+/// `<executable> --observer-forward <args...>`를 훅 셸에서 실행하는 명령 문자열을 만든다.
+/// unix는 codex/claude 어댑터가 함께 쓰고, Windows는 codex만 쓴다(claude는 훅의
+/// `args` 배열로 forwarder를 직접 실행한다).
+///
+/// 훅 URL을 명령에 박지 않는 것이 핵심이다: forwarder가 실행 시점에 세션 env의
+/// `AGENT_OFFICE_HOOK_URL`을 읽고, 연결이 거부되면 `AGENT_OFFICE_APP_DATA/observer-port`
+/// 파일로 1회 재시도한다(이슈 #30). URL을 박으면 재시작 후 입양된 세션이 죽은 포트를 때린다.
 pub fn forwarder_shell_command(
     executable: &Path,
     args: &[&str],
