@@ -76,7 +76,7 @@ $payloads = @(
     '{"hook_event_name":"UserPromptSubmit","prompt":"codex-marker","session_id":"native-codex"}',
     '{"hook_event_name":"PostToolUse","session_id":"native-codex"}',
     '{"hook_event_name":"PermissionRequest","tool_input":{"description":"codex-attention"},"session_id":"native-codex"}',
-    '{"hook_event_name":"Stop","last_assistant_message":"must-not-surface","session_id":"native-codex"}',
+    '{"hook_event_name":"Stop","last_assistant_message":"codex-stop","session_id":"native-codex"}',
     '{"hook_event_name":"SubagentStart","session_id":"native-codex"}',
     '{"hook_event_name":"SubagentStop","session_id":"native-codex"}'
 )
@@ -106,7 +106,7 @@ $settings = Get-Content -LiteralPath $settingsPath -Raw | ConvertFrom-Json
 $events = @(
     [pscustomobject]@{ Name = 'UserPromptSubmit'; Body = '{"prompt":"claude-marker","session_id":"native-claude"}' },
     [pscustomobject]@{ Name = 'PostToolUse'; Body = '{"session_id":"native-claude"}' },
-    [pscustomobject]@{ Name = 'Notification'; Body = '{"message":"claude-attention","session_id":"native-claude"}' },
+    [pscustomobject]@{ Name = 'Notification'; Body = '{"notification_type":"permission_prompt","message":"claude-attention","session_id":"native-claude"}' },
     [pscustomobject]@{ Name = 'Stop'; Body = '{"message":"claude-stop","session_id":"native-claude"}' },
     [pscustomobject]@{ Name = 'SubagentStart'; Body = '{"session_id":"native-claude"}' },
     [pscustomobject]@{ Name = 'SubagentStop'; Body = '{"session_id":"native-claude"}' }
@@ -841,7 +841,7 @@ return
         while {
             let activities = events.activities();
             let notifications = events.notifications();
-            activities.len() < 4
+            activities.len() < 5
                 || !activities
                     .iter()
                     .any(|event| event.text.as_deref() == Some("codex-marker"))
@@ -850,7 +850,7 @@ return
                     .any(|event| event.message == "codex-attention")
                 || !notifications
                     .iter()
-                    .any(|event| event.message == "작업이 완료되었습니다.")
+                    .any(|event| event.message == "codex-stop")
         } {
             if tokio::time::Instant::now() >= deadline {
                 let pid = std::fs::read_to_string(&shell_pid).unwrap();
@@ -878,8 +878,8 @@ return
         }
         assert_eq!(
             events.activities().len(),
-            4,
-            "Codex fake must emit the complete four-activity boundary before Claude starts",
+            5,
+            "Codex fake must emit the complete five-activity boundary (SubCount included) before Claude starts",
         );
         let codex_argv = std::fs::read_to_string(&codex_args)
             .unwrap()
@@ -915,7 +915,7 @@ return
             || {
                 let activities = events.activities();
                 let notifications = events.notifications();
-                activities.len() >= 8
+                activities.len() >= 10
                     && activities
                         .iter()
                         .any(|event| event.text.as_deref() == Some("claude-marker"))
@@ -927,7 +927,7 @@ return
                         .any(|event| event.message == "claude-stop")
             },
             Duration::from_secs(10),
-            "Claude fake did not cross wrapper/settings/curl/server",
+            "Claude fake did not cross wrapper/settings/forwarder/server",
         )
         .await;
         let claude_argv = std::fs::read_to_string(&claude_args)
@@ -946,8 +946,8 @@ return
         let notifications = events.notifications();
         assert_eq!(
             activities.len(),
-            8,
-            "Codex and Claude fakes must emit eight activities total",
+            10,
+            "Codex and Claude fakes must emit ten activities total (SubCount per turn included)",
         );
         assert_eq!(
             activities
@@ -983,13 +983,10 @@ return
             .any(|event| event.message == "claude-attention"));
         assert!(notifications
             .iter()
-            .any(|event| event.message == "작업이 완료되었습니다."));
+            .any(|event| event.message == "codex-stop"));
         assert!(notifications
             .iter()
             .any(|event| event.message == "claude-stop"));
-        assert!(!notifications
-            .iter()
-            .any(|event| event.message.contains("must-not-surface")));
         assert!(codex_pid.is_file() && claude_pid.is_file());
         let codex_host_pid = std::fs::read_to_string(&codex_pid).unwrap();
         let claude_host_pid = std::fs::read_to_string(&claude_pid).unwrap();
