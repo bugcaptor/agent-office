@@ -10,6 +10,9 @@ use super::event::{
     claude_transcript_progress_message, hook_cwd, message, prompt_text, running_subagents,
     tool_activity_text, transcript_path,
 };
+#[cfg(windows)]
+use super::hook_command::forwarder_path;
+#[cfg(not(windows))]
 use super::hook_command::forwarder_shell_command;
 use super::{
     AdapterSessionPlan, CommandWrapperSpec, ObserverAdapter, ObserverAdapterError, ObserverEvent,
@@ -242,8 +245,23 @@ impl ClaudeAdapter {
     /// SessionStart/SessionEnd처럼 훅 stdout이 대화 컨텍스트로 주입되는 이벤트에도
     /// 같은 명령을 쓴다. forwarder는 stdout에 아무것도 쓰지 않으므로(서버 응답을
     /// 버린다) 예전 curl `-o /dev/null` 변형이 필요 없다.
-    fn hook_command(&self, event: &str) -> Result<String, ObserverAdapterError> {
-        forwarder_shell_command(&self.forwarder_executable, &["claude", event])
+    fn hook_entry(
+        &self,
+        event: &str,
+        matcher: &str,
+    ) -> Result<serde_json::Value, ObserverAdapterError> {
+        #[cfg(windows)]
+        let handler = serde_json::json!({
+            "type": "command",
+            "command": forwarder_path(&self.forwarder_executable)?,
+            "args": ["--observer-forward", "claude", event],
+        });
+        #[cfg(not(windows))]
+        let handler = serde_json::json!({
+            "type": "command",
+            "command": forwarder_shell_command(&self.forwarder_executable, &["claude", event])?,
+        });
+        Ok(serde_json::json!([{ "matcher": matcher, "hooks": [handler] }]))
     }
 
     /// 훅 설정 JSON을 `path`에 (부모 디렉터리 생성 포함) 원자적으로 쓴다. 내용은
@@ -256,31 +274,21 @@ impl ClaudeAdapter {
                 ObserverAdapterError::new(format!("Claude settings directory failed: {error}"))
             })?;
         }
-        // forwarder 경로 검증 실패 시 여기서 Err를 전파한다(codex와 동일 계약).
-        let entry = |matcher: &str, command: String| {
-            serde_json::json!([{
-                "matcher": matcher,
-                "hooks": [{
-                    "type": "command",
-                    "command": command,
-                }],
-            }])
-        };
         // SessionStart/SessionEnd는 map_hook에서 이벤트로 매핑되지 않지만(허브
         // 무영향), ingest의 리줌 ID 캡처가 body를 본다 — 프롬프트 한 번 없이
         // 시작·종료한 세션도 리줌 ID를 남기기 위한 등록(리뷰 지적 반영).
         // 8개 이벤트 모두 forwarder
-        // 명령을 쓴다(위 hook_command 주석: 예전 silent 변형은 불필요).
+        // 명령을 쓴다(위 hook_entry 주석: 예전 silent 변형은 불필요).
         let mut settings = serde_json::json!({
             "hooks": {
-                "UserPromptSubmit": entry("", self.hook_command("UserPromptSubmit")?),
-                "PostToolUse": entry("", self.hook_command("PostToolUse")?),
-                "Notification": entry(ATTENTION_NOTIFICATION_MATCHER, self.hook_command("Notification")?),
-                "Stop": entry("", self.hook_command("Stop")?),
-                "SubagentStart": entry("", self.hook_command("SubagentStart")?),
-                "SubagentStop": entry("", self.hook_command("SubagentStop")?),
-                "SessionStart": entry("", self.hook_command("SessionStart")?),
-                "SessionEnd": entry("", self.hook_command("SessionEnd")?),
+                "UserPromptSubmit": self.hook_entry("UserPromptSubmit", "")?,
+                "PostToolUse": self.hook_entry("PostToolUse", "")?,
+                "Notification": self.hook_entry("Notification", ATTENTION_NOTIFICATION_MATCHER)?,
+                "Stop": self.hook_entry("Stop", "")?,
+                "SubagentStart": self.hook_entry("SubagentStart", "")?,
+                "SubagentStop": self.hook_entry("SubagentStop", "")?,
+                "SessionStart": self.hook_entry("SessionStart", "")?,
+                "SessionEnd": self.hook_entry("SessionEnd", "")?,
             },
         });
         // 동료 대화 등 추가 조각을 최상위에 얹는다(훅 키는 건드리지 않는다).
@@ -469,7 +477,7 @@ mod tests {
     }
 
     #[test]
-    fn claude_plan_writes_four_hooks_and_settings_wrapper() {
+    fn claude_plan_writes_eight_hooks_and_settings_wrapper() {
         let dir = scratch_dir();
         let adapter = ClaudeAdapter::new(dir.clone(), forwarder_exe());
         let context = ObserverSessionContext::new("ao-s1", "http://127.0.0.1:43123/hook");
@@ -504,7 +512,10 @@ mod tests {
             "settings must not embed a spawn-time observer port: {raw}",
         );
         let json: serde_json::Value = serde_json::from_str(&raw).unwrap();
-        for event in ["UserPromptSubmit", "PostToolUse", "Notification", "Stop"] {
+        for event in [
+            "UserPromptSubmit", "PostToolUse", "Notification", "Stop",
+            "SubagentStart", "SubagentStop", "SessionStart", "SessionEnd",
+        ] {
             let entry = &json["hooks"][event][0];
             let expected_matcher = if event == "Notification" {
                 super::ATTENTION_NOTIFICATION_MATCHER
@@ -517,8 +528,6 @@ mod tests {
             );
             assert_eq!(entry["hooks"][0]["type"], "command");
             let command = entry["hooks"][0]["command"].as_str().unwrap();
-            // unix는 forwarder 명령이 평문이라 인자를 직접 검증한다. windows는
-            // powershell EncodedCommand(base64)라 실행 픽스처로 검증한다(codex와 동일).
             #[cfg(not(windows))]
             {
                 assert!(
@@ -530,81 +539,13 @@ mod tests {
             }
             #[cfg(windows)]
             {
-                assert!(
-                    command.contains("powershell.exe"),
-                    "windows hook must use powershell forwarder for {event}: {command}",
+                assert_eq!(command, forwarder_exe().to_str().unwrap());
+                assert_eq!(
+                    entry["hooks"][0]["args"],
+                    serde_json::json!(["--observer-forward", "claude", event]),
                 );
             }
         }
-
-        let _ = std::fs::remove_dir_all(dir);
-    }
-
-    #[test]
-    fn claude_plan_preserves_subagent_lifecycle_hooks_from_the_legacy_observer() {
-        let dir = scratch_dir();
-        let adapter = ClaudeAdapter::new(dir.clone(), forwarder_exe());
-        let context = ObserverSessionContext::new("ao-s1", "http://127.0.0.1:43123/hook");
-
-        adapter.prepare_session(&context).unwrap();
-        let path = dir.join("ao-s1.settings.json");
-        let json: serde_json::Value =
-            serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
-
-        for event in ["SubagentStart", "SubagentStop"] {
-            let entry = &json["hooks"][event][0];
-            assert_eq!(entry["matcher"], "", "missing {event} hook: {json}");
-            let command = entry["hooks"][0]["command"].as_str().unwrap();
-            #[cfg(not(windows))]
-            assert!(
-                command.contains("--observer-forward")
-                    && command.contains("claude")
-                    && command.contains(event),
-                "wrong {event} command: {command}",
-            );
-            #[cfg(windows)]
-            assert!(
-                command.contains("powershell.exe"),
-                "wrong {event} command: {command}",
-            );
-        }
-
-        let _ = std::fs::remove_dir_all(dir);
-    }
-
-    #[test]
-    fn claude_plan_registers_session_lifecycle_hooks_via_forwarder() {
-        let dir = scratch_dir();
-        let adapter = ClaudeAdapter::new(dir.clone(), forwarder_exe());
-        let context = ObserverSessionContext::new("ao-s1", "http://127.0.0.1:43123/hook");
-
-        adapter.prepare_session(&context).unwrap();
-        let path = dir.join("ao-s1.settings.json");
-        let raw = std::fs::read_to_string(&path).unwrap();
-        let json: serde_json::Value = serde_json::from_str(&raw).unwrap();
-
-        for event in ["SessionStart", "SessionEnd"] {
-            let entry = &json["hooks"][event][0];
-            assert_eq!(entry["matcher"], "", "missing {event} hook: {json}");
-            let command = entry["hooks"][0]["command"].as_str().unwrap();
-            // SessionStart/End는 훅 stdout이 세션 컨텍스트로 주입되지만, forwarder는
-            // stdout에 아무것도 쓰지 않으므로(서버 응답을 버린다) 예전 curl
-            // `-o /dev/null` 변형 없이 나머지 이벤트와 같은 명령을 쓴다.
-            #[cfg(not(windows))]
-            assert!(
-                command.contains("--observer-forward")
-                    && command.contains("claude")
-                    && command.contains(event),
-                "wrong {event} command: {command}",
-            );
-            #[cfg(windows)]
-            assert!(
-                command.contains("powershell.exe"),
-                "wrong {event} command: {command}",
-            );
-        }
-        // 스테일 포트 회귀 방지(이슈 #30): 어떤 훅에도 포트가 박히지 않는다.
-        assert!(!raw.contains("127.0.0.1"), "settings must not embed a port: {raw}");
 
         let _ = std::fs::remove_dir_all(dir);
     }
@@ -634,7 +575,8 @@ mod tests {
             std::path::PathBuf::from("/tmp/Agent 'Office'/agent-office"),
         );
 
-        let command = adapter.hook_command("Stop").unwrap();
+        let entry = adapter.hook_entry("Stop", "").unwrap();
+        let command = entry[0]["hooks"][0]["command"].as_str().unwrap();
         assert_eq!(
             command,
             "'/tmp/Agent '\"'\"'Office'\"'\"'/agent-office' --observer-forward claude Stop",

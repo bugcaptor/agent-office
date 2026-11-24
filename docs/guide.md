@@ -37,7 +37,7 @@
 주의사항:
 
 - 호출은 **선택한 로컬 CLI 계정의 구독 사용량/크레딧을 소비**합니다. 실패해도 다른 provider·모델로 재시도하지 않습니다.
-- Agent Office는 **전역 Claude/Codex 설정을 수정하거나 승인을 대신하지 않습니다.** Codex hook은 Codex `/hooks` 화면에서 직접 검토·신뢰해야 합니다.
+- Agent Office는 **전역 Claude/Codex 설정을 수정하거나 승인을 대신하지 않습니다.** Codex hook은 Codex `/hooks` 화면에서 직접 검토·신뢰해야 합니다. Windows에서 Claude 관찰 훅을 사용하려면 Claude Code 2.1.139 이상이 필요합니다.
 - 관찰 래퍼는 Windows PowerShell·PowerShell 7·Git Bash·zsh를 지원합니다(WSL 제외). 설정 변경은 **새로 만드는 터미널부터** 적용됩니다.
 - 연동이 꺼져 있거나 실패해도 세션 관리·캐릭터·테마 등 나머지 기능은 계속 동작합니다.
 

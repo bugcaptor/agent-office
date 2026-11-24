@@ -81,7 +81,11 @@ $payloads = @(
     '{"hook_event_name":"SubagentStop","session_id":"native-codex"}'
 )
 foreach ($payload in $payloads) {
-    $payload | & $env:AO_FAKE_FORWARDER --observer-forward codex
+    $eventName = ($payload | ConvertFrom-Json).hook_event_name
+    $config = $args | Where-Object { $_ -like "hooks.$eventName=*" } | Select-Object -First 1
+    if ($config -notmatch ',command=(.+),timeout=2') { throw "missing hook command: $eventName" }
+    $command = $Matches[1] | ConvertFrom-Json
+    & ([scriptblock]::Create('$payload | ' + $command))
     if ($LASTEXITCODE -ne 0) { throw "forwarder failed: $LASTEXITCODE" }
 }
 return
@@ -109,8 +113,9 @@ $events = @(
 )
 foreach ($event in $events) {
     $group = $settings.hooks.PSObject.Properties[$event.Name].Value
-    $command = $group[0].hooks[0].command
-    $event.Body | & cmd.exe /d /s /c $command
+    $handler = $group[0].hooks[0]
+    $hookArgs = $handler.args
+    $event.Body | & $handler.command @hookArgs
     if ($LASTEXITCODE -ne 0) { throw "hook command failed: $LASTEXITCODE" }
 }
 return
@@ -885,15 +890,6 @@ return
         assert_eq!(
             codex_argv.iter().filter(|arg| arg.as_str() == "-c").count(),
             6
-        );
-        assert_eq!(
-            codex_argv
-                .iter()
-                .filter(
-                    |arg| arg.contains("powershell.exe -NoProfile -NonInteractive -EncodedCommand")
-                )
-                .count(),
-            6,
         );
         let rendered_codex_argv = codex_argv.join("\0");
         for forbidden in [

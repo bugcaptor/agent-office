@@ -171,7 +171,7 @@ mod tests {
     use std::path::{Path, PathBuf};
 
     #[cfg(windows)]
-    const HOOK_BODY: &str = r#"{"hook_event_name":"UserPromptSubmit","prompt":"marker"}"#;
+    const HOOK_BODY: &str = r#"{"hook_event_name":"UserPromptSubmit","prompt":"한글 & $marker"}"#;
 
     #[cfg(windows)]
     struct HookCommandFixture {
@@ -189,16 +189,35 @@ mod tests {
                 uuid::Uuid::new_v4(),
             ));
             std::fs::create_dir_all(&dir).unwrap();
-            let forwarder = dir.join("capture forwarder.ps1");
+            let forwarder = dir.join("capture forwarder.exe");
             let args_file = dir.join("forwarded args.txt");
             let stdin_file = dir.join("forwarded stdin.txt");
+            // 실제 훅 대상은 네이티브 exe다. ps1은 cmd/Git Bash가 직접 실행할 수 없다.
+            let source = dir.join("capture.rs");
             std::fs::write(
-                &forwarder,
-                r#"[IO.File]::WriteAllLines($env:AO_CAPTURE_ARGS, [string[]]$args)
-[IO.File]::WriteAllText($env:AO_CAPTURE_STDIN, [Console]::In.ReadToEnd())
+                &source,
+                r#"
+fn main() {
+    use std::{env, fs, io};
+    let args = env::args().skip(1).collect::<Vec<_>>().join("\n");
+    fs::write(env::var_os("AO_CAPTURE_ARGS").unwrap(), args).unwrap();
+    let mut body = fs::File::create(env::var_os("AO_CAPTURE_STDIN").unwrap()).unwrap();
+    io::copy(&mut io::stdin(), &mut body).unwrap();
+}
 "#,
             )
             .unwrap();
+            let built = std::process::Command::new("rustc")
+                .arg(source)
+                .arg("-o")
+                .arg(&forwarder)
+                .output()
+                .unwrap();
+            assert!(
+                built.status.success(),
+                "{}",
+                String::from_utf8_lossy(&built.stderr)
+            );
             Self {
                 dir,
                 forwarder,
@@ -211,9 +230,15 @@ mod tests {
             use std::io::Write as _;
             use std::process::{Command, Stdio};
 
-            let mut child = Command::new(shell)
-                .args(shell_args)
-                .arg(command)
+            let mut process = Command::new(shell);
+            process.args(shell_args);
+            if shell_args.contains(&"/C") {
+                use std::os::windows::process::CommandExt;
+                process.raw_arg(format!(r#""{command}""#));
+            } else {
+                process.arg(command);
+            }
+            let mut child = process
                 .env("AO_CAPTURE_ARGS", &self.args_file)
                 .env("AO_CAPTURE_STDIN", &self.stdin_file)
                 .stdin(Stdio::piped())
@@ -239,7 +264,7 @@ mod tests {
             );
             assert_eq!(
                 std::fs::read_to_string(&self.args_file).unwrap(),
-                "--observer-forward\r\ncodex\r\n",
+                "--observer-forward\ncodex",
             );
             assert_eq!(
                 std::fs::read_to_string(&self.stdin_file).unwrap(),
@@ -319,6 +344,11 @@ mod tests {
         );
 
         let command = adapter.forwarder_command().unwrap();
+        #[cfg(windows)]
+        assert_eq!(
+            command,
+            r#"C:"/Program Files/Agent Office/agent-office.exe" --observer-forward codex"#
+        );
         let command = serde_json::to_string(&command).unwrap();
         assert_eq!(
             first.env,
