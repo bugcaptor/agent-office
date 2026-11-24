@@ -244,7 +244,13 @@ mod tests {
     fn codex_command_pins_low_cost_isolated_contract() {
         let spec = build("codex", "요약 지시", "gpt-5.4-mini");
         let rendered = command_debug(&spec.command);
-        let config = "model_reasoning_effort=\"low\"";
+        // Windows는 모델·추론 강도를 env로 넘기고 스크립트가 `--config` 값을 조립한다
+        // (실제 argv는 windows_powershell_*_boundary 테스트가 캡처로 검증).
+        let config = if cfg!(windows) {
+            "AO_EFFORT=low"
+        } else {
+            "model_reasoning_effort=\"low\""
+        };
         for expected in [
             "exec",
             "--ignore-user-config",
@@ -382,10 +388,19 @@ exit 0
         )
         .unwrap();
 
-        let original_path = std::env::var_os("PATH").unwrap_or_default();
-        let path = std::env::join_paths(
-            std::iter::once(dir.clone()).chain(std::env::split_paths(&original_path)),
-        )
+        // 스크립트는 PATH 전체에서 Application(.cmd·.exe)을 ExternalScript(.ps1)보다
+        // 먼저 고른다. 사용자 PATH를 이어 붙이면 설치된 진짜 codex가 잡혀 실제 모델
+        // 호출이 나가므로, 페이크 폴더와 powershell.exe가 있는 시스템 폴더만 둔다.
+        let system_root = std::path::PathBuf::from(
+            std::env::var_os("SystemRoot").unwrap_or_else(|| r"C:\Windows".into()),
+        );
+        let system32 = system_root.join("System32");
+        let path = std::env::join_paths([
+            dir.clone(),
+            system32.join("WindowsPowerShell").join("v1.0"),
+            system32,
+            system_root,
+        ])
         .unwrap();
         let mut spec = build("codex", DANGEROUS_INSTRUCTION, "gpt-5.4-mini");
         spec.command.env("PATH", path);

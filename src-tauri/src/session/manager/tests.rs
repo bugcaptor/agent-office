@@ -404,6 +404,11 @@
         Arc::new(manager)
     }
 
+    /// TOML 기본 문자열 안의 경로 — Windows 백슬래시는 `\\`로 이스케이프된다.
+    fn toml_path(path: &Path) -> String {
+        path.display().to_string().replace('\\', "\\\\")
+    }
+
     fn env_value(control: &FakeControl, key: &str) -> Option<String> {
         control.spawned_env().into_iter().find(|(k, _)| k == key).map(|(_, v)| v)
     }
@@ -432,8 +437,8 @@
             env_value(&control, "AGENT_OFFICE_CODEX_WRITABLE_ROOTS").unwrap(),
             format!(
                 "sandbox_workspace_write.writable_roots=[\"/mine\",\"{}\",\"{}\"]",
-                inbox.display(),
-                cache.display()
+                toml_path(&inbox),
+                toml_path(&cache)
             )
         );
         assert_eq!(env_value(&control, "AGENT_OFFICE_OFFICE_PROMPT"), Some(appended.clone()));
@@ -480,7 +485,7 @@
             env_value(&control, "AGENT_OFFICE_CODEX_WRITABLE_ROOTS").unwrap(),
             format!(
                 "sandbox_workspace_write.writable_roots=[\"/mine\",\"{}\"]",
-                scratch.join("app").join("doc-view").display()
+                toml_path(&scratch.join("app").join("doc-view"))
             )
         );
         // 환경변수와 shim은 패널 설정과 무관하게 유지한다.

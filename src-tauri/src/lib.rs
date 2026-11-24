@@ -1038,13 +1038,21 @@ mod tests {
 
     #[test]
     fn forwarder_executable_prefers_absolute_appimage_path() {
-        let _guard = APPIMAGE_ENV_LOCK.lock().unwrap();
+        let _guard = APPIMAGE_ENV_LOCK
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         let previous = std::env::var_os("APPIMAGE");
 
-        std::env::set_var("APPIMAGE", "/opt/apps/agent-office.AppImage");
+        // Windows에서는 드라이브 없는 `/opt/...`가 절대 경로가 아니다.
+        let appimage = if cfg!(windows) {
+            r"C:\opt\apps\agent-office.AppImage"
+        } else {
+            "/opt/apps/agent-office.AppImage"
+        };
+        std::env::set_var("APPIMAGE", appimage);
         assert_eq!(
             forwarder_executable_path(),
-            std::path::PathBuf::from("/opt/apps/agent-office.AppImage"),
+            std::path::PathBuf::from(appimage),
         );
 
         // 상대 경로 APPIMAGE는 무시하고 current_exe로 폴백한다
@@ -1063,7 +1071,9 @@ mod tests {
 
     #[test]
     fn forwarder_executable_without_appimage_uses_current_exe() {
-        let _guard = APPIMAGE_ENV_LOCK.lock().unwrap();
+        let _guard = APPIMAGE_ENV_LOCK
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         let previous = std::env::var_os("APPIMAGE");
         std::env::remove_var("APPIMAGE");
 

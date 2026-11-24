@@ -82,8 +82,13 @@ mod tests {
 
     #[test]
     fn normalizes_tilde_and_trailing_separator_without_resolving_symlinks() {
-        let root = normalize_root("/tmp/a/".into()).unwrap();
-        assert_eq!(root, "/tmp/a");
+        // Windows는 드라이브 없는 `/tmp`를 절대 경로로 보지 않고, 키를 `/`·소문자로 통일한다.
+        if cfg!(windows) {
+            assert_eq!(normalize_root(r"C:\Tmp\A\".into()).unwrap(), "c:/tmp/a");
+            assert_eq!(normalize_root(r"C:\".into()).unwrap(), "c:/");
+        } else {
+            assert_eq!(normalize_root("/tmp/a/".into()).unwrap(), "/tmp/a");
+        }
         assert_eq!(
             normalize_root("relative".into()),
             Err("invalid-root".into())
