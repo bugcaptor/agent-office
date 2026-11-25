@@ -424,7 +424,7 @@ macOS에서 iTerm을 선택하면 처음 사용할 때 자동화 권한을 요�
 
 별도로 정리하려면 `npm run sweep`, 이번 실행만 건너뛰려면 `AGENT_OFFICE_SKIP_SWEEP=1`을 사용한다. `AGENT_OFFICE_SWEEP_DAYS`는 잔존물 기준 일수(기본 3)다. `cargo install cargo-sweep`으로 설치하면 `deps/`까지 정리한다.
 
-설치용 빌드(`build:bundle`, `build:mac`, `build:mac:dmg`, `build:win`, `install:mac`, `install:win`)는 Cargo 1.91 이상이 필요하다. Rust 중간 파일을 빌드마다 임시 디렉터리에 두고 빌드가 끝나면 삭제한다. 설치 파일은 기존 `bundle/` 경로에 남는다. 릴리즈 빌드를 반복하면서 캐시를 재사용하려면 `npm run tauri build`를 사용한다.
+설치용 빌드(`build:bundle`, `build:mac`, `build:mac:dmg`, `build:win`, `install:mac`, `install:win`)는 Cargo 1.91 이상이 필요하다. 빌드가 성공하면 저장소 안에 쌓인 개발·릴리즈 Rust 중간 파일도 함께 정리한다. 설치 파일과 앱 실행 파일은 기존 경로에 남는다. 빌드가 실패하면 이번 빌드의 임시 디렉터리만 정리한다. 릴리즈 빌드를 반복하면서 캐시를 재사용하려면 `npm run tauri build`를 사용한다.
 
 ### 요구사항
 
