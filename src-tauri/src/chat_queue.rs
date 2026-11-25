@@ -20,7 +20,7 @@ use crate::types::WorkFollowUpRequest;
 
 /// 캐릭터마다 쌓아 둘 수 있는 메시지 수.
 pub const MAX_QUEUED: usize = 20;
-/// 메시지 하나의 바이트 상한(웹 상태판 입력 상한과 같다).
+/// 메시지 하나의 바이트 상한. 웹 상태판이 받는 글(업무 본문·토의 답·권한 답)도 같다.
 pub const MAX_TEXT_BYTES: usize = 32 * 1024;
 /// 넣은 뒤 턴 관측이 따라오지 않아도(슬래시 명령 등) 이만큼 지나면 다음을 넣는다.
 const SENT_FALLBACK_MS: u64 = 60_000;
@@ -74,11 +74,16 @@ pub struct ChatQueue {
     seq: AtomicU64,
 }
 
-/// 보내기 전 글 검사(웹 상태판 `check_text`와 같은 규칙).
+/// 보내기 전 글 검사: 빈 글을 거부하고 `check_limits`를 본다.
 pub fn check_text(text: &str) -> Result<(), String> {
     if text.trim().is_empty() {
         return Err("empty".into());
     }
+    check_limits(text)
+}
+
+/// 길이·제어 문자 검사(빈 글은 허용). 웹 상태판이 받는 글도 이 규칙을 쓴다.
+pub fn check_limits(text: &str) -> Result<(), String> {
     if text.len() > MAX_TEXT_BYTES {
         return Err("too-large".into());
     }

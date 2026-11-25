@@ -4,6 +4,7 @@ import { marked } from "marked";
 import type { ChatDownload } from "@shared/types";
 import { tauriApi } from "../ipc/tauriApi";
 import { renderMarkdown } from "../markdown/renderMarkdown";
+import type { Translate } from "../shared/textKey";
 
 export type ShowNotice = (message: string) => void;
 
@@ -56,12 +57,15 @@ async function copyImage(img: HTMLImageElement): Promise<void> {
   }
 }
 
+/** 복사하고 결과를 알린다. */
+function copyWithNotice(text: string, onNotice: ShowNotice, t: Translate): void {
+  void copyText(text).then(() => onNotice(t("chatView.copied")), () => onNotice(t("chatView.copyFailed")));
+}
+
 export function CopyButton({ text, message = false, onNotice }: { text: string; message?: boolean; onNotice: ShowNotice }) {
   const { t } = useTranslation("terminal");
   return (
-    <button type="button" className="pixel-btn chat-action" onClick={() => {
-      void copyText(text).then(() => onNotice(t("chatView.copied")), () => onNotice(t("chatView.copyFailed")));
-    }}>
+    <button type="button" className="pixel-btn chat-action" onClick={() => copyWithNotice(text, onNotice, t)}>
       {t(message ? "chatView.copyMessage" : "chatView.copyText")}
     </button>
   );
@@ -152,9 +156,7 @@ export function ChatMarkdown({ text, onNotice }: { text: string; onNotice: ShowN
     const button = event.target.closest(".chat-actions > button.chat-action");
     if (!button || !event.currentTarget.contains(button)) return;
     const code = button.parentElement?.previousElementSibling?.querySelector(":scope > code");
-    if (code?.textContent) {
-      void copyText(code.textContent).then(() => onNotice(t("chatView.copied")), () => onNotice(t("chatView.copyFailed")));
-    }
+    if (code?.textContent) copyWithNotice(code.textContent, onNotice, t);
   };
   return <div className="markdown-body" onClick={handleClick} dangerouslySetInnerHTML={{ __html: html }} />;
 }

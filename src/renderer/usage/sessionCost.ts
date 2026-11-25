@@ -12,7 +12,7 @@
 // 실시간 누적·과거 시딩)의 순수 함수만 갖고, 세션 경계 판정·이중 계산 방지
 // (`at > seedAt`)는 스토어(`appStore.ts`) 몫이다.
 import type { SessionEventRecord, SessionEventTokens, SessionId } from "@shared/types";
-import { estimateCostBreakdown, formatUsd } from "../analytics/pricing";
+import { estimateCostBreakdown, formatTokenPair, formatUsd } from "../analytics/pricing";
 
 /** 세션 하나의 토큰·비용 누계. 전부 불변값 — 갱신은 항상 새 객체를 만든다. */
 export interface SessionUsageTotals {
@@ -123,6 +123,16 @@ export function formatSessionCost(totals: SessionUsageTotals): string {
 /** 캐시 읽기·쓰기까지 포함한 전체 토큰(= 비용이 실제로 환산하는 대상). */
 export function grossTokens(totals: SessionUsageTotals): number {
   return totals.input + totals.output + totals.cacheRead + totals.cacheWrite;
+}
+
+/** 캐시를 뺀 순수 입출력 토큰. */
+export function netTokens(totals: SessionUsageTotals): number {
+  return totals.input + totals.output;
+}
+
+/** 토큰 표기(`formatTokenPair`, 분석 패널과 같은 규칙). 터미널 요약 바와 웹 상태판이 같이 쓴다. */
+export function formatSessionTokens(totals: SessionUsageTotals): string {
+  return formatTokenPair(netTokens(totals), grossTokens(totals));
 }
 
 /**

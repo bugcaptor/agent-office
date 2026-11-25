@@ -20,6 +20,7 @@ use serde::Deserialize;
 use serde_json::{json, Value};
 use tokio::sync::oneshot;
 
+use crate::chat_queue::check_limits;
 use crate::control::ControlContext;
 use crate::httpapi::{fail, ok, session_state_str};
 use crate::types::{is_office_agent_id, AgentProfile, WorkAgent, WorkCli, OFFICE_AGENT_ID};
@@ -33,8 +34,6 @@ const BODY_CHARS: usize = 4000;
 const DONE_TASKS: usize = 20;
 /// 토의 속기록은 최근 발언만 보인다.
 const TRANSCRIPT_ITEMS: usize = 200;
-/// 웹에서 받는 글(업무 본문·토의 답)의 바이트 상한.
-const MAX_INPUT_BYTES: usize = 32 * 1024;
 /// 터미널 포그라운드 조회(ps·pgrep)를 다시 하기 전 간격. 여러 기기가 몇 초마다 물어도
 /// 캐릭터마다 이 간격에 한 번만 프로세스를 띄운다.
 const PROBE_TTL: Duration = Duration::from_secs(2);
@@ -748,22 +747,12 @@ struct NewTask {
     restart: bool,
 }
 
-fn check_text(text: &str) -> Result<(), String> {
-    if text.len() > MAX_INPUT_BYTES {
-        return Err("too-large".into());
-    }
-    if text.chars().any(|c| c.is_control() && c != '\n' && c != '\t') {
-        return Err("control-char".into());
-    }
-    Ok(())
-}
-
 async fn create_task(State(ctx): Ctx, Json(t): Json<NewTask>) -> Json<Value> {
     let title = t.title.trim();
     if title.is_empty() && t.body.trim().is_empty() {
         return fail("empty");
     }
-    if let Err(e) = check_text(title).and_then(|_| check_text(&t.body)) {
+    if let Err(e) = check_limits(title).and_then(|_| check_limits(&t.body)) {
         return fail(e);
     }
     if let Some(id) = &t.assignee_agent_id {
@@ -853,7 +842,7 @@ async fn answer_discussion(State(ctx): Ctx, Path(id): Path<String>, Json(a): Jso
     if a.text.trim().is_empty() {
         return fail("empty");
     }
-    if let Err(e) = check_text(&a.text) {
+    if let Err(e) = check_limits(&a.text) {
         return fail(e);
     }
     match bridged(&ctx, json!({ "op": "discuss-answer", "discussionId": id, "text": a.text })).await {
@@ -884,7 +873,7 @@ struct AskAnswer {
 async fn answer_ask(State(ctx): Ctx, Path(id): Path<String>, Json(a): Json<AskAnswer>) -> Json<Value> {
     use crate::observer::permission::AskDecision;
     for text in a.answers.iter().flat_map(|m| m.values()).chain(a.message.iter()) {
-        if let Err(e) = check_text(text) {
+        if let Err(e) = check_limits(text) {
             return fail(e);
         }
     }

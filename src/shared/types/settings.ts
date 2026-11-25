@@ -266,7 +266,7 @@ export interface WebDashLabel {
 export interface WebDashUsage {
   /** 이 누계를 낸 세션. 웹은 지금 세션과 같을 때만 보인다. */
   sessionId: string;
-  /** 토큰 표기(`formatTokenPair`, 예 `11.7K CH(1.7M)`). */
+  /** 토큰 표기(`formatSessionTokens`, 예 `11.7K CH(1.7M)`). */
   tokens: string;
   /** 비용 표기(`formatSessionCost`, 예 `~$3.45`, 모르면 `—`). */
   cost: string;

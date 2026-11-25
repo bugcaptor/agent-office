@@ -9,8 +9,7 @@ import { OFFICE_AGENT_ID } from "@shared/types";
 import type { WebDashActivity, WebDashLabel, WebDashStatus, WebDashUsage } from "@shared/types";
 import { tauriApi } from "../ipc/tauriApi";
 import { useAppStore } from "../store/appStore";
-import { formatTokenPair } from "../analytics/pricing";
-import { currentSessionTotals, formatSessionCost, grossTokens } from "../usage/sessionCost";
+import { currentSessionTotals, formatSessionCost, formatSessionTokens, grossTokens } from "../usage/sessionCost";
 
 interface WebDashNotice extends WebDashActivity {
   id: number;
@@ -48,11 +47,10 @@ function webDashUsage(agentId: string): WebDashUsage | undefined {
   const current = currentSessionTotals(sessionUsage, sessionUsageSeed, agentId);
   if (!current) return undefined;
   const { totals } = current;
-  const gross = grossTokens(totals);
-  if (totals.turns === 0 && gross === 0) return undefined;
+  if (totals.turns === 0 && grossTokens(totals) === 0) return undefined;
   return {
     sessionId: current.sessionId,
-    tokens: formatTokenPair(totals.input + totals.output, gross),
+    tokens: formatSessionTokens(totals),
     cost: formatSessionCost(totals),
     turns: totals.turns,
   };

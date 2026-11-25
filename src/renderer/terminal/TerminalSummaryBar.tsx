@@ -16,8 +16,15 @@
 import { useTranslation } from "react-i18next";
 import { useAppStore } from "../store/appStore";
 import { deriveTaskLabelLines, effectiveCwd } from "../labels/labelText";
-import { formatTokenPair, formatTokens } from "../analytics/pricing";
-import { currentSessionTotals, formatSessionCost, grossTokens, type SessionUsageTotals } from "../usage/sessionCost";
+import { formatTokens } from "../analytics/pricing";
+import {
+  currentSessionTotals,
+  formatSessionCost,
+  formatSessionTokens,
+  grossTokens,
+  netTokens,
+  type SessionUsageTotals,
+} from "../usage/sessionCost";
 import { useSessionUsageSeed } from "../usage/useSessionUsageSeed";
 import type { Translate } from "../shared/textKey";
 import "./terminal.css";
@@ -55,17 +62,6 @@ function usageTooltip(totals: SessionUsageTotals, t: Translate): string {
   lines.push(t("summary.usage.footnote"));
   return lines.join("\n");
 }
-
-/** 캐시를 뺀 순수 입출력 토큰. */
-function netTokens(totals: SessionUsageTotals): number {
-  return totals.input + totals.output;
-}
-
-/** 토큰 셀 텍스트. 표기 규칙은 `pricing.formatTokenPair`(분석 패널과 공유). */
-function usageTokenText(totals: SessionUsageTotals): string {
-  return formatTokenPair(netTokens(totals), grossTokens(totals));
-}
-
 
 export function TerminalSummaryBar() {
   const { t } = useTranslation("terminal");
@@ -121,7 +117,7 @@ export function TerminalSummaryBar() {
       {shownLine2 && <span className="terminal-summary-line2">{shownLine2}</span>}
       {hasUsage && (
         <span className="terminal-summary-usage" title={usageTooltip(totals!, t)}>
-          {`${usageTokenText(totals!)} · ${formatSessionCost(totals!)}`}
+          {`${formatSessionTokens(totals!)} · ${formatSessionCost(totals!)}`}
         </span>
       )}
     </div>
