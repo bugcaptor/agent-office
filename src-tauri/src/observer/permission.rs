@@ -3,7 +3,8 @@
 // 권한 요청·선택지 중계. Claude Code의 `PermissionRequest` 훅은 권한 대화상자가 뜰 때
 // 불리고, 훅이 결정(허용·거부, AskUserQuestion이면 답)을 돌려주면 Claude가 그대로 따른다.
 // forwarder가 이 훅 body를 옵저버 서버 `/permission`에 보내고 답이 올 때까지 기다린다.
-// 웹 상태판이 그 사이 이 대기열을 보여 주고 답을 넣는다.
+// 웹 상태판과 앱 터미널 탭의 대화 보기가 그 사이 이 대기열을 보여 주고 답을 넣는다.
+// 중계는 앱이 도는 동안 늘 켜져 있다(`lib.rs`) — 꺼 두면 훅이 바로 끝난다(시험·앱 종료 직전).
 //
 // **터미널과 다투지 않는다**: 훅이 기다리는 동안에도 TUI에는 평소 대화상자가 함께 뜨고,
 // 먼저 답한 쪽이 이긴다(2.1.332 실측 — 터미널에서 먼저 고르면 늦게 온 훅의 답은 버려진다).
@@ -11,7 +12,7 @@
 //
 // 대기 항목이 사라지는 경우:
 // - 웹에서 답함 → 결정 JSON을 forwarder에 돌려준다.
-// - 웹에서 닫음·웹 상태판이 꺼짐·대기 상한 → 빈 답(결정 없음). 터미널 대화상자는 그대로다.
+// - 웹에서 닫음·중계 꺼짐·대기 상한 → 빈 답(결정 없음). 터미널 대화상자는 그대로다.
 // - 터미널에서 먼저 답함 → 그 뒤 오는 훅(같은 도구의 PostToolUse, 턴 경계)으로 정리한다.
 // - forwarder가 죽음(CLI 종료) → 연결이 끊겨 서버 쪽 대기가 풀리며 지운다.
 use std::collections::HashMap;
@@ -62,6 +63,23 @@ pub enum AskDecision {
     Dismiss,
 }
 
+impl AskDecision {
+    /// 화면의 단추(`allow`·`always`·`deny`·`dismiss`) → 결정. 웹 상태판과 앱 대화 보기가 같이 쓴다.
+    pub fn from_action(
+        action: &str,
+        answers: Option<HashMap<String, String>>,
+        message: Option<String>,
+    ) -> Result<Self, String> {
+        Ok(match action {
+            "allow" => Self::Allow { answers, always: false },
+            "always" => Self::Allow { answers: None, always: true },
+            "deny" => Self::Deny { message },
+            "dismiss" => Self::Dismiss,
+            _ => return Err("bad-request".into()),
+        })
+    }
+}
+
 struct Entry {
     session_id: String,
     view: PendingAsk,
@@ -86,7 +104,7 @@ impl PermissionRelay {
         Self::default()
     }
 
-    /// 웹 상태판이 떠 있을 때만 켠다. 끄면 기다리던 것은 모두 "결정 없음"으로 푼다.
+    /// 켜고 끈다. 끄면 기다리던 것은 모두 "결정 없음"으로 푼다.
     pub fn set_enabled(&self, on: bool) {
         self.enabled.store(on, Ordering::SeqCst);
         if !on {

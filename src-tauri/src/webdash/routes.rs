@@ -823,12 +823,15 @@ async fn answer_ask(State(ctx): Ctx, Path(id): Path<String>, Json(a): Json<AskAn
         }
     }
     let question = owner.as_ref().is_some_and(|(_, tool)| tool == "AskUserQuestion");
-    let (decision, op) = match a.action.as_str() {
-        "allow" => (AskDecision::Allow { answers: a.answers, always: false }, if question { "ask-answer" } else { "ask-allow" }),
-        "always" => (AskDecision::Allow { answers: None, always: true }, "ask-allow"),
-        "deny" => (AskDecision::Deny { message: a.message }, "ask-deny"),
-        "dismiss" => (AskDecision::Dismiss, ""),
-        _ => return fail("bad-request"),
+    let op = match a.action.as_str() {
+        "allow" if question => "ask-answer",
+        "allow" | "always" => "ask-allow",
+        "deny" => "ask-deny",
+        _ => "",
+    };
+    let decision = match AskDecision::from_action(&a.action, a.answers, a.message) {
+        Ok(d) => d,
+        Err(e) => return fail(e),
     };
     match relay.answer(&id, decision) {
         Ok(()) => {

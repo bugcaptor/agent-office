@@ -28,6 +28,7 @@ import { useMarkdownStore } from "../markdown/markdownStore";
 import { useWorkdirStore } from "../workdir/workdirStore";
 import { useDiaryStore } from "../diary/diaryStore";
 import { useSessionLogStore } from "../sessionlog/sessionLogStore";
+import { useChatViewStore } from "../chatView/chatViewStore";
 import { useMemoStore } from "../memo/memoStore";
 import { useRunStore } from "../run/runStore";
 import { IS_MAC } from "../shared/platform";
@@ -198,6 +199,8 @@ export function AgentTabStrip() {
   // 뷰 모드(이슈 #69): 토글 버튼 + 꽉 채우기 단축키용.
   const viewMode = useAppStore((s) => s.terminalViewMode);
   const cycleTerminalViewMode = useAppStore((s) => s.cycleTerminalViewMode);
+  const chatViewOn = useChatViewStore((s) => (activeId ? !!s.on[activeId] : false));
+  const toggleChatView = useChatViewStore((s) => s.toggle);
   // 이슈 #10: 활성 에이전트 cwd를 root로 마크다운 문서 팔레트를 연다.
   const openMarkdownPalette = useMarkdownStore((s) => s.openPalette);
   // 이슈 #11: 작업 폴더 보기(파일 목록 + git 상태) 오버레이를 연다.
@@ -548,6 +551,18 @@ export function AgentTabStrip() {
           🗒
         </button>
         )}
+        {/* 터미널 보기 ↔ 대화 보기(CLI 전사를 채팅처럼, 이미지·권한 카드 포함). 활성 탭에만 걸린다. */}
+        <button
+          type="button"
+          className={chatViewOn ? "agent-tab-strip-chatview agent-tab-strip-chatview-on" : "agent-tab-strip-chatview"}
+          title={chatViewOn ? t("chatView.toTerminal") : t("chatView.toChat")}
+          aria-label={chatViewOn ? t("chatView.toTerminal") : t("chatView.toChat")}
+          aria-pressed={chatViewOn}
+          disabled={!activeId}
+          onClick={() => { if (activeId) toggleChatView(activeId); }}
+        >
+          {chatViewOn ? "⌨" : "💬"}
+        </button>
         <button
           type="button"
           className={`agent-tab-strip-viewmode mode-${viewMode}`}

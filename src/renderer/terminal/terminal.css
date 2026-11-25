@@ -198,6 +198,23 @@
   border-color: var(--accent);
 }
 
+/* 터미널 보기 ↔ 대화 보기 전환(포스트잇 버튼과 같은 모양). */
+.agent-tab-strip-chatview {
+  flex: none;
+  width: 28px;
+  height: 28px;
+  font-size: 0.9rem;
+  line-height: 1;
+  color: var(--text);
+  background: var(--bg-panel-hi);
+  border: 2px solid var(--border-dark);
+  border-radius: 0;
+  cursor: pointer;
+}
+.agent-tab-strip-chatview:hover { background: var(--accent); }
+.agent-tab-strip-chatview:disabled { opacity: 0.45; cursor: default; }
+.agent-tab-strip-chatview-on { border-color: var(--accent); }
+
 /* 뷰 모드 순환 버튼(이슈 #69): 문서 버튼과 닫기 버튼 사이. */
 .agent-tab-strip-viewmode {
   flex: none;

@@ -56,6 +56,7 @@
 | 백엔드 이벤트 → 스토어 | `ipc/sessionBridge.ts` |
 | 오피스 씬(PixiJS)·캐릭터 생성 | `office/` (`OfficeScene.ts`, 생성기 `office/gen/`, 맵 `office/map/`) |
 | 터미널 탭·xterm | `terminal/` (`TerminalHost.tsx`, `TerminalRegistry.ts`, `AgentTabStrip.tsx`) |
+| 터미널 탭 대화 보기(전사 채팅·이미지·권한 카드·입력) | `chatView/` (`ChatView.tsx`, 순수 로직 `chatViewModel.ts`, 탭별 보기 `chatViewStore.ts`), Rust 커맨드 `ipc/commands/chat_view.rs`(수집기는 `WebDashState::app_logs`, 권한은 `observer/permission.rs`), gui 확인 `scripts/gui-steps/chat-view.mjs` |
 | 업무 패널·자동 진행·태스크 대화 | `workpanels/` |
 | 예약(규칙 계산·실행기·팝업 영역) | `workpanels/workSchedule.ts`, `scheduleRunner.ts`, `WorkScheduleSection.tsx` |
 | 팀 토의 | `discussion/` — 아래 [팀 토의](#팀-토의) 절 |

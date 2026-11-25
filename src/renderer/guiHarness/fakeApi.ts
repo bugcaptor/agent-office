@@ -26,6 +26,8 @@ import type {
   UsageSnapshot,
   WebDashStatus,
   WorkItem,
+  ChatLogItem,
+  PendingAsk,
 } from "@shared/types";
 import memoFixture from "@shared/contract-fixtures/memo-sheet.current.json";
 import webDashStatusFixture from "@shared/contract-fixtures/web-dash-status.json";
@@ -336,7 +338,54 @@ const impl: Partial<AgentOfficeApi> = {
   async listProviderModels() { return []; },
   async workAgentModels() { return []; },
   async runRecipeStatus() { return null; },
+  async chatViewLog(agentId, after, epoch) {
+    const items = chatLog(agentId);
+    const last = items[items.length - 1]?.seq ?? 0;
+    return { epoch: 1, last, attached: true, items: epoch === 1 ? items.filter((i) => i.seq > (after ?? 0)) : items };
+  },
+  async chatViewImage() { return CHAT_IMAGE; },
+  async chatViewAsks(agentId) { return chatAsks.filter((a) => a.id.startsWith(agentId + ":")); },
+  async chatViewAnswer(askId, action, answers, message) {
+    chatAnswers.push({ askId, action, answers, message });
+    chatAsks = chatAsks.filter((a) => a.id !== askId);
+  },
+  async chatViewSend(agentId, text) {
+    const items = chatLog(agentId);
+    items.push({ seq: (items[items.length - 1]?.seq ?? 0) + 1, role: "user", kind: "text", text, isError: false, sidechain: false });
+  },
 };
+
+// ── 대화 보기(터미널 탭) 가짜 전사 ──
+const CHAT_IMAGE = "data:image/svg+xml;utf8," + encodeURIComponent(
+  '<svg xmlns="http://www.w3.org/2000/svg" width="320" height="180"><rect width="320" height="180" fill="#9ad"/><circle cx="90" cy="90" r="50" fill="#fd6"/><rect x="170" y="50" width="110" height="80" fill="#486"/></svg>',
+);
+const chatLogs = new Map<string, ChatLogItem[]>();
+function chatLog(agentId: string): ChatLogItem[] {
+  let items = chatLogs.get(agentId);
+  if (!items) {
+    let seq = 0;
+    const it = (o: Partial<ChatLogItem>): ChatLogItem => ({ seq: ++seq, role: "assistant", kind: "text", text: "", isError: false, sidechain: false, ...o });
+    items = [
+      it({ role: "user", text: "Look at this screen and fix the layout" }),
+      it({ role: "user", kind: "image", image: { id: "shot", mediaType: "image/png", bytes: 1000 } }),
+      it({ text: "I'll check **the layout** first.\n\n- read the CSS\n- compare with `dash.html`" }),
+      it({ kind: "tool_use", toolName: "Read", text: "src/renderer/terminal/terminal.css" }),
+      it({ role: "user", kind: "tool_result", text: "1\t/* terminal */\n2\t.agent-tab-strip {" }),
+      it({ kind: "tool_use", toolName: "Bash", text: "npm run typecheck" }),
+      it({ role: "user", kind: "tool_result", text: "error TS2304: Cannot find name 'x'.", isError: true }),
+      it({ text: "Found the cause. Which fix do you prefer?" }),
+    ];
+    chatLogs.set(agentId, items);
+  }
+  return items;
+}
+let chatAsks: PendingAsk[] = [
+  { id: "p1:ask-1", toolName: "AskUserQuestion", canAlways: false, sidechain: false, at: Date.now(), toolInput: { questions: [
+    { question: "Which fix?", header: "Fix", multiSelect: false, options: [{ label: "Grid", description: "Rewrite with CSS grid" }, { label: "Flex", description: "Keep flexbox" }] },
+  ] } },
+  { id: "p1:ask-2", toolName: "Bash", canAlways: true, sidechain: false, at: Date.now(), toolInput: { command: "rm -rf dist && npm run build", description: "Clean build" } },
+];
+const chatAnswers: unknown[] = [];
 
 export const tauriApi = new Proxy(impl, {
   get(target, key) {
@@ -350,6 +399,10 @@ export const tauriApi = new Proxy(impl, {
 
 Object.assign(harness, {
   pushOutput,
+  /** 대화 보기에서 넣은 답(권한·질문). */
+  chatAnswers,
+  /** 대화 보기 스토어(예: 탭을 대화 보기로). */
+  chatViewStore: async () => (await import("../chatView/chatViewStore")).useChatViewStore,
   emitSessionState,
   notify,
   /** 스크립트에서 스토어를 직접 조작할 때(예: `openTerminal`). */

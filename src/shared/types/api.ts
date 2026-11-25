@@ -39,6 +39,7 @@ import type { AwardRecord, AwardSpeech, AwardsFile } from './awards';
 import type { DiaryEntry, WorkLogItem } from './diary';
 import type { MemoSheet, MemoSheetMeta } from './memo';
 import type { UsageSnapshot } from './usage';
+import type { ChatLogPage, PendingAsk, AskAction } from './chatView';
 
 /** Origin of bytes emitted by xterm's `onData` callback. */
 export type TerminalInputSource = 'human' | 'terminalResponse';
@@ -228,6 +229,16 @@ export interface AgentOfficeApi {
   controlApprove(): Promise<void>;
   /** CLI 제어 승인 취소(토큰 폐기). 이후 모든 CLI 요청 401. */
   controlRevoke(): Promise<void>;
+  /** 터미널 탭 대화 보기: 그 탭 세션의 CLI 전사 한 쪽(`after`·`epoch`는 이어 받기). */
+  chatViewLog(agentId: AgentId, after?: number, epoch?: number): Promise<ChatLogPage>;
+  /** 대화 보기 로그의 이미지(`data:` URL). 오래되어 비웠으면 null. */
+  chatViewImage(agentId: AgentId, imageId: string): Promise<string | null>;
+  /** 그 탭 세션이 답을 기다리는 권한 요청·질문. */
+  chatViewAsks(agentId: AgentId): Promise<PendingAsk[]>;
+  /** 권한 요청·질문에 답한다(터미널에서 먼저 답했으면 `ask-gone`). */
+  chatViewAnswer(askId: string, action: AskAction, answers?: Record<string, string>, message?: string): Promise<void>;
+  /** 대화 보기에서 쓴 지시를 같은 세션에 넣는다(CLI가 입력을 기다릴 때만). */
+  chatViewSend(agentId: AgentId, text: string): Promise<void>;
   /** 웹 상태판 상태(설정·접속 주소·접속 수). */
   webDashStatus(): Promise<WebDashStatus>;
   /** 웹 상태판 설정을 저장하고 서버를 그에 맞춘다. */

@@ -625,6 +625,9 @@ pub fn run() {
                 .with_agy_session_sink(agy_resume_recorder)
                 .with_stop_reply_sink(discussion_replies.clone()),
             );
+            // 권한 요청 중계는 앱이 도는 동안 늘 켠다. 터미널 탭의 대화 보기와 웹 상태판이
+            // 아무 때나 열려도 이미 떠 있는 요청에 답할 수 있어야 한다(터미널 대화상자와 동시에 뜬다).
+            observer.permissions().set_enabled(true);
 
             if settings_cache.read().unwrap().observer_enabled {
                 let _ = tauri::async_runtime::block_on(observer_server.ensure(observer.clone()));
@@ -915,6 +918,11 @@ pub fn run() {
             ipc::commands::auto_run_report,
             ipc::commands::autorun_control_reply,
             ipc::commands::discussion_control_reply,
+            ipc::commands::chat_view_log,
+            ipc::commands::chat_view_image,
+            ipc::commands::chat_view_asks,
+            ipc::commands::chat_view_answer,
+            ipc::commands::chat_view_send,
             ipc::commands::web_dash_status,
             ipc::commands::web_dash_configure,
             ipc::commands::web_dash_rotate_token,

@@ -67,7 +67,54 @@
     }
   },
   "officeAgent": {
-    "close": { "title": "일반 에이전트 끝내기", "body": "일반 에이전트 세션을 끝냅니다. 터미널의 CLI도 함께 종료됩니다.", "confirm": "끝내기" },
+    "close": {
+      "title": "일반 에이전트 끝내기",
+      "body": "일반 에이전트 세션을 끝냅니다. 터미널의 CLI도 함께 종료됩니다.",
+      "confirm": "끝내기"
+    },
     "quitNotice": "일반 에이전트 세션도 종료와 함께 끝납니다."
+  },
+  "chatView": {
+    "title": "대화 보기",
+    "hint": "CLI는 터미널에서 그대로 돌고 있습니다. 언제든 터미널 보기로 돌아갈 수 있습니다.",
+    "showTerminal": "터미널 보기",
+    "noLog": "이 탭에는 읽을 대화가 없습니다(Claude·Codex 세션이 아님). 터미널 보기를 쓰세요.",
+    "noItems": "아직 대화가 없습니다.",
+    "inputPh": "에이전트에게 보낼 말 (Enter 보내기, Shift+Enter 줄바꿈)",
+    "send": "보내기",
+    "result_one": "결과 {{count}}줄",
+    "result_other": "결과 {{count}}줄",
+    "imageGone": "🖼 이미지를 더 볼 수 없습니다(오래되어 비웠음)",
+    "zoom": "크게 보기",
+    "askPermission": "권한 요청 · {{tool}}",
+    "askQuestion": "질문에 답해 주세요",
+    "askPlan": "계획 승인 요청",
+    "askNote": "터미널에도 같은 대화상자가 떠 있습니다. 먼저 답한 쪽이 반영됩니다.",
+    "allow": "허용",
+    "allowAlways": "허용하고 다시 묻지 않기",
+    "again": "한 번 더 눌러 확인",
+    "deny": "거부",
+    "dismiss": "여기서 닫기",
+    "denyPh": "거부 사유(선택, 에이전트에게 전함)",
+    "askOther": "직접 입력",
+    "askSend": "답 보내기",
+    "err": {
+      "chat-view-working": "작업 중입니다. 턴이 끝나 입력을 기다리면 보낼 수 있습니다(터미널 보기에서는 지금도 입력 가능).",
+      "chat-view-needs-human": "답을 기다리는 중입니다. 위 카드나 터미널에서 먼저 답하세요.",
+      "chat-view-no-cli": "이 탭에서 Claude·Codex가 입력을 기다리는지 알 수 없습니다. 터미널 보기를 쓰세요.",
+      "not-running": "터미널이 꺼져 있습니다",
+      "empty": "내용이 비었습니다",
+      "work-send-busy": "보내는 중인 입력이 있습니다",
+      "work-send-human-input": "터미널에 쓰다 만 입력이 있습니다. 터미널 보기에서 지우거나 보내세요.",
+      "work-send-cli-returned": "CLI가 끝났습니다",
+      "work-send-session-changed": "세션이 바뀌었습니다",
+      "ask-gone": "이미 답했거나 사라진 요청입니다",
+      "ask-unanswered": "모든 질문에 답하세요",
+      "ask-invalid": "답을 보낼 수 없는 질문입니다",
+      "ask-no-rule": "다시 묻지 않기를 고를 수 없는 요청입니다",
+      "too-large": "글이 너무 깁니다"
+    },
+    "toChat": "대화 보기로 전환(CLI는 그대로 돎)",
+    "toTerminal": "터미널 보기로 전환"
   }
 }

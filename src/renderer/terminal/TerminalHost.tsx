@@ -21,6 +21,8 @@ import { terminalRegistry } from "./TerminalRegistry";
 import { useTaskChatStore } from "../workpanels/taskChatStore";
 import { useDiscussionSessionStore } from "../discussion/discussionSessionStore";
 import { useOfficeAgentStore } from "../officeAgent/officeAgentStore";
+import { useChatViewStore } from "../chatView/chatViewStore";
+import { ChatView } from "../chatView/ChatView";
 
 const RESIZE_DEBOUNCE_MS = 120;
 
@@ -68,6 +70,9 @@ function TerminalMount({ agentId, chat = false, discussion = false, office = fal
   const officeExited = useOfficeAgentStore((s) => s.sessions[agentId]?.status === "exited");
   const isExited = office ? officeExited : discussion ? discussionExited : chat ? chatExited : appExited;
   const setSessionSize = useAppStore((s) => s.setSessionSize);
+  // 대화 보기: xterm은 그대로 두고 그 위를 덮는다(keep-alive 불변식 유지).
+  const chatView = useChatViewStore((s) => !!s.on[agentId]);
+  const setChatView = useChatViewStore((s) => s.set);
 
   // First mount only: attach the (keep-alive) registry container. Never
   // detaches/destroys on unmount — only `removeAgent` -> registry.destroy()
@@ -118,6 +123,16 @@ function TerminalMount({ agentId, chat = false, discussion = false, office = fal
       data-agent-id={agentId}
     >
       <div ref={hostRef} className="terminal-mount-host" />
+      {chatView && (
+        <ChatView
+          agentId={agentId}
+          active={isActive}
+          onShowTerminal={() => {
+            setChatView(agentId, false);
+            terminalRegistry.get(agentId)?.term.focus();
+          }}
+        />
+      )}
       {isExited && (
         <div className="terminal-exited-banner" role="alert">
           {/* 대화는 다시 띄우지 않는다 — 탭을 닫고 태스크에서 새로 연다(맥락 묶음이 새로 만들어진다). */}

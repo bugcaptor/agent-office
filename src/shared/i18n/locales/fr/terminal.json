@@ -67,7 +67,54 @@
     }
   },
   "officeAgent": {
-    "close": { "title": "Terminer l’agent général", "body": "Cela termine la session de l’agent général. Le CLI du terminal s’arrête aussi.", "confirm": "Terminer" },
+    "close": {
+      "title": "Terminer l’agent général",
+      "body": "Cela termine la session de l’agent général. Le CLI du terminal s’arrête aussi.",
+      "confirm": "Terminer"
+    },
     "quitNotice": "La session de l’agent général se termine aussi en quittant."
+  },
+  "chatView": {
+    "title": "Conversation",
+    "hint": "La CLI continue de tourner dans le terminal. Revenez à la vue terminal quand vous voulez.",
+    "showTerminal": "Vue terminal",
+    "noLog": "Aucune conversation à lire dans cet onglet (pas une session Claude/Codex). Utilisez la vue terminal.",
+    "noItems": "Pas encore de messages.",
+    "inputPh": "Message à l'agent (Entrée pour envoyer, Maj+Entrée pour une nouvelle ligne)",
+    "send": "Envoyer",
+    "result_one": "Résultat · {{count}} ligne",
+    "result_other": "Résultat · {{count}} lignes",
+    "imageGone": "🖼 Image plus disponible (effacée)",
+    "zoom": "Agrandir",
+    "askPermission": "Demande d'autorisation · {{tool}}",
+    "askQuestion": "Merci de répondre",
+    "askPlan": "Validation du plan",
+    "askNote": "La même boîte de dialogue est ouverte dans le terminal. La première réponse l'emporte.",
+    "allow": "Autoriser",
+    "allowAlways": "Autoriser et ne plus demander",
+    "again": "Cliquez encore pour confirmer",
+    "deny": "Refuser",
+    "dismiss": "Fermer ici",
+    "denyPh": "Motif (facultatif, transmis à l'agent)",
+    "askOther": "Saisir une réponse",
+    "askSend": "Envoyer la réponse",
+    "err": {
+      "chat-view-working": "En cours. Vous pourrez envoyer quand le tour sera fini (la vue terminal accepte la saisie maintenant).",
+      "chat-view-needs-human": "En attente d'une réponse. Répondez d'abord à la carte ou dans le terminal.",
+      "chat-view-no-cli": "Impossible de savoir si Claude/Codex attend une saisie dans cet onglet. Utilisez la vue terminal.",
+      "not-running": "Le terminal n'est pas lancé",
+      "empty": "Vide",
+      "work-send-busy": "Une autre saisie est en cours d'envoi",
+      "work-send-human-input": "Une saisie non envoyée est dans le terminal. Effacez-la ou envoyez-la depuis la vue terminal.",
+      "work-send-cli-returned": "La CLI s'est arrêtée",
+      "work-send-session-changed": "La session a changé",
+      "ask-gone": "Déjà répondu ou disparu",
+      "ask-unanswered": "Répondez à chaque question",
+      "ask-invalid": "Cette question n'accepte pas cette réponse",
+      "ask-no-rule": "Cette demande n'a pas de règle « ne plus demander »",
+      "too-large": "Texte trop long"
+    },
+    "toChat": "Passer à la vue conversation (la CLI continue de tourner)",
+    "toTerminal": "Passer à la vue terminal"
   }
 }

@@ -67,7 +67,54 @@
     }
   },
   "officeAgent": {
-    "close": { "title": "結束通用代理", "body": "將結束通用代理工作階段，終端機中的 CLI 也會一併結束。", "confirm": "結束" },
+    "close": {
+      "title": "結束通用代理",
+      "body": "將結束通用代理工作階段，終端機中的 CLI 也會一併結束。",
+      "confirm": "結束"
+    },
     "quitNotice": "結束應用程式時，通用代理工作階段也會結束。"
+  },
+  "chatView": {
+    "title": "對話檢視",
+    "hint": "CLI 仍在終端機中執行。隨時可以切回終端機檢視。",
+    "showTerminal": "終端機檢視",
+    "noLog": "此分頁沒有可讀的對話(不是 Claude/Codex 工作階段)。請使用終端機檢視。",
+    "noItems": "還沒有對話。",
+    "inputPh": "傳給代理的訊息(Enter 傳送,Shift+Enter 換行)",
+    "send": "傳送",
+    "result_one": "結果 {{count}} 行",
+    "result_other": "結果 {{count}} 行",
+    "imageGone": "🖼 圖片已無法顯示(已清除)",
+    "zoom": "放大檢視",
+    "askPermission": "權限請求 · {{tool}}",
+    "askQuestion": "請回答問題",
+    "askPlan": "計畫核准",
+    "askNote": "終端機中也跳出了同樣的對話框。先回答的一方生效。",
+    "allow": "允許",
+    "allowAlways": "允許且不再詢問",
+    "again": "再按一次確認",
+    "deny": "拒絕",
+    "dismiss": "在此關閉",
+    "denyPh": "拒絕理由(選填,會轉告代理)",
+    "askOther": "直接輸入",
+    "askSend": "傳送回答",
+    "err": {
+      "chat-view-working": "正在工作。回合結束並等待輸入時才能傳送(終端機檢視現在就能輸入)。",
+      "chat-view-needs-human": "正在等待回答。請先回答上方卡片或在終端機中回答。",
+      "chat-view-no-cli": "無法判斷此分頁中的 Claude/Codex 是否在等待輸入。請使用終端機檢視。",
+      "not-running": "終端機未執行",
+      "empty": "內容為空",
+      "work-send-busy": "有正在傳送的輸入",
+      "work-send-human-input": "終端機中有未傳送的輸入。請在終端機檢視中清除或傳送。",
+      "work-send-cli-returned": "CLI 已結束",
+      "work-send-session-changed": "工作階段已變更",
+      "ask-gone": "已回答或已消失的請求",
+      "ask-unanswered": "請回答所有問題",
+      "ask-invalid": "此問題不能接受該回答",
+      "ask-no-rule": "此請求不能選擇不再詢問",
+      "too-large": "文字太長"
+    },
+    "toChat": "切換到對話檢視(CLI 繼續執行)",
+    "toTerminal": "切換到終端機檢視"
   }
 }

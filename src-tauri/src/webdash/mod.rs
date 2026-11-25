@@ -7,8 +7,8 @@
 // CLI 전사(JSONL)를 **읽기만** 하고, 손을 대는 일은 간접 명령으로만 한다:
 // 터미널 재시작·종료·이어하기, 작업 중단, Claude/Codex 실행, 업무 만들기·보내기·
 // 자동 진행, 토의 시작·답하기. CLI 안 입력 가운데 Claude의 권한 요청·선택지(AskUserQuestion)는
-// 키 입력이 아니라 `PermissionRequest` 훅으로 답한다(`observer/permission.rs`) — 서버가 떠 있는
-// 동안만 중계를 켠다. 전사에 실린 이미지는 대화 로그에 보인다(설정 `images`로 끈다).
+// 키 입력이 아니라 `PermissionRequest` 훅으로 답한다(`observer/permission.rs`, 앱이 도는 동안
+// 늘 켜져 있다). 전사에 실린 이미지는 대화 로그에 보인다(설정 `images`로 끈다).
 // 예외 하나: 일반 에이전트(캐릭터 없는 `office-agent` 곁 세션, `crate::office_agent`)에는 지시를 쓰고,
 // CLI가 턴을 마치고 입력을 기다릴 때만 같은 세션에 다음 지시를 잇는다. 머리에는 컴퓨터 이름을 보인다.
 //
@@ -131,6 +131,8 @@ pub struct WebDashState {
     /// 렌더러가 밀어 준 캐릭터별 라벨(작업 라벨은 렌더러에만 있다).
     labels: RwLock<HashMap<String, serde_json::Value>>,
     pub logs: log::LogCache,
+    /// 앱 터미널 탭의 "대화 보기"가 쓰는 같은 수집기. 웹의 이미지 끄기와 무관하게 늘 이미지를 싣는다.
+    pub app_logs: log::LogCache,
     pub bridge: Arc<AutoRunBridge>,
     events: Arc<dyn WebDashEvents>,
 }
@@ -150,8 +152,9 @@ impl WebDashState {
             .ok()
             .map(|t| t.trim().to_string())
             .filter(|t| !t.is_empty());
-        let logs = log::LogCache::new(sources);
+        let logs = log::LogCache::new(sources.clone());
         logs.set_show_images(config.images);
+        let app_logs = log::LogCache::new(sources);
         Self {
             data_dir,
             config: Mutex::new(config),
@@ -163,6 +166,7 @@ impl WebDashState {
             last_status: Mutex::new(None),
             labels: RwLock::new(HashMap::new()),
             logs,
+            app_logs,
             bridge,
             events,
         }
@@ -278,7 +282,6 @@ impl WebDashState {
         let config = self.config();
         if !config.enabled {
             self.stop();
-            ctx.observer.permissions().set_enabled(false);
             *self.error.lock().unwrap() = None;
             self.publish_status();
             return;
@@ -317,8 +320,6 @@ impl WebDashState {
         }
         let network_missing = bound.iter().all(|ip| ip.is_loopback());
         *self.error.lock().unwrap() = failed.or_else(|| network_missing.then(|| "web-dash-no-network".to_string()));
-        // 권한 요청은 받을 웹이 떠 있을 때만 붙든다. 아니면 훅이 바로 끝나 터미널만 남는다.
-        ctx.observer.permissions().set_enabled(!bound.is_empty());
         if !bound.is_empty() {
             *self.installed.lock().unwrap() = Some(Installed { addrs: bound, port: config.port, shutdowns });
         }

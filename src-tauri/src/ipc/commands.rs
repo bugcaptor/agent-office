@@ -39,6 +39,7 @@ mod usage;
 // 문서 뷰어의 미리보기 버튼.
 mod doc_view;
 // 웹 상태판 설정·다리.
+mod chat_view;
 mod web_dash;
 
 // Re-imported here (in addition to each domain file's own scoped `use`s)
@@ -63,6 +64,7 @@ pub(crate) use settings::*;
 pub(crate) use api_keys::*;
 pub(crate) use usage::*;
 pub(crate) use doc_view::*;
+pub(crate) use chat_view::*;
 pub(crate) use web_dash::*;
 
 #[cfg(test)]

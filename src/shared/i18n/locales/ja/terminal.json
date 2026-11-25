@@ -67,7 +67,54 @@
     }
   },
   "officeAgent": {
-    "close": { "title": "汎用エージェントを終了", "body": "汎用エージェントのセッションを終了します。ターミナルの CLI も終了します。", "confirm": "終了" },
+    "close": {
+      "title": "汎用エージェントを終了",
+      "body": "汎用エージェントのセッションを終了します。ターミナルの CLI も終了します。",
+      "confirm": "終了"
+    },
     "quitNotice": "汎用エージェントのセッションも終了とともに終わります。"
+  },
+  "chatView": {
+    "title": "会話ビュー",
+    "hint": "CLI はターミナルでそのまま動いています。いつでもターミナルビューに戻せます。",
+    "showTerminal": "ターミナルビュー",
+    "noLog": "このタブには読める会話がありません(Claude・Codex のセッションではありません)。ターミナルビューを使ってください。",
+    "noItems": "まだ会話がありません。",
+    "inputPh": "エージェントへのメッセージ(Enter で送信、Shift+Enter で改行)",
+    "send": "送信",
+    "result_one": "結果 {{count}} 行",
+    "result_other": "結果 {{count}} 行",
+    "imageGone": "🖼 画像はもう表示できません(古いため破棄)",
+    "zoom": "拡大表示",
+    "askPermission": "許可リクエスト · {{tool}}",
+    "askQuestion": "質問に答えてください",
+    "askPlan": "計画の承認",
+    "askNote": "ターミナルにも同じダイアログが出ています。先に答えた方が反映されます。",
+    "allow": "許可",
+    "allowAlways": "許可して今後は確認しない",
+    "again": "もう一度押して確定",
+    "deny": "拒否",
+    "dismiss": "ここで閉じる",
+    "denyPh": "拒否の理由(任意、エージェントに伝えます)",
+    "askOther": "直接入力",
+    "askSend": "回答を送信",
+    "err": {
+      "chat-view-working": "作業中です。ターンが終わって入力待ちになると送れます(ターミナルビューなら今も入力可能)。",
+      "chat-view-needs-human": "回答待ちです。上のカードかターミナルで先に答えてください。",
+      "chat-view-no-cli": "このタブで Claude・Codex が入力待ちか分かりません。ターミナルビューを使ってください。",
+      "not-running": "ターミナルが起動していません",
+      "empty": "内容が空です",
+      "work-send-busy": "送信中の入力があります",
+      "work-send-human-input": "ターミナルに未送信の入力があります。ターミナルビューで消すか送ってください。",
+      "work-send-cli-returned": "CLI が終了しました",
+      "work-send-session-changed": "セッションが変わりました",
+      "ask-gone": "すでに回答済みか、なくなったリクエストです",
+      "ask-unanswered": "すべての質問に答えてください",
+      "ask-invalid": "その回答は送れない質問です",
+      "ask-no-rule": "「今後は確認しない」を選べないリクエストです",
+      "too-large": "文章が長すぎます"
+    },
+    "toChat": "会話ビューに切り替え(CLI はそのまま動作)",
+    "toTerminal": "ターミナルビューに切り替え"
   }
 }
