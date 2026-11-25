@@ -250,7 +250,7 @@ impl LogCache {
         log.image(id)
     }
 
-    pub(super) fn file(&self, agent_id: &str, epoch: u64, seq: u64, index: usize) -> Option<Vec<u8>> {
+    pub(crate) fn file(&self, agent_id: &str, epoch: u64, seq: u64, index: usize) -> Option<(String, Vec<u8>)> {
         let log = self.agents.lock().unwrap().get(agent_id).cloned()?;
         let (root, link) = {
             let log = log.lock().unwrap();
@@ -260,7 +260,8 @@ impl LogCache {
             let item = log.items.iter().find(|item| item.seq == seq)?;
             (log.file_root.clone()?, item.files.get(index)?.clone())
         };
-        files::read(&root, &link)
+        let bytes = files::read(&root, &link)?;
+        Some((link.name, bytes))
     }
 
     /// 한 캐릭터의 로그 쪽. 파일을 읽으므로 블로킹 스레드에서 부른다.
@@ -394,7 +395,10 @@ mod tests {
         let seq = page.items[0].seq;
         let wire = serde_json::to_value(&page.items[0]).unwrap();
         assert_eq!(wire["files"], serde_json::json!([{ "name": "실행 결과.pdf" }]));
-        assert_eq!(cache.file("a", page.epoch, seq, 0).as_deref(), Some(b"report".as_slice()));
+        assert_eq!(
+            cache.file("a", page.epoch, seq, 0),
+            Some(("실행 결과.pdf".into(), b"report".to_vec()))
+        );
         assert!(cache.file("a", page.epoch, seq, 1).is_none());
         assert!(cache.file("a", page.epoch + 1, seq, 0).is_none());
 

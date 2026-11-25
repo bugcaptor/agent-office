@@ -22,7 +22,12 @@ export interface ChatLogItem {
   isError: boolean;
   sidechain: boolean;
   image?: ChatImageMeta;
+  files?: { name: string }[];
 }
+
+export type ChatDownload =
+  | { kind: "image"; imageId: string }
+  | { kind: "file"; epoch: number; seq: number; index: number };
 
 export interface ChatLogPage {
   epoch: number;

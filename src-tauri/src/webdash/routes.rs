@@ -369,7 +369,7 @@ async fn download_file(
         .await
         .ok()
         .flatten();
-    let Some(bytes) = found else {
+    let Some((_, bytes)) = found else {
         return StatusCode::NOT_FOUND.into_response();
     };
     let mut res = Response::new(Body::from(bytes));

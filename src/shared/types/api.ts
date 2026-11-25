@@ -39,7 +39,7 @@ import type { AwardRecord, AwardSpeech, AwardsFile } from './awards';
 import type { DiaryEntry, WorkLogItem } from './diary';
 import type { MemoSheet, MemoSheetMeta } from './memo';
 import type { UsageSnapshot } from './usage';
-import type { ChatLogPage, PendingAsk, AskAction } from './chatView';
+import type { ChatDownload, ChatLogPage, PendingAsk, AskAction } from './chatView';
 
 /** Origin of bytes emitted by xterm's `onData` callback. */
 export type TerminalInputSource = 'human' | 'terminalResponse';
@@ -233,6 +233,8 @@ export interface AgentOfficeApi {
   chatViewLog(agentId: AgentId, after?: number, epoch?: number): Promise<ChatLogPage>;
   /** 대화 보기 로그의 이미지(`data:` URL). 오래되어 비웠으면 null. */
   chatViewImage(agentId: AgentId, imageId: string): Promise<string | null>;
+  /** Saves a log attachment at the selected path, or returns false on cancellation. */
+  chatViewDownload(agentId: AgentId, source: ChatDownload): Promise<boolean>;
   /** 그 탭 세션이 답을 기다리는 권한 요청·질문. */
   chatViewAsks(agentId: AgentId): Promise<PendingAsk[]>;
   /** 권한 요청·질문에 답한다(터미널에서 먼저 답했으면 `ask-gone`). */

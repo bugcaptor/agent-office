@@ -13,7 +13,7 @@ const MAX_FILE_BYTES: u64 = 24 * 1024 * 1024;
 
 #[derive(Debug, Clone, Serialize)]
 pub(super) struct FileLink {
-    name: String,
+    pub(super) name: String,
     #[serde(skip)]
     path: PathBuf,
 }

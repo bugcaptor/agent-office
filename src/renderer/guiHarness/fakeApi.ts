@@ -344,6 +344,10 @@ const impl: Partial<AgentOfficeApi> = {
     return { epoch: 1, last, attached: true, items: epoch === 1 ? items.filter((i) => i.seq > (after ?? 0)) : items };
   },
   async chatViewImage() { return CHAT_IMAGE; },
+  async chatViewDownload(agentId, source) {
+    chatDownloads.push({ agentId, source });
+    return true;
+  },
   async chatViewAsks(agentId) { return chatAsks.filter((a) => a.id.startsWith(agentId + ":")); },
   async chatViewAnswer(askId, action, answers, message) {
     chatAnswers.push({ askId, action, answers, message });
@@ -368,12 +372,12 @@ function chatLog(agentId: string): ChatLogItem[] {
     items = [
       it({ role: "user", text: "Look at this screen and fix the layout" }),
       it({ role: "user", kind: "image", image: { id: "shot", mediaType: "image/png", bytes: 1000 } }),
-      it({ text: "I'll check **the layout** first.\n\n- read the CSS\n- compare with `dash.html`" }),
+      it({ text: "I'll check **the layout** first.\n\n- read the CSS\n- compare with `dash.html`\n\n```css\n.panel { display: grid; }\n```" }),
       it({ kind: "tool_use", toolName: "Read", text: "src/renderer/terminal/terminal.css" }),
       it({ role: "user", kind: "tool_result", text: "1\t/* terminal */\n2\t.agent-tab-strip {" }),
       it({ kind: "tool_use", toolName: "Bash", text: "npm run typecheck" }),
       it({ role: "user", kind: "tool_result", text: "error TS2304: Cannot find name 'x'.", isError: true }),
-      it({ text: "Found the cause. Which fix do you prefer?" }),
+      it({ text: "Found the cause. See [layout notes](layout-notes.md).", files: [{ name: "layout-notes.md" }] }),
     ];
     chatLogs.set(agentId, items);
   }
@@ -386,6 +390,7 @@ let chatAsks: PendingAsk[] = [
   { id: "p1:ask-2", toolName: "Bash", canAlways: true, sidechain: false, at: Date.now(), toolInput: { command: "rm -rf dist && npm run build", description: "Clean build" } },
 ];
 const chatAnswers: unknown[] = [];
+const chatDownloads: unknown[] = [];
 
 export const tauriApi = new Proxy(impl, {
   get(target, key) {
@@ -401,6 +406,7 @@ Object.assign(harness, {
   pushOutput,
   /** 대화 보기에서 넣은 답(권한·질문). */
   chatAnswers,
+  chatDownloads,
   /** 대화 보기 스토어(예: 탭을 대화 보기로). */
   chatViewStore: async () => (await import("../chatView/chatViewStore")).useChatViewStore,
   emitSessionState,

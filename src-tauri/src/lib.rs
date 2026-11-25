@@ -920,6 +920,7 @@ pub fn run() {
             ipc::commands::discussion_control_reply,
             ipc::commands::chat_view_log,
             ipc::commands::chat_view_image,
+            ipc::commands::chat_view_download,
             ipc::commands::chat_view_asks,
             ipc::commands::chat_view_answer,
             ipc::commands::chat_view_send,

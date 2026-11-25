@@ -10,7 +10,9 @@
 use std::collections::HashMap;
 
 use base64::Engine as _;
+use serde::Deserialize;
 use tauri::State;
+use tauri_plugin_dialog::DialogExt;
 
 use crate::control::turns::TurnPhase;
 use crate::observer::permission::{AskDecision, PendingAsk};
@@ -66,6 +68,55 @@ pub async fn chat_view_image(
     Ok(found.map(|(media, bytes)| {
         format!("data:{media};base64,{}", base64::engine::general_purpose::STANDARD.encode(bytes.as_slice()))
     }))
+}
+
+#[derive(Deserialize)]
+#[serde(tag = "kind", rename_all = "camelCase", rename_all_fields = "camelCase")]
+pub enum ChatDownload {
+    Image { image_id: String },
+    File { epoch: u64, seq: u64, index: usize },
+}
+
+/// 대화에 실린 원본 바이트를 네이티브 저장 창에서 고른 경로에 쓴다.
+#[tauri::command(rename_all = "camelCase")]
+pub async fn chat_view_download(
+    app: tauri::AppHandle,
+    agent_id: String,
+    source: ChatDownload,
+    app_state: State<'_, AppState>,
+) -> Result<bool, String> {
+    let dash = app_state.web_dash.clone();
+    let (name, bytes) = tokio::task::spawn_blocking(move || match source {
+        ChatDownload::Image { image_id } => {
+            let (media, bytes) = dash.app_logs.image(&agent_id, &image_id).ok_or("image-gone")?;
+            let ext = match media.as_str() {
+                "image/png" => "png",
+                "image/jpeg" => "jpg",
+                "image/gif" => "gif",
+                "image/webp" => "webp",
+                _ => "bin",
+            };
+            Ok((format!("image-{image_id}.{ext}"), bytes))
+        }
+        ChatDownload::File { epoch, seq, index } => dash
+            .app_logs
+            .file(&agent_id, epoch, seq, index)
+            .map(|(name, bytes)| (name, std::sync::Arc::new(bytes)))
+            .ok_or("file-gone"),
+    })
+    .await
+    .map_err(|e| e.to_string())??;
+
+    let (tx, rx) = tokio::sync::oneshot::channel();
+    app.dialog().file().set_file_name(name).save_file(move |path| {
+        let _ = tx.send(path);
+    });
+    let Some(path) = rx.await.map_err(|e| e.to_string())? else {
+        return Ok(false);
+    };
+    let path = path.into_path().map_err(|e| e.to_string())?;
+    tokio::fs::write(path, bytes.as_slice()).await.map_err(|e| e.to_string())?;
+    Ok(true)
 }
 
 /// 이 캐릭터(탭) 세션이 답을 기다리는 권한 요청·질문.

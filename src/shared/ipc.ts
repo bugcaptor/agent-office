@@ -22,6 +22,7 @@ export const Commands = {
   discussionControlReply: "discussion_control_reply",
   chatViewLog: "chat_view_log",
   chatViewImage: "chat_view_image",
+  chatViewDownload: "chat_view_download",
   chatViewAsks: "chat_view_asks",
   chatViewAnswer: "chat_view_answer",
   chatViewSend: "chat_view_send",
