@@ -25,6 +25,7 @@ mod files;
 pub mod log;
 pub mod net;
 mod routes;
+pub(crate) use routes::cli_of_command;
 
 use std::collections::HashMap;
 use std::net::{IpAddr, Ipv4Addr};

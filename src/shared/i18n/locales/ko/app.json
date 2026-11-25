@@ -110,6 +110,9 @@
       "office-agent-interrupt": "🌐 웹: 일반 에이전트 작업 중단(Esc)",
       "office-agent-ctrl-c": "🌐 웹: 일반 에이전트에 Ctrl-C",
       "office-agent-terminate": "🌐 웹: 일반 에이전트 종료",
+      "message": "🌐 웹: {{name}}에게 직접 입력 — {{detail}}",
+      "message-queued": "🌐 웹: {{name}} 대기열에 넣음 — {{detail}}",
+      "office-agent-queued": "🌐 웹: 일반 에이전트 대기열에 넣음 — {{detail}}",
       "other": "🌐 웹: {{op}}"
     }
   }

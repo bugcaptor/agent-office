@@ -37,6 +37,9 @@ pub enum TurnPhase {
 pub struct TurnObservation {
     pub phase: TurnPhase,
     pub at: u64,
+    /// 이 상태가 이어진 시작 시각. 작업 중·사람 대기는 한 턴으로 보아 턴이 시작된 때를 지킨다
+    /// (웹·대화 보기의 "생각 중 N초").
+    pub since: u64,
     pub agent_id: String,
     /// 사람 대기일 때 훅이 준 문구(도구·명령 설명).
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -66,6 +69,7 @@ impl TurnTracker {
 
     fn observe(&self, session_id: &str, agent_id: &str, phase: TurnPhase, at: u64, message: Option<String>) {
         let mut sessions = self.sessions.lock().unwrap();
+        let mut since = at;
         if let Some(old) = sessions.get(session_id) {
             // 늦게 도착한 옛 신호는 버린다.
             if old.at > at {
@@ -75,10 +79,14 @@ impl TurnTracker {
             if phase == TurnPhase::NeedsHuman && matches!(old.phase, TurnPhase::Idle | TurnPhase::Ended) {
                 return;
             }
+            let in_turn = |p: TurnPhase| matches!(p, TurnPhase::Working | TurnPhase::NeedsHuman);
+            if old.phase == phase || (in_turn(old.phase) && in_turn(phase)) {
+                since = old.since;
+            }
         }
         sessions.insert(
             session_id.to_string(),
-            TurnObservation { phase, at, agent_id: agent_id.to_string(), message },
+            TurnObservation { phase, at, since, agent_id: agent_id.to_string(), message },
         );
         drop(sessions);
         self.version.send_modify(|v| *v += 1);
@@ -188,8 +196,12 @@ mod tests {
         assert_eq!(waiting.message.as_deref(), Some("Claude needs your permission to use Bash"));
         events.activity_event(&activity(ActivityKind::Tool, 30));
         assert_eq!(tracker.get("s1").unwrap().phase, TurnPhase::Working);
+        assert_eq!(tracker.get("s1").unwrap().since, 10, "권한 대기를 지나도 턴 시작 시각을 지킨다");
         events.notification_new(&notification(NotificationSource::Stop, 40, "done"));
-        assert_eq!(tracker.get("s1").unwrap().phase, TurnPhase::Idle);
+        let idle = tracker.get("s1").unwrap();
+        assert_eq!((idle.phase, idle.since), (TurnPhase::Idle, 40));
+        events.activity_event(&activity(ActivityKind::Prompt, 50));
+        assert_eq!(tracker.get("s1").unwrap().since, 50);
     }
 
     #[test]

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import type { ChatLogItem, ChatLogPage, PendingAsk } from "@shared/types";
-import { askQuestions, groupChatItems, joinAnswers, mergeChatPage, permissionSummary } from "../chatViewModel";
+import type { ChatLiveStatus, ChatLogItem, ChatLogPage, PendingAsk } from "@shared/types";
+import { STALL_MS, askQuestions, groupChatItems, joinAnswers, liveState, mergeChatPage, minSec, permissionSummary, runningTool } from "../chatViewModel";
 
 let seq = 0;
 const item = (over: Partial<ChatLogItem>): ChatLogItem => ({ seq: ++seq, role: "assistant", kind: "text", text: "", isError: false, sidechain: false, ...over });
@@ -60,5 +60,27 @@ describe("questions and permissions", () => {
     expect(permissionSummary(ask("Bash", { command: "ls", description: "list" }))).toEqual({ body: "ls", note: "list" });
     expect(permissionSummary(ask("Edit", { file_path: "/a", old_string: "x", new_string: "y" }))).toEqual({ target: "/a", body: "- x\n+ y" });
     expect(permissionSummary(ask("mcp__x", { path: "/p", k: 1 })).body).toContain('"k": 1');
+  });
+});
+
+describe("liveState", () => {
+  const status = (over: Partial<ChatLiveStatus>): ChatLiveStatus => ({ running: true, now: 100_000, queue: { items: [] }, ...over });
+
+  it("tells thinking from a stalled or finished turn", () => {
+    expect(liveState(status({ phase: "working", since: 58_000, outputAt: 99_500 }), "Bash")).toEqual({ kind: "thinking", elapsedMs: 42_000, tool: "Bash" });
+    expect(liveState(status({ phase: "working", since: 10_000, outputAt: 100_000 - STALL_MS }))).toEqual({ kind: "stalled", elapsedMs: 90_000, silentMs: STALL_MS });
+    expect(liveState(status({ phase: "idle" }))?.kind).toBe("idle");
+    expect(liveState(status({ phase: "needs-human" }))?.kind).toBe("human");
+    expect(liveState(status({ running: false }))?.kind).toBe("off");
+    expect(liveState(status({}))).toBeNull();
+    expect(minSec(125_400)).toEqual([2, 5]);
+  });
+
+  it("finds the main-chain tool still waiting for its result", () => {
+    const call = item({ kind: "tool_use", toolName: "Bash", text: "npm test" });
+    expect(runningTool(groupChatItems([call]))).toBe("Bash");
+    expect(runningTool(groupChatItems([call, item({ role: "user", kind: "tool_result", text: "ok" })]))).toBeUndefined();
+    expect(runningTool(groupChatItems([call, item({ kind: "tool_use", toolName: "Grep", text: "x", sidechain: true })]))).toBe("Bash");
+    expect(runningTool(groupChatItems([item({ text: "done" })]))).toBeUndefined();
   });
 });

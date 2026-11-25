@@ -563,7 +563,7 @@ mod tests {
         let waiting = build_status(
             &items,
             "root",
-            &|sid| (sid == "s-b").then(|| TurnObservation { phase: TurnPhase::NeedsHuman, at: 5, agent_id: "a1".into(), message: Some("Bash: rm -rf build".into()) }),
+            &|sid| (sid == "s-b").then(|| TurnObservation { phase: TurnPhase::NeedsHuman, at: 5, since: 5, agent_id: "a1".into(), message: Some("Bash: rm -rf build".into()) }),
             &no_report,
         )
         .unwrap();

@@ -9,6 +9,7 @@
 pub mod agent_paths;
 pub mod api_keys;
 mod work_send;
+mod chat_queue;
 mod task_chat;
 mod office_agent;
 mod discussion_session;
@@ -747,6 +748,7 @@ pub fn run() {
                 turns: turn_tracker,
                 work_panels: crate::persistence::work_panels_store::WorkPanelsStore::new(data_dir.clone()),
                 work_send: work_send_runtime.clone(),
+                chat_queue: Arc::default(),
                 autorun: {
                     let handle = handle.clone();
                     Arc::new(crate::control::autorun::AutoRunBridge::new(move |request: &serde_json::Value| {
@@ -761,6 +763,7 @@ pub fn run() {
                 },
                 agent_session_lookup: claude_resume_store.clone(),
             });
+            crate::chat_queue::ChatQueue::spawn(control_ctx.chat_queue.clone(), control_ctx.clone());
             if settings_cache.read().unwrap().cli_enabled {
                 let _ = tauri::async_runtime::block_on(control_server.ensure(control_ctx.clone()));
             }
@@ -924,6 +927,8 @@ pub fn run() {
             ipc::commands::chat_view_asks,
             ipc::commands::chat_view_answer,
             ipc::commands::chat_view_send,
+            ipc::commands::chat_view_status,
+            ipc::commands::chat_view_cancel_queued,
             ipc::commands::web_dash_status,
             ipc::commands::web_dash_configure,
             ipc::commands::web_dash_rotate_token,

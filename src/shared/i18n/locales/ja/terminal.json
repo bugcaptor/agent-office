@@ -82,6 +82,22 @@
     "noItems": "まだ会話がありません。",
     "inputPh": "エージェントへのメッセージ(Enter で送信、Shift+Enter で改行)",
     "send": "送信",
+    "inputQueuePh": "作業中 — 書くとキューに入れ、ターン終了時に送ります(Enter で追加、Shift+Enter で改行)",
+    "queue": "キューに追加",
+    "queuedNotice": "キューに入れました。ターンが終わると送ります。",
+    "queueTitle_one": "送信待ち {{count}} 件 · ターンが終わるたびに 1 件ずつ送ります",
+    "queueTitle_other": "送信待ち {{count}} 件 · ターンが終わるたびに 1 件ずつ送ります",
+    "queueCancel": "キューから外す",
+    "live": {
+      "thinking": "考え中… {{time}}",
+      "tool": "{{tool}} 実行中… {{time}}",
+      "stalled": "作業中ですが {{time}} 画面出力がありません — 止まっているかもしれません",
+      "human": "回答待ち — 止まってはいません",
+      "idle": "ターン終了 · 入力待ち",
+      "off": "CLI が動いていません",
+      "sec": "{{s}}秒",
+      "minSec": "{{m}}分{{s}}秒"
+    },
     "result_one": "結果 {{count}} 行",
     "result_other": "結果 {{count}} 行",
     "imageGone": "🖼 画像はもう表示できません(古いため破棄)",
@@ -109,8 +125,6 @@
     "askOther": "直接入力",
     "askSend": "回答を送信",
     "err": {
-      "chat-view-working": "作業中です。ターンが終わって入力待ちになると送れます(ターミナルビューなら今も入力可能)。",
-      "chat-view-needs-human": "回答待ちです。上のカードかターミナルで先に答えてください。",
       "chat-view-no-cli": "このタブで Claude・Codex が入力待ちか分かりません。ターミナルビューを使ってください。",
       "not-running": "ターミナルが起動していません",
       "empty": "内容が空です",
@@ -122,7 +136,11 @@
       "ask-unanswered": "すべての質問に答えてください",
       "ask-invalid": "その回答は送れない質問です",
       "ask-no-rule": "「今後は確認しない」を選べないリクエストです",
-      "too-large": "文章が長すぎます"
+      "too-large": "文章が長すぎます",
+      "queue-full": "キューがいっぱいです(最大 20 件)",
+      "queue-gone": "送信済みか消えたメッセージです",
+      "queue-dropped-session": "セッションが変わったためキューを空にしました",
+      "control-char": "送れない文字が含まれています"
     },
     "toChat": "会話ビューに切り替え(CLI はそのまま動作)",
     "toTerminal": "ターミナルビューに切り替え"

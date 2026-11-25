@@ -51,3 +51,28 @@ export interface PendingAsk {
 }
 
 export type AskAction = "allow" | "always" | "deny" | "dismiss";
+
+/** 보내기 결과: 바로 넣었거나(sent) 작업 중이라 대기열에 쌓았다(queued). */
+export type ChatSendOutcome = "sent" | "queued";
+
+/** 턴이 끝나면 넣으려고 쌓아 둔 메시지(Rust `chat_queue::QueuedMessage`). */
+export interface QueuedMessage {
+  id: string;
+  text: string;
+  at: number;
+}
+
+export type TurnPhase = "working" | "needs-human" | "idle" | "ended";
+
+/** 지금 상태와 대기열(Rust `chat_queue::LiveStatus`). 웹 상태판 `/api/state`도 같은 재료를 싣는다. */
+export interface ChatLiveStatus {
+  running: boolean;
+  phase?: TurnPhase;
+  /** 이 상태가 시작된 시각(작업 중이면 턴 시작, 유닉스 ms). */
+  since?: number;
+  /** 마지막 PTY 출력 시각. */
+  outputAt?: number;
+  /** 서버 시각. */
+  now: number;
+  queue: { items: QueuedMessage[]; error?: string };
+}

@@ -2,7 +2,7 @@
 //
 // 터미널 탭 "대화 보기"의 순수 로직: 로그 이어 붙이기, 블록 묶기, 질문 답 엮기, 도구 입력 요약.
 // 스토어·Tauri 의존이 없어 단위 테스트가 그대로 부른다.
-import type { ChatLogItem, ChatLogPage, PendingAsk } from "@shared/types";
+import type { ChatLiveStatus, ChatLogItem, ChatLogPage, PendingAsk } from "@shared/types";
 
 /** 화면이 들고 있는 최대 항목 수(오래된 것부터 버린다). */
 export const CHAT_VIEW_KEEP = 600;
@@ -113,4 +113,44 @@ export function permissionSummary(ask: PendingAsk): { target?: string; body: str
     case "ExitPlanMode": return { body: str(i.plan) };
     default: return { target, body: JSON.stringify(i, null, 2) };
   }
+}
+
+/** 작업 중인데 PTY 출력이 이만큼 끊기면 "멈췄을 수 있음"으로 본다. CLI는 작업 중 스피너·경과 시간을 늘 다시 그린다. */
+export const STALL_MS = 20_000;
+
+/** 대화 끝에 보일 지금 상태. 생각 중(움직임)과 멈춤·입력 대기(정지)를 가른다. */
+export type LiveState =
+  | { kind: "thinking"; elapsedMs: number; tool?: string }
+  | { kind: "stalled"; elapsedMs: number; silentMs: number }
+  | { kind: "human" }
+  | { kind: "idle" }
+  | { kind: "off" };
+
+/** 본 대화에서 결과를 아직 못 받은 마지막 도구 호출(지금 도는 도구). */
+export function runningTool(blocks: ChatBlock[]): string | undefined {
+  for (let i = blocks.length - 1; i >= 0; i--) {
+    const b = blocks[i];
+    if (b.side) continue;
+    if (b.head.kind !== "tool_use" || !b.head.toolName) return undefined;
+    return b.children.some((c) => c.kind === "tool_result") ? undefined : b.head.toolName;
+  }
+  return undefined;
+}
+
+export function liveState(status: ChatLiveStatus | null, tool?: string): LiveState | null {
+  if (!status) return null;
+  if (!status.running || status.phase === "ended") return { kind: "off" };
+  if (status.phase === "needs-human") return { kind: "human" };
+  if (status.phase === "idle") return { kind: "idle" };
+  if (status.phase !== "working") return null;
+  const elapsedMs = Math.max(0, status.now - (status.since ?? status.now));
+  const silentMs = status.outputAt ? Math.max(0, status.now - status.outputAt) : elapsedMs;
+  if (silentMs >= STALL_MS) return { kind: "stalled", elapsedMs, silentMs };
+  return { kind: "thinking", elapsedMs, tool };
+}
+
+/** 경과 시간 → [분, 초]. */
+export function minSec(ms: number): [number, number] {
+  const s = Math.floor(ms / 1000);
+  return [Math.floor(s / 60), s % 60];
 }

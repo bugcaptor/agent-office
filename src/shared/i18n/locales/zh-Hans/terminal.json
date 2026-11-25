@@ -82,6 +82,22 @@
     "noItems": "还没有对话。",
     "inputPh": "发给代理的消息(Enter 发送,Shift+Enter 换行)",
     "send": "发送",
+    "inputQueuePh": "正在工作 — 输入的消息会进入队列,回合结束时发送(Enter 加入,Shift+Enter 换行)",
+    "queue": "加入队列",
+    "queuedNotice": "已加入队列,回合结束时发送。",
+    "queueTitle_one": "待发送 {{count}} 条 · 每个回合结束时发送一条",
+    "queueTitle_other": "待发送 {{count}} 条 · 每个回合结束时发送一条",
+    "queueCancel": "移出队列",
+    "live": {
+      "thinking": "思考中… {{time}}",
+      "tool": "正在运行 {{tool}}… {{time}}",
+      "stalled": "正在工作,但已 {{time}} 没有终端输出 — 可能卡住了",
+      "human": "等待回答 — 并未卡住",
+      "idle": "回合结束 · 等待输入",
+      "off": "没有运行中的 CLI",
+      "sec": "{{s}} 秒",
+      "minSec": "{{m}} 分 {{s}} 秒"
+    },
     "result_one": "结果 {{count}} 行",
     "result_other": "结果 {{count}} 行",
     "imageGone": "🖼 图片已不可用(已清理)",
@@ -109,8 +125,6 @@
     "askOther": "直接输入",
     "askSend": "发送回答",
     "err": {
-      "chat-view-working": "正在工作。回合结束并等待输入时才能发送(终端视图现在就能输入)。",
-      "chat-view-needs-human": "正在等待回答。请先回答上方卡片或在终端中回答。",
       "chat-view-no-cli": "无法判断此标签页中的 Claude/Codex 是否在等待输入。请使用终端视图。",
       "not-running": "终端未运行",
       "empty": "内容为空",
@@ -122,7 +136,11 @@
       "ask-unanswered": "请回答所有问题",
       "ask-invalid": "此问题不能接受该回答",
       "ask-no-rule": "此请求不能选择不再询问",
-      "too-large": "文字太长"
+      "too-large": "文字太长",
+      "queue-full": "队列已满(最多 20 条)",
+      "queue-gone": "已发送或已不存在",
+      "queue-dropped-session": "会话已更换,队列已清空",
+      "control-char": "包含无法发送的字符"
     },
     "toChat": "切换到对话视图(CLI 继续运行)",
     "toTerminal": "切换到终端视图"

@@ -93,6 +93,9 @@
       "office-agent-interrupt": "🌐 Web: 汎用エージェントの作業を中断(Esc)",
       "office-agent-ctrl-c": "🌐 Web: 汎用エージェントに Ctrl-C",
       "office-agent-terminate": "🌐 Web: 汎用エージェントを終了",
+      "message": "🌐 Web: {{name}} に直接入力 — {{detail}}",
+      "message-queued": "🌐 Web: {{name}} のキューに追加 — {{detail}}",
+      "office-agent-queued": "🌐 Web: 汎用エージェントのキューに追加 — {{detail}}",
       "other": "🌐 Web: {{op}}"
     }
   }

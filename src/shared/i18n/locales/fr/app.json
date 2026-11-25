@@ -93,6 +93,9 @@
       "office-agent-interrupt": "🌐 Web : agent général interrompu (Échap)",
       "office-agent-ctrl-c": "🌐 Web : Ctrl-C à l’agent général",
       "office-agent-terminate": "🌐 Web : agent général terminé",
+      "message": "🌐 Web : message à {{name}} — {{detail}}",
+      "message-queued": "🌐 Web : mis en file pour {{name}} — {{detail}}",
+      "office-agent-queued": "🌐 Web : mis en file pour l'agent général — {{detail}}",
       "other": "🌐 Web : {{op}}"
     }
   }

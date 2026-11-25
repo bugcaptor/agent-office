@@ -266,6 +266,11 @@ impl SessionManager {
             .clone()
     }
 
+    /// agentId 터미널의 마지막 PTY 출력 시각(유닉스 ms).
+    pub fn last_output_ms(&self, agent_id: &str) -> Option<u64> {
+        self.sinks.lock().get(agent_id).and_then(|sink| sink.last_data_ms())
+    }
+
     /// agentId의 현재 sid.
     pub fn session_id_for(&self, agent_id: &str) -> Option<SessionId> {
         self.find(agent_id).map(|s| s.session_id.clone())

@@ -93,6 +93,9 @@
       "office-agent-interrupt": "🌐 網頁：中斷通用代理（Esc）",
       "office-agent-ctrl-c": "🌐 網頁：向通用代理送出 Ctrl-C",
       "office-agent-terminate": "🌐 網頁：結束通用代理",
+      "message": "🌐 網頁：直接傳給 {{name}} — {{detail}}",
+      "message-queued": "🌐 網頁：加入 {{name}} 的佇列 — {{detail}}",
+      "office-agent-queued": "🌐 網頁：加入通用代理的佇列 — {{detail}}",
       "other": "🌐 網頁:{{op}}"
     }
   }

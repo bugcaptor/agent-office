@@ -88,6 +88,8 @@ pub struct ControlContext {
     pub work_panels: crate::persistence::work_panels_store::WorkPanelsStore,
     /// 후속 프롬프트 넣기(`ask`). 앱의 보내기와 같은 관문·바쁨 표시를 쓴다.
     pub work_send: Arc<crate::work_send::WorkSendRuntime>,
+    /// 대화 보기·웹 상태판의 입력과 보낼 메시지 대기열.
+    pub chat_queue: Arc<crate::chat_queue::ChatQueue>,
     /// 자동 진행 쓰기를 렌더러로 넘기는 다리.
     pub autorun: Arc<autorun::AutoRunBridge>,
     /// `ctl discuss start|answer`를 렌더러 토의 실행기로 넘기는 다리(`discussion-control` 이벤트).
@@ -375,6 +377,7 @@ mod tests {
             turns: Arc::new(turns::TurnTracker::default()),
             work_panels: crate::persistence::work_panels_store::WorkPanelsStore::new(dir.clone()),
             work_send: Arc::new(crate::work_send::WorkSendRuntime::default()),
+            chat_queue: Arc::default(),
             autorun: {
                 let bridged = bridged.clone();
                 Arc::new(autorun::AutoRunBridge::new(move |v: &serde_json::Value| {

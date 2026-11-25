@@ -82,6 +82,22 @@
     "noItems": "No messages yet.",
     "inputPh": "Message to the agent (Enter to send, Shift+Enter for a new line)",
     "send": "Send",
+    "inputQueuePh": "Working — your message is queued and sent when the turn ends (Enter to queue, Shift+Enter for a new line)",
+    "queue": "Queue",
+    "queuedNotice": "Queued. It will be sent when the turn ends.",
+    "queueTitle_one": "{{count}} queued · one is sent each time a turn ends",
+    "queueTitle_other": "{{count}} queued · one is sent each time a turn ends",
+    "queueCancel": "Remove from queue",
+    "live": {
+      "thinking": "Thinking… {{time}}",
+      "tool": "Running {{tool}}… {{time}}",
+      "stalled": "Working, but no terminal output for {{time}} — it may be stuck",
+      "human": "Waiting for an answer — not stuck",
+      "idle": "Turn finished · waiting for input",
+      "off": "No CLI is running",
+      "sec": "{{s}}s",
+      "minSec": "{{m}}m {{s}}s"
+    },
     "result_one": "Result · {{count}} line",
     "result_other": "Result · {{count}} lines",
     "imageGone": "🖼 Image no longer available (cleared)",
@@ -109,8 +125,6 @@
     "askOther": "Type an answer",
     "askSend": "Send answer",
     "err": {
-      "chat-view-working": "It's working. You can send once the turn ends and it waits for input (the terminal view takes input now).",
-      "chat-view-needs-human": "Waiting for an answer. Answer the card above or the terminal first.",
       "chat-view-no-cli": "Can't tell whether Claude/Codex is waiting for input in this tab. Use the terminal view.",
       "not-running": "The terminal is not running",
       "empty": "Empty",
@@ -122,7 +136,11 @@
       "ask-unanswered": "Answer every question",
       "ask-invalid": "This question can't take that answer",
       "ask-no-rule": "This request has no 'don't ask again' rule",
-      "too-large": "Text too long"
+      "too-large": "Text too long",
+      "queue-full": "The queue is full (20 max)",
+      "queue-gone": "Already sent or gone",
+      "queue-dropped-session": "The session changed, so the queue was cleared",
+      "control-char": "Text contains characters that can't be sent"
     },
     "toChat": "Switch to conversation view (the CLI keeps running)",
     "toTerminal": "Switch to terminal view"

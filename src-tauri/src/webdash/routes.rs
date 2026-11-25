@@ -22,8 +22,7 @@ use tokio::sync::oneshot;
 
 use crate::control::ControlContext;
 use crate::httpapi::{fail, ok, session_state_str};
-use crate::control::turns::TurnPhase;
-use crate::types::{is_office_agent_id, AgentProfile, WorkAgent, WorkCli, WorkFollowUpRequest, OFFICE_AGENT_ID};
+use crate::types::{is_office_agent_id, AgentProfile, WorkAgent, WorkCli, OFFICE_AGENT_ID};
 
 use super::WebDashState;
 
@@ -180,7 +179,7 @@ fn clip(text: &str, max: usize) -> String {
 
 /// 명령줄 → 에이전트 CLI 이름. `claude …`, `node /…/bin/codex …`,
 /// `codex-aarch64-apple-darwin`처럼 앞 두 토큰의 실행 파일 이름으로 본다.
-fn cli_of_command(command: &str) -> Option<&'static str> {
+pub(crate) fn cli_of_command(command: &str) -> Option<&'static str> {
     for token in command.split_whitespace().take(2) {
         let base = token.rsplit(['/', '\\']).next().unwrap_or(token);
         let base = base.strip_suffix(".exe").unwrap_or(base).to_ascii_lowercase();
@@ -236,6 +235,7 @@ async fn state(State(ctx): Ctx) -> Json<Value> {
             let probe = probes.get(&a.id).copied().unwrap_or_default();
             let waiting = waiting_of(&ctx, &a.id);
             let asks = session.map(|(sid, _)| ctx.ctl.observer.permissions().list(sid)).unwrap_or_default();
+            let queue = ctx.ctl.chat_queue.view(&a.id, session.map(|(sid, _)| sid.as_str()));
             json!({
                 "agentId": a.id,
                 "name": a.name,
@@ -248,6 +248,7 @@ async fn state(State(ctx): Ctx) -> Json<Value> {
                 "turn": turn,
                 "waiting": waiting,
                 "asks": asks,
+                "queue": queue,
                 "label": ctx.dash.label(&a.id),
                 "cli": probe.cli,
                 "atPrompt": probe.at_prompt,
@@ -261,6 +262,7 @@ async fn state(State(ctx): Ctx) -> Json<Value> {
             "session": session.map(|(sid, st)| json!({ "sessionId": sid, "state": session_state_str(*st) })),
             "turn": session.and_then(|(sid, _)| ctx.ctl.turns.get(sid)),
             "asks": session.map(|(sid, _)| ctx.ctl.observer.permissions().list(sid)).unwrap_or_default(),
+            "queue": ctx.ctl.chat_queue.view(OFFICE_AGENT_ID, session.map(|(sid, _)| sid.as_str())),
             "cli": probe.cli,
             "atPrompt": probe.at_prompt,
             "cwd": session.and_then(|_| ctx.ctl.gate.sink().cwd_of(OFFICE_AGENT_ID)),
@@ -276,7 +278,15 @@ async fn state(State(ctx): Ctx) -> Json<Value> {
         "folders": folders(&ctx),
         "home": crate::session::manager::home_dir(),
     });
-    ok(with_rev(body))
+    // 마지막 출력 시각·서버 시각은 몇 초마다 바뀐다. 지문(`rev`)에 넣지 않아 머리 카드를 괜히 다시 그리지 않는다.
+    let mut body = with_rev(body);
+    let output: serde_json::Map<String, Value> = live
+        .keys()
+        .filter_map(|agent| ctx.ctl.manager.last_output_ms(agent).map(|ms| (agent.clone(), json!(ms))))
+        .collect();
+    body["outputAt"] = Value::Object(output);
+    body["now"] = json!(crate::types::now_ms());
+    ok(body)
 }
 
 /// 답을 기다리는 알림(권한 요청 등).
@@ -484,6 +494,12 @@ async fn bridged(ctx: &Dash, payload: Value) -> Result<Value, String> {
 struct AgentCommandBody {
     #[serde(default)]
     cli: Option<String>,
+    /// `message`: 보낼 글.
+    #[serde(default)]
+    text: Option<String>,
+    /// `queue-cancel`: 뺄 대기열 메시지.
+    #[serde(default)]
+    id: Option<String>,
 }
 
 async fn agent_command(
@@ -495,6 +511,11 @@ async fn agent_command(
         return fail("unknown-agent");
     };
     let body = body.map(|Json(b)| b).unwrap_or_default();
+    match op.as_str() {
+        "message" => return message(&ctx, &agent, body.text.as_deref().unwrap_or("")).await,
+        "queue-cancel" => return queue_cancel(&ctx, &agent, body.id.as_deref().unwrap_or("")),
+        _ => {}
+    }
     let result = match op.as_str() {
         "interrupt" | "ctrl-c" => interrupt(&ctx, &agent, &op),
         "launch" => launch(&ctx, &profile, body.cli.as_deref()).await,
@@ -509,6 +530,34 @@ async fn agent_command(
             ok(Value::Null)
         }
         Err(e) => fail(e),
+    }
+}
+
+/// 터미널의 CLI에 직접 쓴 글을 넣는다(업무 보내기와 달리 업무 보드에 남지 않는다). 입력 대기면 바로,
+/// 작업 중이면 대기열에 쌓아 턴이 끝날 때 넣는다 — 앱의 대화 보기와 같은 대기열이다.
+async fn message(ctx: &Dash, agent: &str, text: &str) -> Json<Value> {
+    let office = is_office_agent_id(agent);
+    match ctx.ctl.chat_queue.send(&ctx.ctl, agent, text).await {
+        Ok(outcome) => {
+            let queued = outcome == crate::chat_queue::SendOutcome::Queued;
+            let op = match (office, queued) {
+                (true, true) => "office-agent-queued",
+                (true, false) => "office-agent-follow-up",
+                (false, true) => "message-queued",
+                (false, false) => "message",
+            };
+            activity(ctx, op, (!office).then_some(agent), Some(&first_line(text)));
+            ok(json!({ "outcome": outcome }))
+        }
+        Err(e) => fail(e),
+    }
+}
+
+fn queue_cancel(ctx: &Dash, agent: &str, id: &str) -> Json<Value> {
+    if ctx.ctl.chat_queue.cancel(agent, id) {
+        ok(Value::Null)
+    } else {
+        fail("queue-gone")
     }
 }
 
@@ -602,13 +651,8 @@ async fn office_agent_send(State(ctx): Ctx, Json(b): Json<OfficeAgentSend>) -> J
                 .unwrap_or_default()
         };
         if probe.cli.is_some() {
-            return match office_follow_up(&ctx, &b.text).await {
-                Ok(()) => {
-                    activity(&ctx, "office-agent-follow-up", None, Some(&first_line(&b.text)));
-                    ok(Value::Null)
-                }
-                Err(e) => fail(e),
-            };
+            // 입력 대기면 이어 넣고, 작업 중이면 대기열에 쌓는다.
+            return message(&ctx, OFFICE_AGENT_ID, &b.text).await;
         }
         if probe.at_prompt != Some(true) {
             return fail("office-agent-shell-busy");
@@ -637,26 +681,15 @@ async fn office_agent_send(State(ctx): Ctx, Json(b): Json<OfficeAgentSend>) -> J
     }
 }
 
-/// 입력을 기다리는 CLI에 다음 지시를 넣는다.
-async fn office_follow_up(ctx: &Dash, text: &str) -> Result<(), String> {
-    let session_id = ctx.ctl.manager.session_id_for(OFFICE_AGENT_ID).ok_or("not-running")?;
-    // 곁 세션의 알림은 렌더러가 걷지 않아 남아 있을 수 있다. 판정은 턴 관측만 본다.
-    match ctx.ctl.turns.get(&session_id).map(|t| t.phase) {
-        Some(TurnPhase::Idle) => {}
-        Some(TurnPhase::NeedsHuman) => return Err("office-agent-needs-human".into()),
-        _ => return Err("office-agent-working".into()),
+async fn office_agent_command(
+    State(ctx): Ctx,
+    Path(op): Path<String>,
+    body: Option<Json<AgentCommandBody>>,
+) -> Json<Value> {
+    if op == "queue-cancel" {
+        let id = body.and_then(|Json(b)| b.id).unwrap_or_default();
+        return queue_cancel(&ctx, OFFICE_AGENT_ID, &id);
     }
-    ctx.ctl
-        .work_send
-        .follow_up(
-            &ctx.ctl.gate,
-            WorkFollowUpRequest { agent_id: OFFICE_AGENT_ID.to_string(), session_id, text: text.to_string() },
-        )
-        .await
-        .map(|_| ())
-}
-
-async fn office_agent_command(State(ctx): Ctx, Path(op): Path<String>) -> Json<Value> {
     let result = match op.as_str() {
         "interrupt" | "ctrl-c" => interrupt(&ctx, OFFICE_AGENT_ID, &op),
         "terminate" if !ctx.ctl.manager.is_running(OFFICE_AGENT_ID) => Err("not-running".into()),

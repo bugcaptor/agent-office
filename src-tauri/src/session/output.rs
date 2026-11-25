@@ -80,13 +80,26 @@ pub(super) enum ReaderMsg {
 pub struct OutputSink {
     channel: Mutex<Option<Channel<OutputChunk>>>,
     backlog: Mutex<std::collections::VecDeque<OutputChunk>>,
+    /// 마지막으로 PTY 출력을 받은 시각(유닉스 ms, 0 = 아직 없음). CLI가 작업 중에
+    /// 스피너·경과 시간을 다시 그리므로 "생각 중"과 "멈춤"을 가르는 데 쓴다.
+    last_data_ms: std::sync::atomic::AtomicU64,
 }
 impl OutputSink {
     pub fn new() -> Self {
         Self {
             channel: Mutex::new(None),
             backlog: Mutex::new(Default::default()),
+            last_data_ms: std::sync::atomic::AtomicU64::new(0),
         }
+    }
+
+    /// 마지막 PTY 출력 시각(유닉스 ms). 받은 적 없으면 None.
+    pub fn last_data_ms(&self) -> Option<u64> {
+        Some(self.last_data_ms.load(std::sync::atomic::Ordering::Relaxed)).filter(|&ms| ms > 0)
+    }
+
+    fn touch(&self) {
+        self.last_data_ms.store(crate::types::now_ms(), std::sync::atomic::Ordering::Relaxed);
     }
 
     pub fn attach(&self, ch: Channel<OutputChunk>) {
@@ -163,6 +176,7 @@ pub(super) fn spawn_output_pump(
                 }
                 msg = rx.recv() => match msg {
                     Some(ReaderMsg::Data(bytes)) => {
+                        sink.touch();
                         if bell_detector.feed(&bytes) {
                             hub.on_bell(&session_id); // BEL 폴백(dedup이 연속 억제)
                         }

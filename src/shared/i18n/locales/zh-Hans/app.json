@@ -93,6 +93,9 @@
       "office-agent-interrupt": "🌐 网页：中断通用智能体（Esc）",
       "office-agent-ctrl-c": "🌐 网页：向通用智能体发送 Ctrl-C",
       "office-agent-terminate": "🌐 网页：结束通用智能体",
+      "message": "🌐 网页：直接发给 {{name}} — {{detail}}",
+      "message-queued": "🌐 网页：加入 {{name}} 的队列 — {{detail}}",
+      "office-agent-queued": "🌐 网页：加入通用智能体的队列 — {{detail}}",
       "other": "🌐 网页:{{op}}"
     }
   }

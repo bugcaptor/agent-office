@@ -3,19 +3,25 @@
 // 터미널 탭의 "대화 보기". xterm은 아래에 그대로 붙어 있고(keep-alive), 이 판이 그 위를 덮는다.
 // 내용은 CLI 전사(JSONL)다 — 사람 말·에이전트 말(마크다운)·도구 호출과 결과(접힘)·이미지.
 // 권한 요청·질문은 카드로 뜨고 여기서 답할 수 있다. 터미널에도 같은 대화상자가 떠 있어
-// 어느 보기에서든 먼저 답한 쪽이 반영된다. 아래 입력칸은 CLI가 입력을 기다릴 때 같은 세션에 잇는다.
+// 어느 보기에서든 먼저 답한 쪽이 반영된다. 아래 입력칸은 CLI가 입력을 기다리면 같은 세션에 바로 잇고,
+// 작업 중이면 대기열(웹 상태판과 공유)에 쌓아 턴이 끝날 때 넣는다. 대화 끝에는 지금 상태를 보인다 —
+// 생각 중(움직임)과 출력이 끊긴 멈춤·입력 대기(정지)를 가른다.
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import type { AskAction, ChatLogItem, ChatLogPage, PendingAsk } from "@shared/types";
+import type { AskAction, ChatLiveStatus, ChatLogItem, ChatLogPage, PendingAsk } from "@shared/types";
 import { tauriApi } from "../ipc/tauriApi";
 import { ChatMarkdown, ChatPlainText, CopyableText, CopyButton, DownloadButton, ImageActions, type ShowNotice } from "./ChatLogActions";
 import {
   askQuestions,
   groupChatItems,
   joinAnswers,
+  liveState,
   mergeChatPage,
+  minSec,
   permissionSummary,
+  runningTool,
   type ChatBlock,
+  type LiveState,
 } from "./chatViewModel";
 import "./chatView.css";
 
@@ -40,6 +46,7 @@ export function ChatView({ agentId, active, onShowTerminal }: { agentId: string;
   const { t } = useTranslation("terminal");
   const [page, setPage] = useState<ChatLogPage | null>(null);
   const [asks, setAsks] = useState<PendingAsk[]>([]);
+  const [status, setStatus] = useState<ChatLiveStatus | null>(null);
   const [draft, setDraft] = useState("");
   const [sending, setSending] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
@@ -80,13 +87,15 @@ export function ChatView({ agentId, active, onShowTerminal }: { agentId: string;
     const tick = async () => {
       try {
         const prev = pageRef.current;
-        const [next, pending] = await Promise.all([
+        const [next, pending, live] = await Promise.all([
           tauriApi.chatViewLog(agentId, prev?.last, prev?.epoch),
           tauriApi.chatViewAsks(agentId),
+          tauriApi.chatViewStatus(agentId),
         ]);
         if (stop) return;
         setPage((p) => mergeChatPage(p, next));
         setAsks((a) => (JSON.stringify(a) === JSON.stringify(pending) ? a : pending));
+        setStatus(live);
       } catch {
         // 앱이 바쁘거나 세션이 바뀌는 중 — 다음 틱에 다시 묻는다.
       }
@@ -114,11 +123,21 @@ export function ChatView({ agentId, active, onShowTerminal }: { agentId: string;
   }, [active]);
 
   const blocks = useMemo(() => groupChatItems(page?.items ?? []), [page]);
+  const live = liveState(status, runningTool(blocks));
+  const queued = status?.queue.items ?? [];
+  const queueError = status?.queue.error;
+  // 작업 중이거나 앞서 쌓인 것이 있으면 보내기는 대기열에 쌓는다.
+  const willQueue = !!status && (status.phase === "working" || status.phase === "needs-human" || queued.length > 0);
+  const liveKey = live ? live.kind : "";
 
   useLayoutEffect(() => {
     const el = scrollRef.current;
     if (el && stick.current) el.scrollTop = el.scrollHeight;
-  }, [blocks, asks]);
+  }, [blocks, asks, liveKey, queued.length]);
+
+  const refreshStatus = () => {
+    tauriApi.chatViewStatus(agentId).then(setStatus, () => {});
+  };
 
   const send = async () => {
     const text = draft.trim();
@@ -126,14 +145,25 @@ export function ChatView({ agentId, active, onShowTerminal }: { agentId: string;
     setSending(true);
     setNotice(null);
     try {
-      await tauriApi.chatViewSend(agentId, text);
+      const outcome = await tauriApi.chatViewSend(agentId, text);
       setDraft("");
       stick.current = true;
+      if (outcome === "queued") showActionNotice(t("chatView.queuedNotice"));
+      refreshStatus();
     } catch (err) {
       setNotice(errText(errorCode(err)));
     } finally {
       setSending(false);
     }
+  };
+
+  const cancelQueued = async (id: string) => {
+    try {
+      await tauriApi.chatViewCancelQueued(agentId, id);
+    } catch (err) {
+      setNotice(errText(errorCode(err)));
+    }
+    refreshStatus();
   };
 
   const answer = async (ask: PendingAsk, action: AskAction, answers?: Record<string, string>, message?: string) => {
@@ -175,13 +205,27 @@ export function ChatView({ agentId, active, onShowTerminal }: { agentId: string;
           ))
         )}
         {asks.map((a) => <AskCard key={a.id} ask={a} onAnswer={answer} onNotice={showActionNotice} />)}
+        {page?.attached && live && <LiveRow live={live} />}
       </div>
+      {(queued.length > 0 || queueError) && (
+        <div className="chat-queue" aria-label={t("chatView.queueTitle", { count: queued.length })}>
+          {queued.length > 0 && <div className="chat-queue-title">{t("chatView.queueTitle", { count: queued.length })}</div>}
+          {queued.map((m, i) => (
+            <div key={m.id} className="chat-queue-item">
+              <span className="chat-queue-n">{i + 1}</span>
+              <span className="chat-queue-text" title={m.text}>{m.text}</span>
+              <button type="button" className="pixel-btn chat-queue-cancel" aria-label={t("chatView.queueCancel")} title={t("chatView.queueCancel")} onClick={() => void cancelQueued(m.id)}>✕</button>
+            </div>
+          ))}
+          {queueError && <div className="chat-queue-error">{errText(queueError)}</div>}
+        </div>
+      )}
       {notice && <div className="chat-view-notice" role="status">{notice}</div>}
       <div className="chat-view-input">
         <textarea
           ref={inputRef}
           value={draft}
-          placeholder={t("chatView.inputPh")}
+          placeholder={willQueue ? t("chatView.inputQueuePh") : t("chatView.inputPh")}
           rows={2}
           onChange={(e) => setDraft(e.target.value)}
           onKeyDown={(e) => {
@@ -193,7 +237,7 @@ export function ChatView({ agentId, active, onShowTerminal }: { agentId: string;
           }}
         />
         <button type="button" className="pixel-btn primary" disabled={sending || !draft.trim()} onClick={() => void send()}>
-          {t("chatView.send")}
+          {willQueue ? t("chatView.queue") : t("chatView.send")}
         </button>
       </div>
       {zoom && (
@@ -217,6 +261,39 @@ export function ChatView({ agentId, active, onShowTerminal }: { agentId: string;
         </div>
       )}
       <div className="chat-action-notice" role="status" aria-atomic="true">{actionNotice}</div>
+    </div>
+  );
+}
+
+/** 대화 끝의 지금 상태 한 줄. 생각 중은 움직이고, 멈춤·입력 대기는 멈춰 있다. */
+function LiveRow({ live }: { live: LiveState }) {
+  const { t } = useTranslation("terminal");
+  const time = (ms: number) => {
+    const [m, s] = minSec(ms);
+    return m ? t("chatView.live.minSec", { m, s }) : t("chatView.live.sec", { s });
+  };
+  let text: string;
+  switch (live.kind) {
+    case "thinking":
+      text = live.tool ? t("chatView.live.tool", { tool: live.tool, time: time(live.elapsedMs) }) : t("chatView.live.thinking", { time: time(live.elapsedMs) });
+      break;
+    case "stalled":
+      text = t("chatView.live.stalled", { time: time(live.silentMs) });
+      break;
+    case "human":
+      text = t("chatView.live.human");
+      break;
+    case "idle":
+      text = t("chatView.live.idle");
+      break;
+    case "off":
+      text = t("chatView.live.off");
+      break;
+  }
+  return (
+    <div className={`chat-live ${live.kind}`} role="status">
+      {live.kind === "thinking" ? <span className="chat-live-dots" aria-hidden="true"><i /><i /><i /></span> : <span className="chat-live-mark" aria-hidden="true" />}
+      <span>{text}</span>
     </div>
   );
 }

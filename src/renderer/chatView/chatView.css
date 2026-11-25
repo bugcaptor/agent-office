@@ -192,3 +192,47 @@
   border-top: 2px solid var(--border-dark);
 }
 .chat-view-input textarea { flex: 1; resize: none; min-height: 40px; max-height: 160px; }
+
+/* 대화 끝의 지금 상태: 생각 중은 점이 움직이고, 멈춤·입력 대기는 멈춘 표식이다. */
+.chat-live {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 10px 0 2px;
+  max-width: 920px;
+  font-size: 12px;
+  color: var(--text-dim);
+}
+.chat-live.thinking { color: var(--accent); }
+.chat-live.stalled, .chat-live.human { color: var(--accent-warn); }
+.chat-live-dots { display: inline-flex; gap: 3px; }
+.chat-live-dots i { width: 6px; height: 6px; background: currentColor; animation: chat-live-bounce 1.2s infinite ease-in-out; }
+.chat-live-dots i:nth-child(2) { animation-delay: 0.15s; }
+.chat-live-dots i:nth-child(3) { animation-delay: 0.3s; }
+@keyframes chat-live-bounce {
+  0%, 70%, 100% { opacity: 0.25; transform: translateY(0); }
+  35% { opacity: 1; transform: translateY(-3px); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .chat-live-dots i { animation: chat-live-fade 1.6s infinite; transform: none; }
+  @keyframes chat-live-fade { 50% { opacity: 0.3; } }
+}
+.chat-live-mark { width: 8px; height: 8px; border: 2px solid currentColor; }
+.chat-live.stalled .chat-live-mark { background: currentColor; }
+
+/* 보낼 메시지 대기열(입력칸 바로 위). */
+.chat-queue {
+  flex: none;
+  max-height: 30%;
+  overflow-y: auto;
+  padding: 6px 10px;
+  background: var(--bg-panel-hi);
+  border-top: 2px solid var(--border-dark);
+  font-size: 12px;
+}
+.chat-queue-title { color: var(--text-dim); margin-bottom: 4px; }
+.chat-queue-item { display: flex; align-items: center; gap: 6px; padding: 2px 0; }
+.chat-queue-n { flex: none; min-width: 18px; text-align: center; color: var(--text-dim); border: 1px solid var(--border-dark); }
+.chat-queue-text { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.chat-queue-cancel.pixel-btn { flex: none; padding: 0 6px; font-size: 11px; }
+.chat-queue-error { margin-top: 4px; color: var(--accent-warn); }

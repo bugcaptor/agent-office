@@ -82,6 +82,22 @@
     "noItems": "아직 대화가 없습니다.",
     "inputPh": "에이전트에게 보낼 말 (Enter 보내기, Shift+Enter 줄바꿈)",
     "send": "보내기",
+    "inputQueuePh": "작업 중 — 쓰면 대기열에 넣고 턴이 끝나면 보냅니다 (Enter 넣기, Shift+Enter 줄바꿈)",
+    "queue": "대기열에 넣기",
+    "queuedNotice": "대기열에 넣었습니다. 턴이 끝나면 보냅니다.",
+    "queueTitle_one": "보낼 대기열 {{count}}건 · 턴이 끝날 때마다 하나씩 보냅니다",
+    "queueTitle_other": "보낼 대기열 {{count}}건 · 턴이 끝날 때마다 하나씩 보냅니다",
+    "queueCancel": "대기열에서 빼기",
+    "live": {
+      "thinking": "생각 중… {{time}}",
+      "tool": "{{tool}} 실행 중… {{time}}",
+      "stalled": "작업 중이지만 {{time}}째 화면 출력이 없습니다 — 멈췄을 수 있습니다",
+      "human": "답을 기다리는 중 — 멈춘 게 아닙니다",
+      "idle": "턴이 끝났습니다 · 입력을 기다림",
+      "off": "CLI가 돌고 있지 않습니다",
+      "sec": "{{s}}초",
+      "minSec": "{{m}}분 {{s}}초"
+    },
     "result_one": "결과 {{count}}줄",
     "result_other": "결과 {{count}}줄",
     "imageGone": "🖼 이미지를 더 볼 수 없습니다(오래되어 비웠음)",
@@ -109,8 +125,6 @@
     "askOther": "직접 입력",
     "askSend": "답 보내기",
     "err": {
-      "chat-view-working": "작업 중입니다. 턴이 끝나 입력을 기다리면 보낼 수 있습니다(터미널 보기에서는 지금도 입력 가능).",
-      "chat-view-needs-human": "답을 기다리는 중입니다. 위 카드나 터미널에서 먼저 답하세요.",
       "chat-view-no-cli": "이 탭에서 Claude·Codex가 입력을 기다리는지 알 수 없습니다. 터미널 보기를 쓰세요.",
       "not-running": "터미널이 꺼져 있습니다",
       "empty": "내용이 비었습니다",
@@ -122,7 +136,11 @@
       "ask-unanswered": "모든 질문에 답하세요",
       "ask-invalid": "답을 보낼 수 없는 질문입니다",
       "ask-no-rule": "다시 묻지 않기를 고를 수 없는 요청입니다",
-      "too-large": "글이 너무 깁니다"
+      "too-large": "글이 너무 깁니다",
+      "queue-full": "대기열이 가득 찼습니다(최대 20건)",
+      "queue-gone": "이미 보냈거나 사라진 메시지입니다",
+      "queue-dropped-session": "세션이 바뀌어 대기열을 비웠습니다",
+      "control-char": "보낼 수 없는 문자가 있습니다"
     },
     "toChat": "대화 보기로 전환(CLI는 그대로 돎)",
     "toTerminal": "터미널 보기로 전환"

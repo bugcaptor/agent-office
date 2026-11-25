@@ -82,6 +82,22 @@
     "noItems": "Pas encore de messages.",
     "inputPh": "Message à l'agent (Entrée pour envoyer, Maj+Entrée pour une nouvelle ligne)",
     "send": "Envoyer",
+    "inputQueuePh": "En cours — le message est mis en file et envoyé à la fin du tour (Entrée pour l'ajouter, Maj+Entrée pour une nouvelle ligne)",
+    "queue": "Mettre en file",
+    "queuedNotice": "Mis en file. Il sera envoyé à la fin du tour.",
+    "queueTitle_one": "{{count}} message en file · un est envoyé à chaque fin de tour",
+    "queueTitle_other": "{{count}} messages en file · un est envoyé à chaque fin de tour",
+    "queueCancel": "Retirer de la file",
+    "live": {
+      "thinking": "Réflexion… {{time}}",
+      "tool": "{{tool}} en cours… {{time}}",
+      "stalled": "En cours, mais aucune sortie du terminal depuis {{time}} — peut-être bloqué",
+      "human": "En attente d'une réponse — pas bloqué",
+      "idle": "Tour terminé · en attente de saisie",
+      "off": "Aucune CLI en cours",
+      "sec": "{{s}} s",
+      "minSec": "{{m}} min {{s}} s"
+    },
     "result_one": "Résultat · {{count}} ligne",
     "result_other": "Résultat · {{count}} lignes",
     "imageGone": "🖼 Image plus disponible (effacée)",
@@ -109,8 +125,6 @@
     "askOther": "Saisir une réponse",
     "askSend": "Envoyer la réponse",
     "err": {
-      "chat-view-working": "En cours. Vous pourrez envoyer quand le tour sera fini (la vue terminal accepte la saisie maintenant).",
-      "chat-view-needs-human": "En attente d'une réponse. Répondez d'abord à la carte ou dans le terminal.",
       "chat-view-no-cli": "Impossible de savoir si Claude/Codex attend une saisie dans cet onglet. Utilisez la vue terminal.",
       "not-running": "Le terminal n'est pas lancé",
       "empty": "Vide",
@@ -122,7 +136,11 @@
       "ask-unanswered": "Répondez à chaque question",
       "ask-invalid": "Cette question n'accepte pas cette réponse",
       "ask-no-rule": "Cette demande n'a pas de règle « ne plus demander »",
-      "too-large": "Texte trop long"
+      "too-large": "Texte trop long",
+      "queue-full": "La file est pleine (20 au maximum)",
+      "queue-gone": "Déjà envoyé ou disparu",
+      "queue-dropped-session": "La session a changé, la file a été vidée",
+      "control-char": "Le texte contient des caractères impossibles à envoyer"
     },
     "toChat": "Passer à la vue conversation (la CLI continue de tourner)",
     "toTerminal": "Passer à la vue terminal"

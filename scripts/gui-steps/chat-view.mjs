@@ -64,6 +64,14 @@ export default async ({ page, shot, harness }) => {
   await page.locator(".chat-view-input textarea").fill("Use grid please");
   await page.keyboard.press("Enter");
   await page.waitForSelector(".chat-msg.user >> text=Use grid please");
+  // 작업 중이면 대화 끝에 움직이는 상태 줄이 보이고, "queue:" 메시지는 대기열에 쌓였다 뺄 수 있다.
+  await page.waitForSelector(".chat-live.thinking .chat-live-dots");
+  await page.locator(".chat-view-input textarea").fill("queue: then run the tests");
+  await page.keyboard.press("Enter");
+  await page.waitForSelector(".chat-queue-item >> text=queue: then run the tests");
+  await shot("chat-view-queue");
+  await page.locator(".chat-queue-cancel").click();
+  await page.waitForFunction(() => !document.querySelector(".chat-queue"));
   console.log("answers", JSON.stringify(await page.evaluate(() => window.__guiHarness.chatAnswers)));
   await page.locator(".chat-view-bar .pixel-btn").click();
   await page.waitForFunction(() => !document.querySelector(".chat-view"));

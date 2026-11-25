@@ -93,6 +93,9 @@
       "office-agent-interrupt": "🌐 Web: interrupted general agent (Esc)",
       "office-agent-ctrl-c": "🌐 Web: Ctrl-C to general agent",
       "office-agent-terminate": "🌐 Web: ended general agent",
+      "message": "🌐 Web: message to {{name}} — {{detail}}",
+      "message-queued": "🌐 Web: queued for {{name}} — {{detail}}",
+      "office-agent-queued": "🌐 Web: queued for the general agent — {{detail}}",
       "other": "🌐 Web: {{op}}"
     }
   }

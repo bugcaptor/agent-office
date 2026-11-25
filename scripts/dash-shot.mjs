@@ -5,7 +5,8 @@
 // 찍는 것: 캐릭터 목록(머리에 컴퓨터 이름, 맨 위 일반 에이전트), 캐릭터 화면(보낸 업무·대화 로그 최신순·업무 보내기),
 // CLI 실행 중 재시작 경고, 끝난 업무 완료, 일반 에이전트 새 지시·이어서 보내기,
 // 대화 로그 속 이미지(썸네일·확대), 권한 요청·선택지 카드(AskUserQuestion 답·Bash 허용),
-// 텍스트·이미지 클립보드 복사와 이미지·파일 다운로드.
+// 텍스트·이미지 클립보드 복사와 이미지·파일 다운로드, 하단 사용량 바, 생각 중·멈춤 상태 줄,
+// 직접 입력과 보낼 대기열(쌓기·빼기).
 import assert from "node:assert/strict";
 import { createServer } from "node:http";
 import { readFile, mkdir } from "node:fs/promises";
@@ -18,7 +19,7 @@ const characters = [
   {
     agentId: "a", name: "에이다", role: "개발", cwd: "/Volumes/ssd4tb/dev/very/long/path/to/agent-office",
     clockedOut: false, defaultCli: "claude", session: { sessionId: "s1", state: "running" },
-    turn: { phase: "working", at: now }, waiting: [], cli: "claude", atPrompt: false,
+    turn: { phase: "working", at: now, since: now - 75000 }, waiting: [], cli: "claude", atPrompt: false, queue: { items: [] },
     asks: [{ id: "ask-1", toolName: "AskUserQuestion", canAlways: false, sidechain: false, at: now, toolInput: { questions: [
       { question: "어떤 방식으로 이미지를 보여 줄까요?", header: "표시", multiSelect: false, options: [
         { label: "썸네일", description: "로그 안에 작게 보이고 누르면 확대" }, { label: "링크만", description: "누르면 새 창" }] },
@@ -68,13 +69,23 @@ const tasks = {
 };
 const posts = [];
 let rev = 1;
+let aOutputAgo = 500;
+const usage = {
+  claude: { planLabel: "Max", windows: [
+    { kind: "session", usedPercent: 32, resetsAtMs: now + 3600e3 }, { kind: "weekly", usedPercent: 78, resetsAtMs: now + 3 * 86400e3 },
+    { kind: "weekly_model", label: "Opus", usedPercent: 12 }] },
+  codex: { windows: [{ kind: "session", usedPercent: 5 }, { kind: "weekly", usedPercent: 96 }] },
+};
 let officeAgent = { session: null, turn: null, cli: null, atPrompt: null, cwd: null, opening: false, error: null };
 const folders = ["/Users/me", "/Volumes/ssd4tb/dev/very/long/path/to/agent-office", "/Users/me/work/backend-service"];
 const server = createServer(async (req, res) => {
   const url = new URL(req.url, "http://x");
   const send = (data) => { res.setHeader("content-type", "application/json"); res.end(JSON.stringify({ ok: true, data })); };
   if (url.pathname === "/") { res.setHeader("content-type", "text/html; charset=utf-8"); return res.end(page); }
-  if (url.pathname === "/api/state") return send({ app: "0.0.0", host: "회사 맥북 프로", rev: `r${rev}`, characters, officeAgent, folders, home: "/Users/me" });
+  if (url.pathname === "/api/state") {
+    return send({ app: "0.0.0", host: "회사 맥북 프로", rev: `r${rev}`, characters, officeAgent, folders, home: "/Users/me", outputAt: { a: Date.now() - aOutputAgo }, now: Date.now() });
+  }
+  if (url.pathname === "/api/usage") return send(usage);
   if (url.pathname.startsWith("/api/log/")) return send({ epoch: 1, last: items.at(-1).seq, attached: true, items: url.searchParams.get("after") ? [] : items });
   if (url.pathname.startsWith("/api/image/")) {
     if (url.searchParams.get("t") !== "abc" && req.headers.authorization !== "Bearer abc") {
@@ -94,6 +105,13 @@ const server = createServer(async (req, res) => {
     if (done) tasks.open = tasks.open.filter((t) => t.id !== decodeURIComponent(done[1]));
     const ask = url.pathname.match(/^\/api\/asks\/([^/]+)$/);
     if (ask) { for (const c of characters) c.asks = (c.asks || []).filter((a) => a.id !== decodeURIComponent(ask[1])); rev++; }
+    const a = characters[0];
+    if (url.pathname === "/api/agents/a/message") {
+      a.queue.items.push({ id: `q${a.queue.items.length + 1}`, text: posts.at(-1).body.text, at: Date.now() });
+      rev++;
+      return send({ outcome: "queued" });
+    }
+    if (url.pathname === "/api/agents/a/queue-cancel") { a.queue.items = a.queue.items.filter((m) => m.id !== posts.at(-1).body.id); rev++; }
     if (url.pathname === "/api/office-agent") {
       officeAgent = { ...officeAgent, session: { sessionId: "o1", state: "running" }, turn: { phase: "idle", at: now }, cli: "claude", atPrompt: false, cwd: posts.at(-1).body.cwd };
       rev++;
@@ -122,6 +140,9 @@ await p.waitForSelector("#sent .card");
 await p.waitForSelector("#asks .card.ask");
 await p.waitForFunction(() => [...document.querySelectorAll("#log img.shot")].every((i) => i.complete));
 await p.screenshot({ path: `${outDir}/agent-claude.png`, fullPage: true });
+// 하단 사용량 바, 답을 기다리는 동안의 상태 줄(멈춤과 구분).
+await p.locator("#usagebar").filter({ hasText: "Claude" }).filter({ hasText: "96%" }).waitFor();
+await p.locator("#live.human").waitFor();
 const copied = () => p.evaluate(() => navigator.clipboard.readText());
 const newest = p.locator("#log .msg.assistant").first();
 await newest.getByRole("button", { name: "텍스트 복사" }).click();
@@ -151,6 +172,24 @@ await p.locator("#asks button.opt", { hasText: "앱" }).click();
 await p.screenshot({ path: `${outDir}/agent-ask.png` });
 await p.getByRole("button", { name: "답 보내기" }).click();
 await p.waitForFunction(() => !document.querySelector("#asks .card"));
+// 답하고 나면 생각 중 상태 줄(점이 움직임).
+await p.locator("#live.thinking .live-dots").waitFor();
+assert.match(await p.locator("#live").textContent(), /생각 중… 1분 1\d초/);
+// 직접 입력: 작업 중이라 대기열에 쌓이고, 뺄 수 있다.
+await p.fill("#msgtext", "다음엔 테스트도 돌려 줘");
+await p.getByRole("button", { name: "대기열에 넣기" }).click();
+await p.locator("#queue .q-item").filter({ hasText: "다음엔 테스트도 돌려 줘" }).waitFor();
+assert.equal(await p.locator("#msgtext").inputValue(), "");
+await p.locator("#msgform").screenshot({ path: `${outDir}/agent-queue.png` });
+await p.locator("#queue").getByRole("button", { name: "빼기" }).click();
+await p.waitForFunction(() => !document.querySelector("#queue .q-item"));
+// 출력이 끊기면 멈춤으로 바뀐다(칩·상태 줄).
+aOutputAgo = 45000;
+await p.locator("#live.stalled").waitFor();
+await p.locator("#head .chip.stalled").waitFor();
+await p.screenshot({ path: `${outDir}/agent-stalled.png` });
+aOutputAgo = 500;
+await p.locator("#live.thinking").waitFor();
 // 이미지 확대
 await p.locator("#log img.shot").first().click();
 await p.waitForSelector(".lb img");
@@ -163,6 +202,7 @@ await p.locator(".lb").click();
 await p.locator("#sent button", { hasText: "완료" }).first().click();
 await p.waitForFunction(() => document.querySelectorAll("#sent .row").length === 1);
 await p.screenshot({ path: `${outDir}/agent-done.png` });
+await p.locator("#taskform summary").click();
 await p.fill("#taskform input", "로그 정렬 고치기");
 await p.getByRole("button", { name: "재시작하고 보내기" }).click();
 await p.getByRole("button", { name: "한 번 더 눌러 확인" }).click();

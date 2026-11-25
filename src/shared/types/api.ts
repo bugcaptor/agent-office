@@ -39,7 +39,7 @@ import type { AwardRecord, AwardSpeech, AwardsFile } from './awards';
 import type { DiaryEntry, WorkLogItem } from './diary';
 import type { MemoSheet, MemoSheetMeta } from './memo';
 import type { UsageSnapshot } from './usage';
-import type { ChatDownload, ChatLogPage, PendingAsk, AskAction } from './chatView';
+import type { ChatDownload, ChatLogPage, PendingAsk, AskAction, ChatLiveStatus, ChatSendOutcome } from './chatView';
 
 /** Origin of bytes emitted by xterm's `onData` callback. */
 export type TerminalInputSource = 'human' | 'terminalResponse';
@@ -239,8 +239,12 @@ export interface AgentOfficeApi {
   chatViewAsks(agentId: AgentId): Promise<PendingAsk[]>;
   /** 권한 요청·질문에 답한다(터미널에서 먼저 답했으면 `ask-gone`). */
   chatViewAnswer(askId: string, action: AskAction, answers?: Record<string, string>, message?: string): Promise<void>;
-  /** 대화 보기에서 쓴 지시를 같은 세션에 넣는다(CLI가 입력을 기다릴 때만). */
-  chatViewSend(agentId: AgentId, text: string): Promise<void>;
+  /** 대화 보기에서 쓴 지시를 같은 세션에 넣는다. 작업 중이면 대기열에 쌓아 턴이 끝날 때 넣는다. */
+  chatViewSend(agentId: AgentId, text: string): Promise<ChatSendOutcome>;
+  /** 지금 상태(생각 중·멈춤 판정 재료)와 보낼 메시지 대기열. */
+  chatViewStatus(agentId: AgentId): Promise<ChatLiveStatus>;
+  /** 대기열 메시지 하나를 뺀다(이미 넣었으면 `queue-gone`). */
+  chatViewCancelQueued(agentId: AgentId, id: string): Promise<void>;
   /** 웹 상태판 상태(설정·접속 주소·접속 수). */
   webDashStatus(): Promise<WebDashStatus>;
   /** 웹 상태판 설정을 저장하고 서버를 그에 맞춘다. */

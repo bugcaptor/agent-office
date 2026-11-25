@@ -28,6 +28,7 @@ import type {
   WorkItem,
   ChatLogItem,
   PendingAsk,
+  QueuedMessage,
 } from "@shared/types";
 import memoFixture from "@shared/contract-fixtures/memo-sheet.current.json";
 import webDashStatusFixture from "@shared/contract-fixtures/web-dash-status.json";
@@ -354,8 +355,21 @@ const impl: Partial<AgentOfficeApi> = {
     chatAsks = chatAsks.filter((a) => a.id !== askId);
   },
   async chatViewSend(agentId, text) {
+    // 가짜 터미널은 늘 작업 중이다 — "queue:"로 시작하면 대기열에 쌓는 길을 흉내 낸다.
+    if (text.startsWith("queue:")) {
+      chatQueue.push({ id: `q${chatQueue.length + 1}`, text, at: Date.now() });
+      return "queued";
+    }
     const items = chatLog(agentId);
     items.push({ seq: (items[items.length - 1]?.seq ?? 0) + 1, role: "user", kind: "text", text, isError: false, sidechain: false });
+    return "sent";
+  },
+  async chatViewStatus() {
+    const now = Date.now();
+    return { running: true, phase: "working", since: now - 42_000, outputAt: now - 300, now, queue: { items: [...chatQueue] } };
+  },
+  async chatViewCancelQueued(_agentId, id) {
+    chatQueue = chatQueue.filter((m) => m.id !== id);
   },
 };
 
@@ -383,6 +397,7 @@ function chatLog(agentId: string): ChatLogItem[] {
   }
   return items;
 }
+let chatQueue: QueuedMessage[] = [];
 let chatAsks: PendingAsk[] = [
   { id: "p1:ask-1", toolName: "AskUserQuestion", canAlways: false, sidechain: false, at: Date.now(), toolInput: { questions: [
     { question: "Which fix?", header: "Fix", multiSelect: false, options: [{ label: "Grid", description: "Rewrite with CSS grid" }, { label: "Flex", description: "Keep flexbox" }] },

@@ -4,8 +4,8 @@
 // 그린다 — 웹 상태판과 같은 수집기(`webdash::log`)·권한 중계(`observer::permission`)를 쓴다.
 // 이미지는 웹의 이미지 끄기와 무관하게 늘 싣는다(`WebDashState::app_logs`).
 //
-// 입력은 키 흉내가 아니라 업무 보내기의 후속 지시 관문(`WorkSendRuntime::follow_up`)으로 넣고,
-// CLI가 턴을 마치고 입력을 기다릴 때만 받는다. 권한·선택지는 훅 중계로 답한다 — 터미널
+// 입력은 키 흉내가 아니라 업무 보내기의 후속 지시 관문(`WorkSendRuntime::follow_up`)으로 넣는다.
+// CLI가 작업 중이면 대기열(`chat_queue`, 웹 상태판과 공유)에 쌓았다가 턴이 끝날 때 넣는다. 권한·선택지는 훅 중계로 답한다 — 터미널
 // 대화상자와 동시에 떠 있어 어느 보기에서 답하든 먼저 답한 쪽이 반영된다.
 use std::collections::HashMap;
 
@@ -14,10 +14,9 @@ use serde::Deserialize;
 use tauri::State;
 use tauri_plugin_dialog::DialogExt;
 
-use crate::control::turns::TurnPhase;
+use crate::chat_queue::{LiveStatus, SendOutcome};
 use crate::observer::permission::{AskDecision, PendingAsk};
 use crate::state::AppState;
-use crate::types::WorkFollowUpRequest;
 use crate::webdash::log::LogPage;
 
 /// 전사를 찾을 작업 폴더: 세션이 cd 한 곳, 없으면 캐릭터 프로필, 그것도 없으면 홈.
@@ -141,26 +140,30 @@ pub fn chat_view_answer(
     app_state.observer.permissions().answer(&ask_id, decision)
 }
 
-/// 대화 보기에서 쓴 지시를 같은 세션에 넣는다. CLI가 입력을 기다릴 때만 받는다.
+/// 대화 보기에서 쓴 지시를 같은 세션에 넣는다. CLI가 입력을 기다리면 바로 넣고,
+/// 작업 중이면 대기열에 쌓아 턴이 끝날 때 넣는다(`chat_queue`).
 #[tauri::command(rename_all = "camelCase")]
 pub async fn chat_view_send(
     agent_id: String,
     text: String,
     app_state: State<'_, AppState>,
-) -> Result<(), String> {
-    if text.trim().is_empty() {
-        return Err("empty".into());
+) -> Result<SendOutcome, String> {
+    let ctx = app_state.control_ctx.clone();
+    ctx.chat_queue.send(&ctx, &agent_id, &text).await
+}
+
+/// 지금 상태(생각 중·멈춤을 가를 재료)와 보낼 메시지 대기열.
+#[tauri::command(rename_all = "camelCase")]
+pub fn chat_view_status(agent_id: String, app_state: State<'_, AppState>) -> LiveStatus {
+    crate::chat_queue::live_status(&app_state.control_ctx, &agent_id)
+}
+
+/// 대기열에 쌓아 둔 메시지 하나를 뺀다. 이미 넣었으면 `queue-gone`.
+#[tauri::command(rename_all = "camelCase")]
+pub fn chat_view_cancel_queued(agent_id: String, id: String, app_state: State<'_, AppState>) -> Result<(), String> {
+    if app_state.control_ctx.chat_queue.cancel(&agent_id, &id) {
+        Ok(())
+    } else {
+        Err("queue-gone".into())
     }
-    let session_id = app_state.manager.session_id_for(&agent_id).ok_or("not-running")?;
-    match app_state.control_ctx.turns.get(&session_id).map(|t| t.phase) {
-        Some(TurnPhase::Idle) => {}
-        Some(TurnPhase::NeedsHuman) => return Err("chat-view-needs-human".into()),
-        Some(_) => return Err("chat-view-working".into()),
-        None => return Err("chat-view-no-cli".into()),
-    }
-    app_state
-        .work_send_runtime
-        .follow_up(&app_state.gate, WorkFollowUpRequest { agent_id, session_id, text })
-        .await
-        .map(|_| ())
 }
