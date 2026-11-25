@@ -118,6 +118,18 @@ export function SystemTab() {
           <small>{t("system.mascotHelp")}</small>
         </span>
       </label>
+      <label className="settings-item">
+        <input
+          type="checkbox"
+          disabled={!appSettings.mascotEnabled}
+          checked={appSettings.mascotSpeechEnabled}
+          onChange={(e) => updateAppSettings({ mascotSpeechEnabled: e.target.checked })}
+        />
+        <span>
+          <strong>{t("system.mascotSpeechTitle")}</strong>
+          <small>{t("system.mascotSpeechHelp")}</small>
+        </span>
+      </label>
       <MascotLightsSection />
       <label className="settings-item">
         <input

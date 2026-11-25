@@ -15,6 +15,8 @@ import {
   LIGHT_TILE_H_TALL,
   LIGHT_TILE_W,
   LIGHT_TILE_W_WIDE,
+  MASCOT_SPEECH_H,
+  MASCOT_SPEECH_W,
   MASCOT_WINDOW_H,
   MASCOT_WINDOW_W,
   MAX_LIGHTS,
@@ -57,7 +59,8 @@ function stripThickness(count: number, vertical: boolean, wide: boolean, tall: b
 /**
  * 마스코트 창이 가져야 할 크기(논리 px) — 스프라이트 유무·칸 수·배열 방향으로
  * 결정한다. 가로 모드는 strip이 폭 방향으로 늘어나고 두께(타일 높이 + 여백)가
- * 스프라이트 아래에 얹히며, 세로 모드는 반대다.
+ * 스프라이트 아래에 얹히며, 세로 모드는 반대다. 말풍선(`hasSpeech`)은 배열과
+ * 무관하게 스프라이트 머리 위에 얹힌다 — 스프라이트가 없으면 자리도 없다.
  */
 export function computeMascotLayout(input: {
   lightCount: number;
@@ -67,10 +70,13 @@ export function computeMascotLayout(input: {
   wide: boolean;
   /** true = 칸을 tall(60px) 타일로 계산한다(`mascotLightsLabel==="projecttask"`). */
   tall: boolean;
+  /** true = 머리 위 말풍선 자리를 잡는다. 생략하면 false. */
+  hasSpeech?: boolean;
 }): { width: number; height: number } {
   const { lightCount, vertical, hasSprite, wide, tall } = input;
-  const spriteW = hasSprite ? MASCOT_WINDOW_W : 0;
-  const spriteH = hasSprite ? MASCOT_WINDOW_H : 0;
+  const speech = hasSprite && input.hasSpeech === true;
+  const spriteW = hasSprite ? (speech ? MASCOT_SPEECH_W : MASCOT_WINDOW_W) : 0;
+  const spriteH = hasSprite ? MASCOT_WINDOW_H + (speech ? MASCOT_SPEECH_H : 0) : 0;
   if (vertical) {
     return {
       width: Math.max(spriteW, stripThickness(lightCount, true, wide, tall)),
@@ -118,6 +124,8 @@ export function computeMascotWindowRect(input: {
   wide: boolean;
   /** true = 칸을 tall(60px) 타일로 계산한다(`mascotLightsLabel==="projecttask"`). */
   tall: boolean;
+  /** true = 머리 위 말풍선 자리를 잡는다. 생략하면 false. */
+  hasSpeech?: boolean;
   /** 물리 px 환산 배율. */
   dpr: number;
   /** 리사이즈 직전 창의 물리 px 좌상단. */
@@ -139,7 +147,14 @@ export function computeMascotWindowRect(input: {
     monitors,
     primary,
   } = input;
-  const logical = computeMascotLayout({ lightCount, vertical, hasSprite, wide, tall });
+  const logical = computeMascotLayout({
+    lightCount,
+    vertical,
+    hasSprite,
+    wide,
+    tall,
+    hasSpeech: input.hasSpeech,
+  });
   const physicalSize: Size = {
     width: Math.round(logical.width * dpr),
     height: Math.round(logical.height * dpr),

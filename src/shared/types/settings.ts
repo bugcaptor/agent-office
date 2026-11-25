@@ -173,6 +173,10 @@ export interface AppSettings {
   /** 신호등 칸에 표시할 텍스트 선택. 고른 값이 비어 있는 칸(예: cwd 없는
    * 에이전트에 `project`)은 렌더러가 `auto`로 폴백한다. 기본 "auto". */
   mascotLightsLabel: MascotLightsLabel;
+  /** 마스코트 머리 위 말풍선에 에이전트가 한 말(턴 중 내레이션, 턴 끝 최종
+   * 응답)을 잘라 띄울지. 도구 호출은 싣지 않는다. `mascotEnabled`가 상위
+   * 게이트. 기본 true. */
+  mascotSpeechEnabled: boolean;
   /** 터미널 오버레이 filled 모드(이슈 #69)에서 패널 우측 아래에 반투명 LLM
    * 사용량 플로트(`UsageFloat`)를 띄울지. 꺼도
    * 하단바(BottomBar)의 사용량 뱃지는 그대로 보인다. 기존 동작 유지가

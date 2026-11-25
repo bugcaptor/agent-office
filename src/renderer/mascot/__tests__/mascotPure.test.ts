@@ -54,6 +54,13 @@ describe("protocol", () => {
     expect(parsed).toMatchObject({ visible: true, agentId: null, hasPending: false });
   });
 
+  it("speech는 문자열만 통과하고 dedupe 비교에 들어간다", () => {
+    expect(parseMascotState({ visible: true, speech: "안녕" })?.speech).toBe("안녕");
+    expect(parseMascotState({ visible: true, speech: 3 })?.speech).toBeNull();
+    expect(parseMascotState({ visible: true })?.speech).toBeNull();
+    expect(sameMascotState(state({ speech: "a" }), state({ speech: "b" }))).toBe(false);
+  });
+
   it("sameMascotState는 한 필드만 달라도 다르다고 본다", () => {
     expect(sameMascotState(state(), state())).toBe(true);
     expect(sameMascotState(state(), state({ hasPending: true }))).toBe(false);
@@ -366,6 +373,18 @@ describe("layout", () => {
       width: 54 + 12,
       height: 48 + 12,
     });
+  });
+
+  it("말풍선: 스프라이트 위에 200×58 자리를 더하고, 스프라이트가 없으면 무시한다", () => {
+    expect(
+      computeMascotLayout({ lightCount: 0, vertical: false, hasSprite: true, wide: false, tall: false, hasSpeech: true }),
+    ).toEqual({ width: 200, height: 102 + 58 });
+    expect(
+      computeMascotLayout({ lightCount: 8, vertical: false, hasSprite: true, wide: false, tall: false, hasSpeech: true }),
+    ).toEqual({ width: 486, height: 102 + 58 + 60 });
+    expect(
+      computeMascotLayout({ lightCount: 1, vertical: true, hasSprite: false, wide: false, tall: false, hasSpeech: true }),
+    ).toEqual({ width: 54 + 12, height: 48 + 12 });
   });
 
   it("0칸이면 strip 두께가 0이라 스프라이트만큼만 남는다", () => {

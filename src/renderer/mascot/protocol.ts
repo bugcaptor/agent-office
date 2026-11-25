@@ -23,6 +23,11 @@ export const MASCOT_SPRITE_PX = 96;
 export const MASCOT_SPRITE_HEADROOM = 6;
 /** 스프라이트 영역이 차지하는 창 높이(논리 px). */
 export const MASCOT_WINDOW_H = MASCOT_SPRITE_PX + MASCOT_SPRITE_HEADROOM;
+/** 머리 위 말풍선 자리 폭(논리 px). 스프라이트(120)보다 넓어 말할 때는 창
+ *  폭도 이만큼 넓어진다. */
+export const MASCOT_SPEECH_W = 200;
+/** 말풍선 자리 높이(논리 px) — 본문 3줄(14px) + 안쪽 여백 10 + 꼬리 6. */
+export const MASCOT_SPEECH_H = 58;
 /** idle 프레임 교체 주기(ms). CharacterEntity의 ANIM_IDLE_MS와 같은 값 —
  *  오피스 씬의 캐릭터와 호흡이 어긋나 보이지 않게. */
 export const MASCOT_ANIM_IDLE_MS = 480;
@@ -139,6 +144,9 @@ export interface MascotState {
    *  `mascotLightsLabel==="projecttask"`일 때만. lightsWide와 같은 규약(렌더
    *  관심사만 받는다). */
   lightsTall: boolean;
+  /** 머리 위 말풍선 본문(에이전트가 한 말, 이미 잘린 텍스트). null = 말풍선
+   *  없음. 설정 게이트·표시 시간은 main(mascotBridge)이 이미 적용했다. 비번역. */
+  speech: string | null;
 }
 
 export const HIDDEN_MASCOT_STATE: MascotState = {
@@ -156,6 +164,7 @@ export const HIDDEN_MASCOT_STATE: MascotState = {
   lightsFace: "sprite",
   lightsWide: false,
   lightsTall: false,
+  speech: null,
 };
 
 const isRecord = (v: unknown): v is Record<string, unknown> =>
@@ -287,6 +296,7 @@ export function parseMascotState(payload: unknown): MascotState | null {
     lightsFace: payload.lightsFace === "portrait" ? "portrait" : "sprite",
     lightsWide: payload.lightsWide === true,
     lightsTall: payload.lightsTall === true,
+    speech: str(payload.speech),
   };
 }
 
@@ -306,6 +316,7 @@ export function sameMascotState(a: MascotState, b: MascotState): boolean {
     a.lightsVertical === b.lightsVertical &&
     a.lightsFace === b.lightsFace &&
     a.lightsWide === b.lightsWide &&
-    a.lightsTall === b.lightsTall
+    a.lightsTall === b.lightsTall &&
+    a.speech === b.speech
   );
 }

@@ -211,6 +211,9 @@ const impl: Partial<AgentOfficeApi> = {
   async listClaudeResumeSessions() { return {}; },
   async setKeepAwake() {},
   async setMascotVisible() {},
+  // 마스코트 창 리사이즈 — 헤드리스 페이지는 창이 아니라 뷰포트라 할 일이 없다.
+  async setMascotLayout() {},
+  async mascotActivate() {},
   async workdirGitBranch() { return { isRepo: false, branch: null }; },
   async markdownListFiles() { return { files: [{ relPath: "docs/plan.md", name: "plan.md" }], truncated: false }; },
   async markdownReadFile() { return { content: markdownSample, version: "v1" }; },

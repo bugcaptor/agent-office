@@ -14,7 +14,12 @@ vi.mock("../tauriApi", () => ({
 vi.mock("../sessionBridge", () => ({ officeBus: { emitAgentClicked: vi.fn() } }));
 
 import { useAppStore } from "../../store/appStore";
-import { installMascotBridge, MASCOT_HIDE_LINGER_MS, type MascotBridgeIo } from "../mascotBridge";
+import {
+  installMascotBridge,
+  MASCOT_HIDE_LINGER_MS,
+  MASCOT_SPEECH_SHOW_MS,
+  type MascotBridgeIo,
+} from "../mascotBridge";
 import { HIDDEN_MASCOT_STATE, type MascotState } from "../../mascot/protocol";
 
 const initialState = useAppStore.getState();
@@ -209,6 +214,7 @@ describe("installMascotBridge", () => {
       lightsFace: "sprite",
       lightsWide: false,
       lightsTall: false,
+      speech: null,
     });
     expect(h.visibles).toEqual([true]);
     off();
@@ -506,6 +512,63 @@ describe("installMascotBridge · 신호등(lights)", () => {
       taskLabels: { ...useAppStore.getState().taskLabels, a1: { sessionId: "s1" } },
     });
     expect(h.states.length).toBe(before); // 결과가 같아 dedupe로 흡수된다
+    off();
+  });
+});
+
+describe("installMascotBridge · 말풍선(speech)", () => {
+  function setNarration(agentId: string, text: string) {
+    useAppStore.setState({
+      taskLabels: {
+        ...useAppStore.getState().taskLabels,
+        [agentId]: { sessionId: "s1", latestAssistantText: text },
+      },
+    });
+  }
+
+  it("작업 중 내레이션을 싣고, 표시 시간이 지나면 접는다", () => {
+    seed();
+    setWorking("a1", 10);
+    const h = harness();
+    const off = installMascotBridge(h.io);
+    setNarration("a1", "파일을 읽어 보겠습니다.");
+    expect(h.last()?.speech).toBe("파일을 읽어 보겠습니다.");
+    vi.advanceTimersByTime(MASCOT_SPEECH_SHOW_MS);
+    expect(h.last()?.speech).toBeNull();
+    // 같은 말이 후보로 남아 있어도 다시 뜨지 않는다.
+    useAppStore.setState({ taskLabels: { ...useAppStore.getState().taskLabels } });
+    expect(h.last()?.speech).toBeNull();
+    // 새 말이 오면 다시 뜬다.
+    setNarration("a1", "테스트를 돌립니다.");
+    expect(h.last()?.speech).toBe("테스트를 돌립니다.");
+    off();
+  });
+
+  it("설정을 끄면 말풍선이 없다", () => {
+    seed();
+    useAppStore.setState({
+      appSettings: { ...useAppStore.getState().appSettings, mascotSpeechEnabled: false },
+    });
+    setWorking("a1", 10);
+    const h = harness();
+    const off = installMascotBridge(h.io);
+    setNarration("a1", "파일을 읽어 보겠습니다.");
+    expect(h.last()?.agentId).toBe("a1");
+    expect(h.last()?.speech).toBeNull();
+    off();
+  });
+
+  it("완료 알림이 오면 최종 응답을 싣는다", () => {
+    seed();
+    setWorking("a1", 10);
+    const h = harness();
+    const off = installMascotBridge(h.io);
+    useAppStore.setState({
+      notifications: [
+        { id: "n1", agentId: "a1", type: "done", message: "다 고쳤습니다.", excerpt: "", createdAt: 1 },
+      ],
+    });
+    expect(h.last()?.speech).toBe("다 고쳤습니다.");
     off();
   });
 });

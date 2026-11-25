@@ -87,6 +87,8 @@
     "runRecipesHelp": "Ajoute un menu Exécuter… aux onglets de personnage pour rechercher les commandes du projet et les lancer dans des processus distincts sans toucher au terminal de l’agent. Désactivé par défaut.",
     "mascotTitle": "Mascotte de bureau",
     "mascotHelp": "Affiche le personnage actif dans une petite fenêtre toujours au premier plan, séparée de l'app. Les notifications y apparaissent ; un clic sur une session IDE connectée revient à son VS Code d'origine, les autres ouvrent le terminal du personnage.",
+    "mascotSpeechTitle": "Bulle de dialogue",
+    "mascotSpeechHelp": "Affiche brièvement, dans une bulle au-dessus de la mascotte, ce que dit l'agent pendant son travail et sa réponse finale en fin de tour, en version raccourcie. Les appels d'outils ne sont pas affichés. Les CLI qui ne transmettent pas leurs commentaires en cours de tour (comme Codex) n'affichent que la réponse finale.",
     "mascotLightsTitle": "Voyants d'état",
     "mascotLightsHelp": "Affiche sous la mascotte une rangée de voyants d'état, un par cible. Éteint (gris) = aucune activité, vert = en cours, jaune = en attente de votre réponse. En mode par projet, seuls les dossiers ayant une session connectée à cette app s'allument.",
     "mascotLightsModeOff": "Désactivé",

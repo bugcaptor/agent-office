@@ -344,6 +344,11 @@ pub struct AppSettings {
     /// 키가 없으면 `MascotLightsLabel::Auto`(기본값).
     #[serde(default)]
     pub mascot_lights_label: MascotLightsLabel,
+    /// 마스코트 머리 위 말풍선에 에이전트가 한 말(턴 중 내레이션, 턴 끝 최종
+    /// 응답)을 잘라 띄울지. 도구 호출은 싣지 않는다. 기존 설정 파일에 키가
+    /// 없으면 켜짐.
+    #[serde(default = "default_true")]
+    pub mascot_speech_enabled: bool,
     /// 터미널 오버레이 filled 모드(이슈 #69)에서 패널 우측 아래에 반투명 LLM
     /// 사용량 플로트(`UsageFloat`)를 띄울지. 꺼도
     /// 하단바 사용량 뱃지는 그대로 보인다. 기존 설정 파일에 키가 없으면
@@ -405,6 +410,7 @@ impl Default for AppSettings {
             mascot_lights_projects: Vec::new(),
             mascot_lights_face: MascotLightsFace::Sprite,
             mascot_lights_label: MascotLightsLabel::Auto,
+            mascot_speech_enabled: true,
             usage_float_enabled: true,
             session_cost_enabled: true,
             agent_shortcuts: Default::default(),
@@ -627,6 +633,7 @@ mod tests {
             mascot_lights_projects: Vec::new(),
             mascot_lights_face: MascotLightsFace::Sprite,
             mascot_lights_label: MascotLightsLabel::Auto,
+            mascot_speech_enabled: true,
             usage_float_enabled: true,
             session_cost_enabled: true,
             agent_shortcuts: Default::default(),
@@ -916,6 +923,7 @@ mod tests {
             mascot_lights_projects: Vec::new(),
             mascot_lights_face: MascotLightsFace::Sprite,
             mascot_lights_label: MascotLightsLabel::Auto,
+            mascot_speech_enabled: true,
             usage_float_enabled: true,
             session_cost_enabled: true,
             agent_shortcuts: Default::default(),
@@ -1002,6 +1010,17 @@ mod tests {
         fs::write(&file, br#"{"version":1,"summarizerEnabled":true}"#).unwrap();
         let (s, _) = SettingsStore::new(file.clone()).load();
         assert_eq!(s.language, "system");
+        let _ = fs::remove_dir_all(file.parent().unwrap());
+    }
+
+    // 말풍선은 기존 설정 파일에 키가 없어도 켜진 채로 시작한다(opt-out).
+    #[test]
+    fn load_settings_without_mascot_speech_defaults_to_enabled() {
+        let file = scratch_file();
+        fs::create_dir_all(file.parent().unwrap()).unwrap();
+        fs::write(&file, br#"{"version":1,"mascotEnabled":true}"#).unwrap();
+        let (s, _) = SettingsStore::new(file.clone()).load();
+        assert!(s.mascot_speech_enabled);
         let _ = fs::remove_dir_all(file.parent().unwrap());
     }
 

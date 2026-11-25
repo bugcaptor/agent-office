@@ -74,6 +74,11 @@ function pluginResponse(cmd: string, args: Record<string, unknown>): unknown {
     case "plugin:window|inner_position":
     case "plugin:window|outer_position":
       return { x: 0, y: 0 };
+    // 마스코트 창의 위치 복원·리사이즈가 모니터 목록을 읽는다(없으면 클램프 생략).
+    case "plugin:window|available_monitors":
+      return [];
+    case "plugin:window|primary_monitor":
+      return null;
     case "plugin:notification|is_permission_granted":
       return false;
     default:

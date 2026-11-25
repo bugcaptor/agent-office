@@ -60,6 +60,7 @@
     "mascotLightsProjects": [],
     "mascotLightsFace": "sprite",
     "mascotLightsLabel": "auto",
+    "mascotSpeechEnabled": true,
     "usageFloatEnabled": true,
     "sessionCostEnabled": true,
     "agentShortcuts": { "agent-1": "Alt+Meta+Digit1" },

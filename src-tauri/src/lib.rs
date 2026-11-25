@@ -1149,6 +1149,7 @@ mod tests {
             mascot_lights_projects: Vec::new(),
             mascot_lights_face: Default::default(),
             mascot_lights_label: Default::default(),
+            mascot_speech_enabled: true,
             usage_float_enabled: true,
             session_cost_enabled: true,
             agent_shortcuts: Default::default(),

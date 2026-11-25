@@ -145,6 +145,7 @@ async function computeAppliedRect(
   hasSprite: boolean,
   wide: boolean,
   tall: boolean,
+  hasSpeech: boolean,
   dpr: number,
   anchor: Anchor,
   anchorSize: Size,
@@ -161,6 +162,7 @@ async function computeAppliedRect(
     hasSprite,
     wide,
     tall,
+    hasSpeech,
     dpr,
     currentPos,
     currentSize: anchorSize,
@@ -296,6 +298,10 @@ export default function MascotApp() {
   // C2: applyLayout 세대 카운터. IPC 왕복 중에 layoutKey가 또 바뀌면 늦게
   // 끝난 옛 호출이 새 레이아웃을 덮지 못하게 막는다.
   const seqRef = useRef(0);
+  // 창이 말풍선 자리까지 실제로 커졌는지. 말풍선은 이 값이 true일 때만 그린다
+  // — 리사이즈(디바운스 + IPC 왕복)보다 먼저 그리면 늘어난 콘텐츠가 아직 작은
+  // 창 밖으로 밀려 스프라이트·신호등이 한순간 잘린다.
+  const [layoutHasSpeech, setLayoutHasSpeech] = useState(false);
 
   /**
    * C9 배선: 신호등 레이아웃 변화 → 창 크기 재적용. anchorRef/lastSizeRef를
@@ -308,6 +314,7 @@ export default function MascotApp() {
     hasSprite: boolean,
     wide: boolean,
     tall: boolean,
+    hasSpeech: boolean,
     dpr: number,
     gen: number,
   ): Promise<void> => {
@@ -319,6 +326,7 @@ export default function MascotApp() {
       hasSprite,
       wide,
       tall,
+      hasSpeech,
       dpr,
       anchorRef.current,
       lastSizeRef.current,
@@ -327,6 +335,7 @@ export default function MascotApp() {
     lastAppliedPosRef.current = { x: rect.x, y: rect.y };
     lastSizeRef.current = { width: rect.width, height: rect.height };
     await tauriApi.setMascotLayout(rect.width, rect.height, rect.x, rect.y);
+    if (gen === seqRef.current) setLayoutHasSpeech(hasSpeech);
   };
 
   // ---- main → mascot 상태 수신 + ready 핸드셰이크 ----
@@ -489,7 +498,9 @@ export default function MascotApp() {
   );
   const displayedLightCount = shownLights.length + (overflowCount > 0 ? 1 : 0);
   const hasSprite = state.agentId !== null;
-  const layoutKey = `${displayedLightCount}|${state.lightsVertical}|${hasSprite}|${state.lightsWide}|${state.lightsTall}`;
+  const hasSpeech = hasSprite && state.speech !== null;
+  const layoutKey = `${displayedLightCount}|${state.lightsVertical}|${hasSprite}|${state.lightsWide}|${state.lightsTall}|${hasSpeech}`;
+  const showSpeech = hasSpeech && layoutHasSpeech;
 
   useEffect(() => {
     // 스프라이트도 없고 칸도 없으면(완전히 숨김) 0×0으로 줄일 이유가 없다 —
@@ -506,12 +517,13 @@ export default function MascotApp() {
         hasSprite,
         state.lightsWide,
         state.lightsTall,
+        hasSpeech,
         dprRef.current,
         gen,
       ).catch((err) => console.warn("mascot: failed to apply layout", err));
     }, LAYOUT_DEBOUNCE_MS);
     return () => clearTimeout(timer);
-    // layoutKey가 위 다섯 값을 그대로 인코딩한다 — dpr은 dprRef로 최신값을
+    // layoutKey가 위 여섯 값을 그대로 인코딩한다 — dpr은 dprRef로 최신값을
     // 읽으므로 dpr 변화 자체는 재실행 트리거가 아니다(의도된 것).
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [layoutKey]);
@@ -558,11 +570,12 @@ export default function MascotApp() {
 
   // ---- 클릭 vs 드래그 ----
   const detector = useRef(createDragDetector()).current;
-  const onPointerDown = (e: React.PointerEvent<HTMLCanvasElement>) => {
+  // 말풍선도 같은 배선을 쓴다 — 누르면 캐릭터를 누른 것과 같고, 끌면 창이 옮겨진다.
+  const onPointerDown = (e: React.PointerEvent<HTMLElement>) => {
     e.currentTarget.setPointerCapture(e.pointerId);
     detector.down(e.screenX, e.screenY);
   };
-  const onPointerMove = (e: React.PointerEvent<HTMLCanvasElement>) => {
+  const onPointerMove = (e: React.PointerEvent<HTMLElement>) => {
     if (detector.move(e.screenX, e.screenY) !== "start-drag") return;
     // OS 창 드래그로 넘어간다 — 이후 pointerup은 오지 않는다(정상).
     e.currentTarget.releasePointerCapture(e.pointerId);
@@ -570,7 +583,7 @@ export default function MascotApp() {
       .startDragging()
       .catch((err) => console.warn("mascot: failed to start dragging", err));
   };
-  const onPointerUp = (e: React.PointerEvent<HTMLCanvasElement>) => {
+  const onPointerUp = (e: React.PointerEvent<HTMLElement>) => {
     if (e.currentTarget.hasPointerCapture(e.pointerId)) {
       e.currentTarget.releasePointerCapture(e.pointerId);
     }
@@ -623,6 +636,21 @@ export default function MascotApp() {
 
   return (
     <div className="mascot-root">
+      {showSpeech && (
+        // 본문은 에이전트가 한 말 원문(main이 잘라 보냄) — 비번역.
+        <div className="mascot-speech-slot">
+          <div
+            className="mascot-speech"
+            title={state.name ?? undefined}
+            onPointerDown={onPointerDown}
+            onPointerMove={onPointerMove}
+            onPointerUp={onPointerUp}
+            onPointerCancel={() => detector.cancel()}
+          >
+            {state.speech}
+          </div>
+        </div>
+      )}
       {state.agentId !== null && (
         <div className="mascot-sprite-wrap">
           {state.hasPending && (

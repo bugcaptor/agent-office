@@ -28,6 +28,7 @@ import { Events } from "@shared/ipc";
 import { useAppStore } from "../store/appStore";
 import { pickMascotTarget } from "../store/selectors";
 import { computeMascotLights } from "../store/mascotLights";
+import { pickMascotSpeech } from "../store/mascotSpeech";
 import {
   HIDDEN_MASCOT_STATE,
   sameMascotState,
@@ -36,11 +37,11 @@ import {
 import { officeBus } from "./sessionBridge";
 import { tauriApi } from "./tauriApi";
 
-/** visible·lights·lightsVertical·lightsFace·lightsWide·lightsTall을 뺀
+/** visible·lights·lightsVertical·lightsFace·lightsWide·lightsTall·speech를 뺀
  *  스프라이트 전용 필드 — buildState가 조립하는 단위. */
 type SpriteFields = Omit<
   MascotState,
-  "visible" | "lights" | "lightsVertical" | "lightsFace" | "lightsWide" | "lightsTall"
+  "visible" | "lights" | "lightsVertical" | "lightsFace" | "lightsWide" | "lightsTall" | "speech"
 >;
 
 /** 스프라이트 대상이 없을 때(활동 없음, linger도 소진)의 빈 값. */
@@ -57,6 +58,10 @@ const EMPTY_SPRITE: SpriteFields = {
 
 /** 활동이 끊긴 뒤 마스코트를 유지하는 시간(ms). 턴 사이 깜빡임 방지. */
 export const MASCOT_HIDE_LINGER_MS = 15_000;
+
+/** 말풍선 한 마디를 띄워 두는 시간(ms). 같은 말이 계속 후보로 남아 있어도
+ *  이 시간이 지나면 접는다 — 새 말(내레이션 갱신·최종 응답)이 오면 다시 뜬다. */
+export const MASCOT_SPEECH_SHOW_MS = 12_000;
 
 /** 테스트 주입점 — 실제 구현은 Tauri 이벤트/커맨드와 officeBus. */
 export interface MascotBridgeIo {
@@ -123,12 +128,44 @@ export function installMascotBridge(io: MascotBridgeIo = defaultIo()): () => voi
    * 전까지 다시 조용한 스프라이트를 보여주지 않는다(재-linger 방지). */
   let spriteLingerDone = false;
   let lingerTimer: ReturnType<typeof setTimeout> | null = null;
+  /** 마지막으로 본 말풍선 후보(에이전트 + 본문). 바뀔 때만 새로 띄운다. */
+  let speechKey: string | null = null;
+  let speechText: string | null = null;
+  let speechTimer: ReturnType<typeof setTimeout> | null = null;
 
   const clearLinger = () => {
     if (lingerTimer !== null) {
       clearTimeout(lingerTimer);
       lingerTimer = null;
     }
+  };
+
+  const resetSpeech = () => {
+    if (speechTimer !== null) {
+      clearTimeout(speechTimer);
+      speechTimer = null;
+    }
+    speechKey = null;
+    speechText = null;
+  };
+
+  /**
+   * 말풍선 후보 → 지금 띄울 본문. 후보가 바뀌면 새로 띄우고
+   * MASCOT_SPEECH_SHOW_MS 뒤 접는다(접힌 뒤 같은 후보가 남아 있어도 다시
+   * 띄우지 않는다). 후보가 사라지면 즉시 접는다.
+   */
+  const speechFor = (agentId: string | null, candidate: string | null): string | null => {
+    const key = agentId !== null && candidate !== null ? `${agentId}\u0000${candidate}` : null;
+    if (key === speechKey) return speechTimer !== null ? speechText : null;
+    resetSpeech();
+    if (key === null) return null;
+    speechKey = key;
+    speechText = candidate;
+    speechTimer = setTimeout(() => {
+      speechTimer = null;
+      publish(buildState());
+    }, MASCOT_SPEECH_SHOW_MS);
+    return speechText;
   };
 
   const publish = (next: MascotState) => {
@@ -148,6 +185,7 @@ export function installMascotBridge(io: MascotBridgeIo = defaultIo()): () => voi
       // 설정 OFF는 즉시 숨김 — linger 없음. mascotEnabled가 신호등의 상위
       // 게이트이기도 하므로(결정 6) 신호등도 함께 꺼진다.
       clearLinger();
+      resetSpeech();
       lastPickId = null;
       spriteLingerDone = false;
       return HIDDEN_MASCOT_STATE;
@@ -170,6 +208,20 @@ export function installMascotBridge(io: MascotBridgeIo = defaultIo()): () => voi
       agents: s.agents,
       prevAgentId: lastPickId,
     });
+
+    // 말풍선은 지금 활동 중으로 고른 캐릭터에게만 — linger 중인 조용한
+    // 캐릭터는 말하지 않는다.
+    const speech = speechFor(
+      pick.agentId,
+      s.appSettings.mascotSpeechEnabled
+        ? pickMascotSpeech({
+            agentId: pick.agentId,
+            working: pick.working,
+            notifications: s.notifications,
+            taskLabels: s.taskLabels,
+          })
+        : null,
+    );
 
     let sprite: SpriteFields;
     if (pick.agentId !== null) {
@@ -233,6 +285,7 @@ export function installMascotBridge(io: MascotBridgeIo = defaultIo()): () => voi
       // projecttask만 칸을 두 줄(tall)로 그린다 — 첫 줄 프로젝트명, 둘째 줄
       // 작업명.
       lightsTall: s.appSettings.mascotLightsLabel === "projecttask",
+      speech,
     };
   };
 
@@ -265,5 +318,6 @@ export function installMascotBridge(io: MascotBridgeIo = defaultIo()): () => voi
     offReady();
     offClick();
     clearLinger();
+    resetSpeech();
   };
 }

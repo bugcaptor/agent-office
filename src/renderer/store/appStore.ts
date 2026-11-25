@@ -111,6 +111,7 @@ const DEFAULT_APP_SETTINGS: AppSettings = {
   mascotLightsProjects: [],
   mascotLightsFace: "sprite",
   mascotLightsLabel: "auto",
+  mascotSpeechEnabled: true,
   usageFloatEnabled: true,
   sessionCostEnabled: true,
   agentShortcuts: {},
@@ -424,6 +425,7 @@ interface AppState {
         | "mascotLightsProjects"
         | "mascotLightsFace"
         | "mascotLightsLabel"
+        | "mascotSpeechEnabled"
         | "usageFloatEnabled"
         | "sessionCostEnabled"
         | "agentShortcuts"

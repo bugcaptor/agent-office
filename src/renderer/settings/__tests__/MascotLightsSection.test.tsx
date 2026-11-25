@@ -85,6 +85,7 @@ function hydrate(
       mascotLightsProjects: [],
       mascotLightsFace: "sprite",
       mascotLightsLabel: "auto",
+      mascotSpeechEnabled: true,
       usageFloatEnabled: true,
       sessionCostEnabled: true,
       agentShortcuts: {},

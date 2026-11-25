@@ -364,6 +364,7 @@ fn get_app_settings_result_matches_fixture() {
             mascot_lights_projects: Vec::new(),
             mascot_lights_face: MascotLightsFace::Sprite,
             mascot_lights_label: MascotLightsLabel::Auto,
+            mascot_speech_enabled: true,
             usage_float_enabled: true,
             session_cost_enabled: true,
             agent_shortcuts: [("agent-1".to_string(), "Alt+Meta+Digit1".to_string())]

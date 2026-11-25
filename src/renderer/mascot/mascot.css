@@ -4,24 +4,88 @@
  * 테마 배경색이 들어오는 순간 투명 창이 불투명한 사각형이 된다.
  */
 
-/* 신호등 strip이 붙으면서 세로 컬럼 배치로
-   바뀌었다: [스프라이트 래퍼] 위, [strip] 아래. 창은 매번 컨텐츠 크기에
-   정확히 맞춰 리사이즈되므로(layout.ts computeMascotLayout,
-   MascotApp.tsx applyLayout — C9) 위→아래로 쌓기만 하면 하단중앙 앵커와
-   맞아떨어진다.
-   `height`/`justify-content:flex-end`는 예전에 지우지 못한 죽은 코드였다
-   — mascot.html의 `#root`에 높이가 없어(퍼센트 높이는 컨테이닝 블록 높이가
-   auto면 auto다) 여기 `height:100%`도 auto로 계산되고, 그래서
-   `justify-content:flex-end`는 아무 일도 하지 않았다(분배할 여유 공간
-   자체가 없다). 실제로는 콘텐츠가 항상 창 상단에 붙어 있었다(리뷰 B2) —
-   그 사실과 어긋나던 이전 주석을 지우고 죽은 선언도 함께 정리한다. */
+/* 세로 컬럼 배치: [말풍선] 위, [스프라이트 래퍼], [strip] 아래. 창은 매번
+   콘텐츠 크기에 맞춰 리사이즈되고(layout.ts computeMascotLayout, MascotApp.tsx
+   applyLayout — C9) 하단중앙이 앵커다.
+   콘텐츠는 창 **아래**에 붙인다(`#root` 높이 + min-height + flex-end). 말풍선이
+   뜰 때는 창이 먼저 커지고(빈 윗부분) 그 뒤에 말풍선이 그려지며, 접힐 때는
+   말풍선이 먼저 사라지고 창이 나중에 줄어든다 — 위에 붙어 있으면 그 사이
+   (디바운스 + IPC) 동안 스프라이트가 위아래로 튄다. 평소엔 창이 콘텐츠와 같은
+   크기라 차이가 없다. (예전에는 `#root`에 높이가 없어 flex-end가 죽은 코드였다
+   — 리뷰 B2.) */
+#root {
+  height: 100%;
+}
 .mascot-root {
   position: relative;
   width: 100%;
+  min-height: 100%;
   display: flex;
   flex-direction: column;
   align-items: center;
+  justify-content: flex-end;
   background: transparent;
+}
+
+/* 머리 위 말풍선 자리 — protocol.ts MASCOT_SPEECH_W(200)·MASCOT_SPEECH_H(58)와
+   짝. 말풍선은 자리 아래에 붙어 꼬리가 캐릭터 머리를 가리킨다. 최대 높이는
+   본문 3줄(14px×3) + 위아래 여백(4×2) + 테두리(1×2) + 꼬리 6 = 58. */
+.mascot-speech-slot {
+  flex: 0 0 auto;
+  width: 200px;
+  height: 58px;
+  position: relative;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+}
+
+.mascot-speech {
+  position: relative;
+  max-width: 196px;
+  margin-bottom: 6px;
+  padding: 4px 8px;
+  box-sizing: border-box;
+  border: 1px solid #1b1c22;
+  border-radius: 7px;
+  background: #fffdf4;
+  color: #1f2230;
+  font: 500 11px/14px ui-sans-serif, system-ui, sans-serif;
+  text-align: center;
+  word-break: keep-all;
+  overflow-wrap: anywhere;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  line-clamp: 3;
+  overflow: hidden;
+  cursor: pointer;
+  animation: mascot-speech-in 160ms ease-out;
+}
+
+/* 꼬리 — line-clamp 때문에 본문 상자는 overflow:hidden이라 꼬리를 상자 밖에
+   그릴 수 없다. 자리(slot) 쪽에 그린다. */
+.mascot-speech-slot::after {
+  content: "";
+  position: absolute;
+  bottom: 1px;
+  left: 50%;
+  margin-left: -5px;
+  border-left: 5px solid transparent;
+  border-right: 5px solid transparent;
+  border-top: 6px solid #1b1c22;
+  pointer-events: none;
+}
+
+@keyframes mascot-speech-in {
+  from {
+    opacity: 0;
+    transform: translateY(3px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 /* 스프라이트 + 배지를 함께 묶는 래퍼 — 배지의 absolute 기준이 여기로
