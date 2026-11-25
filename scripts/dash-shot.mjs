@@ -6,7 +6,7 @@
 // CLI 실행 중 재시작 경고, 끝난 업무 완료, 일반 에이전트 새 지시·이어서 보내기,
 // 대화 로그 속 이미지(썸네일·확대), 권한 요청·선택지 카드(AskUserQuestion 답·Bash 허용),
 // 텍스트·이미지 클립보드 복사와 이미지·파일 다운로드, 하단 사용량 바, 생각 중·멈춤 상태 줄,
-// 직접 입력과 보낼 대기열(쌓기·빼기), 로그 위 이 세션 추정 사용량.
+// 직접 입력과 보낼 대기열(쌓기·빼기), 로그 위 이 세션 추정 사용량, 화면 테마 토글(브라우저에 저장).
 import assert from "node:assert/strict";
 import { createServer } from "node:http";
 import { readFile, mkdir } from "node:fs/promises";
@@ -241,6 +241,20 @@ await thumbnail.getByRole("button", { name: "이미지 복사" }).click();
 await http.locator("#toast.show").filter({ hasText: "이미지를 길게 누르거나" }).waitFor();
 await verifyDownload(thumbnail.getByRole("button", { name: "이미지 다운로드" }), "image-img2.png", png);
 await verifyDownload(http.getByRole("button", { name: `다운로드 · ${fileName}` }), fileName, fileBytes);
+// 화면 테마: 자동 → 밝게 → 어둡게. 고른 것은 브라우저에 남아 다시 열어도 그대로다.
+await p.bringToFront();
+const theme = () => p.evaluate(() => [document.documentElement.dataset.theme || "auto", getComputedStyle(document.body).backgroundColor]);
+assert.equal((await theme())[0], "auto");
+await p.locator("#theme").click();
+assert.deepEqual(await theme(), ["light", "rgb(244, 242, 238)"]);
+await p.locator("#theme").click();
+assert.deepEqual(await theme(), ["dark", "rgb(20, 20, 18)"]);
+await p.reload();
+await p.locator("#theme", { hasText: "어둡게" }).waitFor();
+assert.deepEqual(await theme(), ["dark", "rgb(20, 20, 18)"]);
+await p.screenshot({ path: `${outDir}/theme-dark.png` });
+await p.locator("#theme").click();
+assert.equal((await theme())[0], "auto");
 console.log(JSON.stringify(posts));
 await browser.close();
 server.close();

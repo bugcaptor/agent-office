@@ -51,6 +51,8 @@
 .chat-msg.assistant .markdown-body > :last-child { margin-bottom: 0; }
 .chat-msg pre { background: var(--bg-panel-hi); padding: 8px; overflow-x: auto; white-space: pre; }
 .chat-msg .chat-text-block pre, .chat-msg .markdown-body pre:has(+ .chat-actions) { margin-bottom: 0; }
+/* 링크는 브라우저 기본 파랑 대신 테마 강조색 — 어두운 테마에서도 읽힌다. */
+.chat-msg a { color: var(--accent); text-decoration: underline; text-underline-offset: 2px; }
 .chat-msg.assistant code { font-family: ui-monospace, Menlo, monospace; font-size: 12px; }
 .chat-msg.assistant table { border-collapse: collapse; }
 .chat-msg.assistant th, .chat-msg.assistant td { border: 1px solid var(--border-dark); padding: 2px 6px; }
