@@ -576,14 +576,29 @@ fn interrupt(ctx: &Dash, agent: &str, op: &str) -> Result<(), String> {
     Ok(())
 }
 
-/// 셸 프롬프트에 있는 터미널에서 Claude·Codex를 띄운다. 프로필 기본 CLI가 같은
+/// 웹에서 띄울 CLI. 업무 보내기가 아는 CLI(`WorkCli`)는 그 실행 명령을 그대로 쓰고,
+/// OpenCode는 앱 훅이 없어 맨 명령만 친다(작업 상태는 관찰하지 않는다).
+enum LaunchCli {
+    Work(WorkCli),
+    Opencode,
+}
+
+fn launch_cli(name: &str) -> Option<LaunchCli> {
+    Some(match name {
+        "claude" => LaunchCli::Work(WorkCli::Claude),
+        "codex" => LaunchCli::Work(WorkCli::Codex),
+        "pi" => LaunchCli::Work(WorkCli::Pi),
+        "kilo" => LaunchCli::Work(WorkCli::Kilo),
+        "agy" => LaunchCli::Work(WorkCli::Agy),
+        "opencode" => LaunchCli::Opencode,
+        _ => return None,
+    })
+}
+
+/// 셸 프롬프트에 있는 터미널에서 CLI를 띄운다. 프로필 기본 CLI가 같은
 /// 종류면 그 모델·노력 설정을 따른다. CLI가 이미 돌고 있거나 쓰다 만 입력이 있으면 거절한다.
 async fn launch(ctx: &Dash, profile: &AgentProfile, cli: Option<&str>) -> Result<(), String> {
-    let cli = match cli.unwrap_or("claude") {
-        "claude" => WorkCli::Claude,
-        "codex" => WorkCli::Codex,
-        _ => return Err("unknown-cli".into()),
-    };
+    let cli = launch_cli(cli.unwrap_or("claude")).ok_or("unknown-cli")?;
     let target = ctx.ctl.work_send.inspect(&ctx.ctl.gate, &profile.id)?;
     let Some(session_id) = target.session_id else {
         return Err("not-running".into());
@@ -598,12 +613,17 @@ async fn launch(ctx: &Dash, profile: &AgentProfile, cli: Option<&str>) -> Result
     let syntax = crate::work_send::cli_transition::LaunchShell::for_shell_path(&shell)
         .ok_or("shell-unsupported")?
         .syntax();
-    let agent = profile
-        .default_agent
-        .clone()
-        .filter(|a| a.cli == cli)
-        .unwrap_or(WorkAgent { cli, model: None, effort: None });
-    let command = crate::work_send::validated_command(&agent, syntax)?;
+    let command = match cli {
+        LaunchCli::Work(cli) => {
+            let agent = profile
+                .default_agent
+                .clone()
+                .filter(|a| a.cli == cli)
+                .unwrap_or(WorkAgent { cli, model: None, effort: None });
+            crate::work_send::validated_command(&agent, syntax)?
+        }
+        LaunchCli::Opencode => "opencode".to_string(),
+    };
     use crate::session::inject::{InjectSource, SubmitOutcome};
     match ctx.ctl.gate.submit(&profile.id, &session_id, &command, InjectSource::WorkSend).await {
         SubmitOutcome::Submitted => Ok(()),
@@ -904,6 +924,18 @@ async fn answer_ask(State(ctx): Ctx, Path(id): Path<String>, Json(a): Json<AskAn
 #[cfg(test)]
 mod tests {
     use super::cli_of_command;
+
+    #[test]
+    fn launch_cli_accepts_every_launchable_cli() {
+        use super::{launch_cli, LaunchCli};
+        use crate::types::WorkCli;
+        for (name, cli) in [("claude", WorkCli::Claude), ("codex", WorkCli::Codex), ("pi", WorkCli::Pi), ("kilo", WorkCli::Kilo), ("agy", WorkCli::Agy)] {
+            assert!(matches!(launch_cli(name), Some(LaunchCli::Work(c)) if c == cli), "{name}");
+        }
+        assert!(matches!(launch_cli("opencode"), Some(LaunchCli::Opencode)));
+        assert!(launch_cli("bash").is_none());
+        assert!(launch_cli("Claude").is_none());
+    }
 
     #[test]
     fn agent_cli_is_recognized_from_the_foreground_command_line() {

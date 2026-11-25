@@ -69,6 +69,8 @@ main { padding: 12px 16px 40px; max-width: 900px; margin: 0 auto; }
 .goal { margin-top: 6px; font-size: 13px; }
 .clickable { cursor: pointer; }
 .btns { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+.launch { display: inline-flex; gap: 6px; }
+.launch select { width: auto; padding: 6px 8px; font-size: 13px; }
 button.b { border: 1px solid var(--line); background: var(--panel); color: var(--ink); border-radius: 8px; padding: 7px 11px; font: inherit; font-size: 13px; }
 button.b:disabled { opacity: .45; }
 button.b.primary { background: var(--accent); color: #fff; border-color: transparent; }
@@ -198,7 +200,7 @@ const S = {
     theme: { auto: "◐ 자동", light: "☀ 밝게", dark: "☾ 어둡게", hint: (now) => `화면 테마: ${now} · 눌러서 바꾸기(자동은 기기 설정을 따름)` },
     phase: { working: "작업 중", "needs-human": "답을 기다림", idle: "입력 대기", ended: "종료됨", starting: "시작 중", off: "꺼짐", running: "켜짐" },
     clockedOut: "퇴근", back: "← 목록", log: "대화 로그", noLog: "이 터미널에는 읽을 대화 로그가 없습니다(Claude·Codex 전사가 없는 세션).", noItems: "아직 대화가 없습니다.",
-    restart: "터미널 재시작", resume: "이어하기", terminate: "종료", interrupt: "작업 중단(Esc)", ctrlc: "Ctrl-C", launchClaude: "Claude 실행", launchCodex: "Codex 실행",
+    restart: "터미널 재시작", resume: "이어하기", terminate: "종료", interrupt: "작업 중단(Esc)", ctrlc: "Ctrl-C", launch: "CLI 실행", launchCli: "띄울 CLI",
     again: "한 번 더 눌러 확인", done: "보냈습니다", result: "결과", lines: "줄",
     sentTasks: "보낸 업무", taskState: { in_progress: "진행 중", review: "끝남 · 확인 대기" }, markDone: "완료", markedDone: "완료로 옮겼습니다",
     sendTask: "업무 보내기", titlePh: "할 일(제목)", bodyPh: "자세한 내용(선택)", cli: "CLI", send: "보내기", restartSend: "재시작하고 보내기",
@@ -241,7 +243,7 @@ const S = {
     theme: { auto: "◐ Auto", light: "☀ Light", dark: "☾ Dark", hint: (now) => `Theme: ${now} · tap to change (Auto follows the device)` },
     phase: { working: "Working", "needs-human": "Waiting for answer", idle: "Waiting for input", ended: "Ended", starting: "Starting", off: "Off", running: "On" },
     clockedOut: "Clocked out", back: "← List", log: "Conversation", noLog: "No conversation log for this terminal (no Claude/Codex transcript).", noItems: "No messages yet.",
-    restart: "Restart terminal", resume: "Resume", terminate: "Terminate", interrupt: "Interrupt (Esc)", ctrlc: "Ctrl-C", launchClaude: "Run Claude", launchCodex: "Run Codex",
+    restart: "Restart terminal", resume: "Resume", terminate: "Terminate", interrupt: "Interrupt (Esc)", ctrlc: "Ctrl-C", launch: "Run CLI", launchCli: "CLI to run",
     again: "Tap again to confirm", done: "Sent", result: "Result", lines: "lines",
     sentTasks: "Sent tasks", taskState: { in_progress: "In progress", review: "Finished · to review" }, markDone: "Done", markedDone: "Marked done",
     sendTask: "Send a task", titlePh: "Task (title)", bodyPh: "Details (optional)", cli: "CLI", send: "Send", restartSend: "Restart and send",
@@ -485,7 +487,10 @@ function placeOf(c) {
   const branch = c.label && c.label.branch;
   return [leaf(cwdOf(c)), branch && "⎇ " + branch].filter(Boolean).join(" ");
 }
-const CLI_NAMES = { claude: "Claude", codex: "Codex" };
+const CLI_NAMES = { claude: "Claude", codex: "Codex", pi: "Pi", kilo: "Kilo", opencode: "OpenCode", agy: "Antigravity" };
+/** 셸 프롬프트에서 띄울 수 있는 CLI(서버 `launch_cli`와 같은 목록). */
+const LAUNCH_CLIS = ["claude", "codex", "pi", "kilo", "opencode", "agy"];
+const launchPick = new Map(); // agentId -> 고른 CLI(머리 카드를 다시 그려도 유지)
 /** 터미널에서 CLI(또는 다른 명령)가 돌고 있어 보내기가 터미널 재시작을 부르는가. */
 function busyShell(c) { return !!(c.session && c.session.state === "running" && (c.cli || c.atPrompt === false)); }
 function chips(c) {
@@ -705,6 +710,16 @@ function renderOfficeHead(c) {
       el("button", { class: "b", text: S.ctrlc, onclick: () => act(`/office-agent/ctrl-c`) }),
       confirmBtn(S.terminate, () => act(`/office-agent/terminate`))));
 }
+function renderLaunch(c, running) {
+  const id = encodeURIComponent(c.agentId);
+  const def = LAUNCH_CLIS.includes(c.defaultCli) ? c.defaultCli : "claude";
+  const pick = launchPick.get(c.agentId) || def;
+  const off = !running || busyShell(c);
+  const sel = el("select", { class: "launch-cli", "aria-label": S.launchCli, disabled: off, onchange: (e) => { launchPick.set(c.agentId, e.target.value); } },
+    ...LAUNCH_CLIS.map((v) => el("option", { value: v, text: CLI_NAMES[v], selected: pick === v })));
+  return el("span", { class: "launch" }, sel,
+    el("button", { class: "b", disabled: off, text: S.launch, onclick: () => act(`/agents/${id}/launch`, { cli: launchPick.get(c.agentId) || def }) }));
+}
 function renderHead(c) {
   if (c.office) return renderOfficeHead(c);
   const [cls] = phaseOf(c);
@@ -720,8 +735,7 @@ function renderHead(c) {
     el("div", { class: "btns" },
       el("button", { class: "b", disabled: !running, text: S.interrupt, onclick: () => act(`/agents/${id}/interrupt`) }),
       el("button", { class: "b", disabled: !running, text: S.ctrlc, onclick: () => act(`/agents/${id}/ctrl-c`) }),
-      el("button", { class: "b", disabled: !running || busyShell(c), text: S.launchClaude, onclick: () => act(`/agents/${id}/launch`, { cli: "claude" }) }),
-      el("button", { class: "b", disabled: !running || busyShell(c), text: S.launchCodex, onclick: () => act(`/agents/${id}/launch`, { cli: "codex" }) })),
+      renderLaunch(c, running)),
     el("div", { class: "btns" },
       confirmBtn(S.restart, () => act(`/agents/${id}/restart`), "b"),
       confirmBtn(S.resume, () => act(`/agents/${id}/resume`), "b"),

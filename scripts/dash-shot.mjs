@@ -3,7 +3,7 @@
 // 웹 상태판(src-tauri/web/dash.html)을 가짜 API로 띄워 폰 크기로 찍는다. 앱·Tauri 없이 화면만 본다.
 //   node scripts/dash-shot.mjs [출력 폴더(기본 /tmp/dash-shot)]
 // 찍는 것: 캐릭터 목록(머리에 컴퓨터 이름, 맨 위 일반 에이전트), 캐릭터 화면(보낸 업무·대화 로그 최신순·업무 보내기),
-// CLI 실행 중 재시작 경고, 끝난 업무 완료, 일반 에이전트 새 지시·이어서 보내기,
+// CLI 실행 중 재시작 경고, 셸 프롬프트에서 고른 CLI 띄우기, 끝난 업무 완료, 일반 에이전트 새 지시·이어서 보내기,
 // 대화 로그 속 이미지(썸네일·확대), 권한 요청·선택지 카드(AskUserQuestion 답·Bash 허용),
 // 텍스트·이미지 클립보드 복사와 이미지·파일 다운로드, 하단 사용량 바, 생각 중·멈춤 상태 줄,
 // 직접 입력과 보낼 대기열(쌓기·빼기), 로그 위 이 세션 추정 사용량, 화면 테마 토글(브라우저에 저장).
@@ -215,6 +215,12 @@ await p.locator(".card.clickable").nth(2).click();
 await p.waitForSelector("#taskform");
 await p.waitForSelector("#asks .card.ask");
 await p.screenshot({ path: `${outDir}/agent-shell.png`, fullPage: true });
+// 셸 프롬프트 터미널: 고른 CLI로 띄운다(Claude·Codex 밖의 CLI도).
+await p.selectOption("#head select.launch-cli", "opencode");
+await p.getByRole("button", { name: "CLI 실행" }).click();
+await p.waitForTimeout(200);
+assert.deepEqual(posts.at(-1), { path: "/api/agents/b/launch", body: { cli: "opencode" } });
+await p.locator("#head").screenshot({ path: `${outDir}/agent-launch.png` });
 await p.fill("#asks input", "임시 폴더는 지우지 마");
 await p.getByRole("button", { name: "거부" }).click();
 await p.waitForFunction(() => !document.querySelector("#asks .card"));
