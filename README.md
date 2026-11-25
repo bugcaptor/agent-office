@@ -30,7 +30,7 @@ cd agent-office
 ./scripts/build-and-run.sh --install
 ```
 
-macOS에서는 자체 서명 인증서(없으면 만들지 물어봅니다)로 서명해 빌드하고 `/Applications`에 설치한 뒤 실행합니다. Apple 계정은 필요 없습니다. 서명을 해야 하는 이유는, 서명이 없으면 "사진·미디어 라이브러리·이동식 볼륨" 권한 프롬프트가 **빌드할 때마다** 다시 뜨기 때문입니다. 그 프롬프트는 전부 거부해도 기능에 지장이 없고(앱이 아니라 앱이 띄운 CLI 에이전트의 파일 접근이 앱 이름으로 집계되는 것), 자세한 사정은 [docs/macos-signing.md](docs/macos-signing.md)에 있습니다. macOS가 아니면 `npm run tauri build`로 배포용 산출물(`src-tauri/target/release/`)을 만듭니다.
+macOS에서는 자체 서명 인증서(없으면 만들지 물어봅니다)로 서명해 빌드하고 `/Applications`에 설치한 뒤 실행합니다. Apple 계정은 필요 없습니다. 서명을 해야 하는 이유는, 서명이 없으면 "사진·미디어 라이브러리·이동식 볼륨" 권한 프롬프트가 **빌드할 때마다** 다시 뜨기 때문입니다. 그 프롬프트는 전부 거부해도 기능에 지장이 없고(앱이 아니라 앱이 띄운 CLI 에이전트의 파일 접근이 앱 이름으로 집계되는 것), 자세한 사정은 [docs/macos-signing.md](docs/macos-signing.md)에 있습니다. macOS가 아니면 `npm run build:bundle`로 배포용 산출물(`src-tauri/target/release/`)을 만듭니다.
 
 **Windows**
 

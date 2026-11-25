@@ -420,9 +420,11 @@ macOS에서 iTerm을 선택하면 처음 사용할 때 자동화 권한을 요�
 
 ### 빌드 캐시 청소
 
-`npm run tauri`의 `pretauri` 훅이 `scripts/sweep-target.mjs`를 실행한다. macOS·Windows 빌드 스크립트도 sweep을 먼저 수행한다. Cargo 산출물은 자동으로 지워지지 않아 `src-tauri/target/`이 커질 수 있다.
+`npm run tauri`의 `pretauri` 훅이 `scripts/sweep-target.mjs`를 실행한다. 개발 빌드는 증분 컴파일을 위해 `src-tauri/target/`에 캐시를 남긴다.
 
 별도로 정리하려면 `npm run sweep`, 이번 실행만 건너뛰려면 `AGENT_OFFICE_SKIP_SWEEP=1`을 사용한다. `AGENT_OFFICE_SWEEP_DAYS`는 잔존물 기준 일수(기본 3)다. `cargo install cargo-sweep`으로 설치하면 `deps/`까지 정리한다.
+
+설치용 빌드(`build:bundle`, `build:mac`, `build:mac:dmg`, `build:win`, `install:mac`, `install:win`)는 Cargo 1.91 이상이 필요하다. Rust 중간 파일을 빌드마다 임시 디렉터리에 두고 빌드가 끝나면 삭제한다. 설치 파일은 기존 `bundle/` 경로에 남는다. 릴리즈 빌드를 반복하면서 캐시를 재사용하려면 `npm run tauri build`를 사용한다.
 
 ### 요구사항
 
@@ -441,7 +443,7 @@ npm install && npm run tauri dev
 ### 릴리즈 빌드
 
 ```bash
-npm install && npm run tauri build
+npm install && npm run build:bundle
 ```
 
 결과물은 `src-tauri/target/release/`에 생성됩니다(macOS `.dmg`, Windows `.msi`/`.exe`, Linux `.deb`/`.AppImage`).
@@ -467,10 +469,10 @@ npm run install:mac    # 빌드 + 서명 + 응용 프로그램에 설치
 tccutil reset All com.bugcaptor.agent-office   # 최초 1회, 서명 전 잔재 청소
 ```
 
-`npm run build:mac`·`install:mac`은 `--bundles app`으로 `.app`만 만들어 DMG 생성을 건너뜁니다(로컬 반복 빌드가 빠릅니다). 배포용 DMG는 `npm run tauri build`로 굽되, 인증서 이름을 넘겨야 합니다.
+`npm run build:mac`·`install:mac`은 `--bundles app`으로 `.app`을 만듭니다. 배포용 DMG는 `npm run build:mac:dmg`로 만들고, 다른 인증서를 쓰려면 이름을 넘깁니다.
 
 ```bash
-APPLE_SIGNING_IDENTITY="Agent Office Local Signing" npm run tauri build
+APPLE_SIGNING_IDENTITY="Agent Office Local Signing" npm run build:mac:dmg
 ```
 
 서명하지 않으면 designated requirement가 빌드마다 바뀌어 권한 프롬프트가 계속 반복됩니다. 원리·인증서 종류별 차이·배포 방식은 [macos-signing.md](macos-signing.md)가 정본입니다. 이 절은 macOS 전용이며, Windows·Linux 빌드와는 무관합니다.

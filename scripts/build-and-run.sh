@@ -30,7 +30,7 @@ while [ $# -gt 0 ]; do
 
   (인자 없음)   의존성을 갖춘 뒤 \`npm run tauri dev\` 로 바로 실행한다.
   --install     macOS: 자체 서명 인증서 확인 -> 빌드 + 서명 + /Applications 설치 -> 실행
-                그 외:  \`npm run tauri build\` 로 배포용 산출물을 만든다.
+                그 외:  \`npm run build:bundle\` 로 배포용 산출물을 만든다.
 USAGE
       exit 0
       ;;
@@ -95,8 +95,8 @@ fi
 # --- --install ---------------------------------------------------------------
 
 if [ "$OS" != "Darwin" ]; then
-  echo "==> npm run tauri build"
-  npm run tauri build
+  echo "==> npm run build:bundle"
+  npm run build:bundle
   echo
   echo "산출물: $ROOT/src-tauri/target/release/"
   echo "  번들(.deb / .AppImage 등)은 그 아래 bundle/ 에 있다."

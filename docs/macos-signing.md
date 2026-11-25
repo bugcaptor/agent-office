@@ -161,11 +161,10 @@ security find-identity -p codesigning | grep "Agent Office Local Signing"
 
 ```bash
 # Apple Silicon 전용
-APPLE_SIGNING_IDENTITY="Agent Office Local Signing" npm run tauri build
+npm run build:mac:dmg
 
 # Intel + Apple Silicon 겸용
-APPLE_SIGNING_IDENTITY="Agent Office Local Signing" \
-  npm run tauri build -- --target universal-apple-darwin
+npm run build:mac:dmg -- --target universal-apple-darwin
 ```
 
 산출물은 `src-tauri/target/release/bundle/dmg/`(universal 빌드는 `target/universal-apple-darwin/release/bundle/dmg/`)에 생긴다.

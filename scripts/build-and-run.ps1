@@ -91,8 +91,8 @@ if (-not $DoInstall) {
 
 # --- --install ---------------------------------------------------------------
 
-Write-Host "==> npm run tauri -- build --bundles nsis (인스톨러 빌드)"
-npm run tauri -- build --bundles nsis
+Write-Host "==> npm run build:win (인스톨러 빌드)"
+npm run build:win
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
 $Setup = Get-ChildItem "src-tauri\target\release\bundle\nsis\*-setup.exe" -ErrorAction SilentlyContinue |
