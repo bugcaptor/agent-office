@@ -4,7 +4,9 @@
 //   node scripts/dash-shot.mjs [출력 폴더(기본 /tmp/dash-shot)]
 // 찍는 것: 캐릭터 목록(머리에 컴퓨터 이름, 맨 위 일반 에이전트), 캐릭터 화면(보낸 업무·대화 로그 최신순·업무 보내기),
 // CLI 실행 중 재시작 경고, 끝난 업무 완료, 일반 에이전트 새 지시·이어서 보내기,
-// 대화 로그 속 이미지(썸네일·확대), 권한 요청·선택지 카드(AskUserQuestion 답·Bash 허용).
+// 대화 로그 속 이미지(썸네일·확대), 권한 요청·선택지 카드(AskUserQuestion 답·Bash 허용),
+// 텍스트·이미지 클립보드 복사와 이미지·파일 다운로드.
+import assert from "node:assert/strict";
 import { createServer } from "node:http";
 import { readFile, mkdir } from "node:fs/promises";
 import { resolve } from "node:path";
@@ -32,6 +34,10 @@ const characters = [
       toolInput: { command: "npm run build && rm -rf dist/tmp", description: "빌드하고 임시 폴더 정리" } }],
   },
 ];
+const code = '  printf "완료\\n"\n';
+const fileName = "실행 결과.txt";
+const fileBytes = Buffer.from("줄 1\n줄 2\n");
+const message = `아래 명령을 실행하세요.\n\n\`\`\`sh\n${code}\`\`\`\n\n[결과](실행%20결과.txt)`;
 const items = [
   { seq: 1, role: "user", kind: "text", text: "대화 로그를 최신순으로 보여 줘" },
   { seq: 2, role: "assistant", kind: "text", text: "dash.html을 살펴보겠습니다." },
@@ -49,6 +55,7 @@ const items = [
   { seq: 14, role: "user", kind: "text", text: "이 화면 좀 봐 줘" },
   { seq: 15, role: "user", kind: "image", text: "", image: { id: "img2", mediaType: "image/png", bytes: 1000 } },
   { seq: 16, role: "user", kind: "image", text: "", image: { id: "gone", mediaType: "image/png", bytes: 1000 } },
+  { seq: 17, role: "assistant", kind: "text", text: message, files: [{ name: fileName }] },
 ];
 const png = await readFile(resolve("scripts/icon-source-small.png"));
 const tasks = {
@@ -68,10 +75,16 @@ const server = createServer(async (req, res) => {
   const send = (data) => { res.setHeader("content-type", "application/json"); res.end(JSON.stringify({ ok: true, data })); };
   if (url.pathname === "/") { res.setHeader("content-type", "text/html; charset=utf-8"); return res.end(page); }
   if (url.pathname === "/api/state") return send({ app: "0.0.0", host: "회사 맥북 프로", rev: `r${rev}`, characters, officeAgent, folders, home: "/Users/me" });
-  if (url.pathname.startsWith("/api/log/")) return send({ epoch: 1, last: 16, attached: true, items: url.searchParams.get("after") ? [] : items });
+  if (url.pathname.startsWith("/api/log/")) return send({ epoch: 1, last: items.at(-1).seq, attached: true, items: url.searchParams.get("after") ? [] : items });
   if (url.pathname.startsWith("/api/image/")) {
+    if (url.searchParams.get("t") !== "abc" && req.headers.authorization !== "Bearer abc") {
+      res.statusCode = 401; return res.end();
+    }
     if (url.pathname.endsWith("/gone")) { res.statusCode = 404; return res.end(); }
     res.setHeader("content-type", "image/png"); return res.end(png);
+  }
+  if (url.pathname === "/api/file/a/1/17/0" && req.headers.authorization === "Bearer abc") {
+    res.setHeader("content-type", "application/octet-stream"); return res.end(fileBytes);
   }
   if (url.pathname === "/api/tasks" && req.method === "GET") return send(tasks);
   if (req.method === "POST") {
@@ -93,8 +106,10 @@ await new Promise((r) => server.listen(0, "127.0.0.1", r));
 const base = `http://127.0.0.1:${server.address().port}/#t=abc`;
 
 const { chromium } = await import("playwright-core");
-const browser = await chromium.launch({ channel: "chrome", headless: true });
+const browser = await chromium.launch({ channel: "chrome", headless: true,
+  args: ["--host-resolver-rules=MAP dashboard.test 127.0.0.1", "--no-proxy-server"] });
 const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 2, locale: "ko-KR" });
+await ctx.grantPermissions(["clipboard-read", "clipboard-write"], { origin: new URL(base).origin });
 const p = await ctx.newPage();
 p.on("pageerror", (e) => console.error("pageerror:", e.message));
 await mkdir(outDir, { recursive: true });
@@ -107,6 +122,26 @@ await p.waitForSelector("#sent .card");
 await p.waitForSelector("#asks .card.ask");
 await p.waitForFunction(() => [...document.querySelectorAll("#log img.shot")].every((i) => i.complete));
 await p.screenshot({ path: `${outDir}/agent-claude.png`, fullPage: true });
+const copied = () => p.evaluate(() => navigator.clipboard.readText());
+const newest = p.locator("#log .msg.assistant").first();
+await newest.getByRole("button", { name: "텍스트 복사" }).click();
+assert.equal(await copied(), code);
+await newest.getByRole("button", { name: "메시지 복사" }).click();
+assert.equal(await copied(), message);
+const tool = p.locator("#log details.tool").filter({ hasText: "git log --oneline -3" }).first();
+await tool.locator("summary").click();
+await tool.getByRole("button", { name: "텍스트 복사" }).click();
+assert.equal(await copied(), "git log --oneline -3");
+const result = p.locator("#log details.tool.err").filter({ hasText: "fatal: not a git repository" });
+await result.locator("summary").click();
+await result.getByRole("button", { name: "텍스트 복사" }).click();
+assert.equal(await copied(), "fatal: not a git repository");
+async function verifyDownload(button, name, bytes) {
+  const [download] = await Promise.all([button.page().waitForEvent("download"), button.click()]);
+  assert.equal(download.suggestedFilename(), name);
+  assert.deepEqual(await readFile(await download.path()), bytes);
+}
+await verifyDownload(newest.getByRole("button", { name: `다운로드 · ${fileName}` }), fileName, fileBytes);
 // 선택지: 하나는 고르지 않고 보내면 막히고, 둘 다 답하면 보낸다.
 await p.locator("#asks button.opt", { hasText: "썸네일" }).click();
 await p.getByRole("button", { name: "답 보내기" }).click();
@@ -120,6 +155,10 @@ await p.waitForFunction(() => !document.querySelector("#asks .card"));
 await p.locator("#log img.shot").first().click();
 await p.waitForSelector(".lb img");
 await p.screenshot({ path: `${outDir}/agent-lightbox.png` });
+const lightbox = p.locator(".lb");
+await lightbox.getByRole("button", { name: "이미지 복사" }).click();
+await p.waitForFunction(async () => (await navigator.clipboard.read()).some((item) => item.types.includes("image/png")));
+await verifyDownload(lightbox.getByRole("button", { name: "이미지 다운로드" }), "image-img2.png", png);
 await p.locator(".lb").click();
 await p.locator("#sent button", { hasText: "완료" }).first().click();
 await p.waitForFunction(() => document.querySelectorAll("#sent .row").length === 1);
@@ -145,6 +184,20 @@ await p.locator("#taskform select").first().selectOption({ index: 1 });
 await p.getByRole("button", { name: "보내기", exact: true }).click();
 await p.waitForSelector("text=이어서 보내기");
 await p.screenshot({ path: `${outDir}/office-follow.png`, fullPage: true });
+// Tailnet·LAN에서 쓰는 평문 HTTP에서는 브라우저의 선택 영역 복사로 동작한다.
+const http = await ctx.newPage();
+await http.goto(base.replace("127.0.0.1", "dashboard.test"));
+assert.equal(await http.evaluate(() => window.isSecureContext), false);
+await http.locator(".card.clickable").nth(1).click();
+await http.locator("#log .msg.assistant").first().getByRole("button", { name: "텍스트 복사" }).click();
+await http.locator("#toast.show").filter({ hasText: "클립보드에 복사했습니다" }).waitFor();
+await p.bringToFront();
+assert.equal(await copied(), code);
+const thumbnail = http.locator("#log .imgwrap").first();
+await thumbnail.getByRole("button", { name: "이미지 복사" }).click();
+await http.locator("#toast.show").filter({ hasText: "이미지를 길게 누르거나" }).waitFor();
+await verifyDownload(thumbnail.getByRole("button", { name: "이미지 다운로드" }), "image-img2.png", png);
+await verifyDownload(http.getByRole("button", { name: `다운로드 · ${fileName}` }), fileName, fileBytes);
 console.log(JSON.stringify(posts));
 await browser.close();
 server.close();

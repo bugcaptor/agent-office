@@ -21,6 +21,7 @@
 // 이벤트로 렌더러에 넘기고 답을 기다린다(`ctl` 자동 진행 다리와 같은 방식).
 // 앱 화면에는 명령마다 `web-dash-activity`로 짧은 알림을 띄운다.
 
+mod files;
 pub mod log;
 pub mod net;
 mod routes;

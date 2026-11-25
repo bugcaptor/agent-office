@@ -20,6 +20,7 @@ dependencies = [
  "libc",
  "nix",
  "parking_lot",
+ "percent-encoding",
  "portable-pty",
  "pulldown-cmark",
  "reqwest 0.12.28",

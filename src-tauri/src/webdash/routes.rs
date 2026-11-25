@@ -84,6 +84,7 @@ fn router(ctx: Arc<Dash>) -> Router {
         .route("/log/:agent", get(log))
         .route("/portrait/:agent", get(portrait))
         .route("/image/:agent/:id", get(image))
+        .route("/file/:agent/:epoch/:seq/:index", get(download_file))
         .route("/asks/:id", post(answer_ask))
         .route("/usage", get(usage))
         .route("/tasks", get(tasks).post(create_task))
@@ -112,7 +113,7 @@ fn presented_token(req: &Request) -> Option<String> {
             return Some(t.trim().to_string());
         }
     }
-    // <img>는 헤더를 못 단다 — 초상 요청만 쿼리 토큰을 쓴다.
+    // <img>는 헤더를 못 단다 — 초상과 대화 이미지는 쿼리 토큰을 쓴다.
     req.uri().query().and_then(|q| {
         q.split('&').find_map(|kv| kv.strip_prefix("t=").map(str::to_string))
     })
@@ -356,6 +357,26 @@ async fn image(State(ctx): Ctx, Path((agent, id)): Path<(String, String)>) -> Re
     h.insert(header::CONTENT_TYPE, content_type);
     h.insert(header::X_CONTENT_TYPE_OPTIONS, HeaderValue::from_static("nosniff"));
     h.insert(header::CONTENT_SECURITY_POLICY, HeaderValue::from_static("default-src 'none'; sandbox"));
+    res
+}
+
+async fn download_file(
+    State(ctx): Ctx,
+    Path((agent, epoch, seq, index)): Path<(String, u64, u64, usize)>,
+) -> Response {
+    let dash = ctx.dash.clone();
+    let found = tokio::task::spawn_blocking(move || dash.logs.file(&agent, epoch, seq, index))
+        .await
+        .ok()
+        .flatten();
+    let Some(bytes) = found else {
+        return StatusCode::NOT_FOUND.into_response();
+    };
+    let mut res = Response::new(Body::from(bytes));
+    let h = res.headers_mut();
+    h.insert(header::CONTENT_TYPE, HeaderValue::from_static("application/octet-stream"));
+    h.insert(header::CONTENT_DISPOSITION, HeaderValue::from_static("attachment"));
+    h.insert(header::X_CONTENT_TYPE_OPTIONS, HeaderValue::from_static("nosniff"));
     res
 }
 

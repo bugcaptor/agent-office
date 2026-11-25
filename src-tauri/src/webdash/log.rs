@@ -20,8 +20,9 @@ use std::time::{Duration, Instant};
 use base64::Engine as _;
 use serde::Serialize;
 
+use super::files::{self, FileLink};
 use crate::session_log::agent_transcript::{
-    self, AgentSessionLookup, ItemKind, TranscriptItem, TranscriptTailer, BACKFILL_MAX_BYTES,
+    self, AgentSessionLookup, ItemKind, ItemRole, TranscriptItem, TranscriptTailer, BACKFILL_MAX_BYTES,
     BACKFILL_MAX_ITEMS,
 };
 
@@ -62,6 +63,8 @@ pub struct LogItem {
     pub item: TranscriptItem,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub image: Option<ImageMeta>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    files: Vec<FileLink>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -77,6 +80,7 @@ pub struct LogPage {
 
 struct AgentLog {
     cwd: String,
+    file_root: Option<PathBuf>,
     tailer: TranscriptTailer,
     targets: Vec<PathBuf>,
     items: VecDeque<LogItem>,
@@ -104,8 +108,15 @@ impl AgentLog {
             (ItemKind::Image, None) => return,
             _ => None,
         };
+        let item = item.clamped_for_web();
+        let files = match (&self.file_root, item.kind, item.role) {
+            (Some(root), ItemKind::Text, ItemRole::Assistant) if item.text.contains(']') => {
+                files::links(root, &item.text)
+            }
+            _ => Vec::new(),
+        };
         self.next_seq += 1;
-        self.items.push_back(LogItem { seq: self.next_seq, item: item.clamped_for_web(), image });
+        self.items.push_back(LogItem { seq: self.next_seq, item, image, files });
         while self.items.len() > MAX_ITEMS {
             self.items.pop_front();
         }
@@ -239,6 +250,19 @@ impl LogCache {
         log.image(id)
     }
 
+    pub(super) fn file(&self, agent_id: &str, epoch: u64, seq: u64, index: usize) -> Option<Vec<u8>> {
+        let log = self.agents.lock().unwrap().get(agent_id).cloned()?;
+        let (root, link) = {
+            let log = log.lock().unwrap();
+            if log.epoch != epoch {
+                return None;
+            }
+            let item = log.items.iter().find(|item| item.seq == seq)?;
+            (log.file_root.clone()?, item.files.get(index)?.clone())
+        };
+        files::read(&root, &link)
+    }
+
     /// 한 캐릭터의 로그 쪽. 파일을 읽으므로 블로킹 스레드에서 부른다.
     pub fn read(&self, agent_id: &str, cwd: &str, after: Option<u64>, epoch: Option<u64>) -> LogPage {
         let entry = {
@@ -255,6 +279,7 @@ impl LogCache {
                 .or_insert_with(|| {
                     Arc::new(Mutex::new(AgentLog {
                         cwd: cwd.to_string(),
+                        file_root: files::working_root(cwd),
                         tailer: TranscriptTailer::new(agent_id, cwd, (self.sources)()),
                         targets: Vec::new(),
                         items: VecDeque::new(),
@@ -281,8 +306,8 @@ mod tests {
     use crate::session_log::agent_transcript::{ItemRole, TranscriptSource};
     use std::io::Write;
 
-    /// 지정한 파일을 붙고 줄마다 사용자 발화 하나를 내는 가짜 소스.
-    struct FileSource(Arc<Mutex<PathBuf>>);
+    /// 지정한 파일을 붙고 줄마다 발화 하나를 내는 가짜 소스.
+    struct FileSource(Arc<Mutex<PathBuf>>, ItemRole);
     impl TranscriptSource for FileSource {
         fn label(&self) -> &'static str {
             "fake"
@@ -291,7 +316,7 @@ mod tests {
             Some(self.0.lock().unwrap().clone())
         }
         fn parse(&self, raw: &str) -> Vec<TranscriptItem> {
-            vec![TranscriptItem::speech(ItemRole::User, raw)]
+            vec![TranscriptItem::speech(self.1, raw)]
         }
     }
 
@@ -348,6 +373,38 @@ mod tests {
     }
 
     #[test]
+    fn downloads_only_linked_workspace_files_from_the_current_log() {
+        let dir = tempfile::tempdir().unwrap();
+        let workspace = dir.path().join("work");
+        std::fs::create_dir(&workspace).unwrap();
+        let report = workspace.join("실행 결과.pdf");
+        let outside = dir.path().join("private.txt");
+        std::fs::write(&report, b"report").unwrap();
+        std::fs::write(&outside, b"private").unwrap();
+        #[cfg(unix)]
+        std::os::unix::fs::symlink(&outside, workspace.join("alias.txt")).unwrap();
+
+        let path = dir.path().join("chat.jsonl");
+        append(&path, "[결과](실행%20결과.pdf) [외부](../private.txt) [별칭](alias.txt) [웹](https://example.org)");
+        let current = Arc::new(Mutex::new(path));
+        let cache = LogCache::new(Arc::new(move || {
+            vec![Box::new(FileSource(current.clone(), ItemRole::Assistant))]
+        }));
+        let page = cache.read("a", workspace.to_str().unwrap(), None, None);
+        let seq = page.items[0].seq;
+        let wire = serde_json::to_value(&page.items[0]).unwrap();
+        assert_eq!(wire["files"], serde_json::json!([{ "name": "실행 결과.pdf" }]));
+        assert_eq!(cache.file("a", page.epoch, seq, 0).as_deref(), Some(b"report".as_slice()));
+        assert!(cache.file("a", page.epoch, seq, 1).is_none());
+        assert!(cache.file("a", page.epoch + 1, seq, 0).is_none());
+
+        std::fs::remove_file(&report).unwrap();
+        #[cfg(unix)]
+        std::os::unix::fs::symlink(&outside, &report).unwrap();
+        assert!(cache.file("a", page.epoch, seq, 0).is_none());
+    }
+
+    #[test]
     fn backfills_then_streams_new_items_and_resets_on_file_switch() {
         let dir = std::env::temp_dir().join(format!("webdash-log-{}", uuid::Uuid::new_v4()));
         std::fs::create_dir_all(&dir).unwrap();
@@ -358,7 +415,7 @@ mod tests {
         let current = Arc::new(Mutex::new(a.clone()));
         let cache = LogCache::new({
             let current = current.clone();
-            Arc::new(move || vec![Box::new(FileSource(current.clone())) as Box<dyn TranscriptSource>])
+            Arc::new(move || vec![Box::new(FileSource(current.clone(), ItemRole::User)) as Box<dyn TranscriptSource>])
         });
 
         let first = cache.read("x", "/w", None, None);

@@ -62,7 +62,8 @@ button.b.danger { color: var(--bad); }
 button.b.confirm { background: var(--bad); color: #fff; border-color: transparent; }
 .back { border: 0; background: transparent; color: var(--accent); font: inherit; padding: 0 0 8px; }
 .log { margin-top: 10px; }
-.msg { margin: 8px 0; padding: 8px 10px; border-radius: 10px; white-space: pre-wrap; word-break: break-word; }
+.msg { margin: 8px 0; padding: 8px 10px; border-radius: 10px; }
+.msg-text { white-space: pre-wrap; overflow-wrap: anywhere; }
 .msg.user { background: var(--user); margin-left: 24px; }
 .msg.assistant { background: var(--panel); border: 1px solid var(--line); margin-right: 12px; }
 .msg.side { opacity: .75; font-size: 13px; }
@@ -73,9 +74,12 @@ button.b.confirm { background: var(--bad); color: #fff; border-color: transparen
 .tool[open] summary::before { content: "▾ "; }
 .tool.err summary { color: var(--bad); }
 .blk > .tool ~ .tool { margin-left: 24px; }
-.tool pre { margin: 4px 0 0; padding: 8px; background: var(--code); border-radius: 8px; white-space: pre-wrap; word-break: break-word; font: 12px/1.4 ui-monospace, Menlo, monospace; max-height: 50vh; overflow: auto; }
+.text-block { margin-top: 4px; padding: 6px 8px; background: var(--code); border-radius: 8px; }
+.text-block pre { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; font: 12px/1.4 ui-monospace, Menlo, monospace; max-height: 50vh; overflow: auto; }
+.content-actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+.content-actions button.b { min-height: 36px; padding: 5px 10px; max-width: 100%; overflow-wrap: anywhere; cursor: pointer; }
 .empty { color: var(--muted); text-align: center; padding: 24px 0; }
-.toast { position: fixed; left: 50%; bottom: calc(20px + env(safe-area-inset-bottom)); transform: translateX(-50%); background: var(--ink); color: var(--bg); padding: 8px 14px; border-radius: 10px; font-size: 14px; opacity: 0; transition: opacity .2s; pointer-events: none; max-width: calc(100% - 32px); }
+.toast { position: fixed; z-index: 30; left: 50%; bottom: calc(20px + env(safe-area-inset-bottom)); transform: translateX(-50%); background: var(--ink); color: var(--bg); padding: 8px 14px; border-radius: 10px; font-size: 14px; opacity: 0; transition: opacity .2s; pointer-events: none; max-width: calc(100% - 32px); }
 .toast.show { opacity: .95; }
 input, textarea, select { width: 100%; font: inherit; color: var(--ink); background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 8px; }
 textarea { min-height: 90px; resize: vertical; }
@@ -99,10 +103,13 @@ h2 { font-size: 14px; color: var(--muted); margin: 18px 0 8px; font-weight: 600;
 .taskform h3 { font-size: 14px; margin: 0 0 4px; }
 .imgwrap { margin: 6px 0 6px 8px; }
 .imgwrap.user { margin-left: 24px; }
-.shot { display: block; max-width: 100%; max-height: 320px; border-radius: 8px; border: 1px solid var(--line); background: var(--code); cursor: zoom-in; }
+.shot-open { display: block; max-width: 100%; padding: 0; border: 0; background: none; border-radius: 8px; cursor: zoom-in; }
+.shot { display: block; max-width: 100%; max-height: 320px; border-radius: 8px; border: 1px solid var(--line); background: var(--code); }
 .shot.side { max-height: 200px; opacity: .85; }
-.lb { position: fixed; inset: 0; z-index: 20; background: rgba(0, 0, 0, .88); display: grid; place-items: center; padding: env(safe-area-inset-top) 8px env(safe-area-inset-bottom); cursor: zoom-out; }
-.lb img { max-width: 100%; max-height: 100%; object-fit: contain; }
+.lb { position: fixed; inset: 0; z-index: 20; background: rgba(0, 0, 0, .88); display: grid; grid-template: minmax(0, 1fr) / minmax(0, 1fr); place-items: center; padding: max(8px, env(safe-area-inset-top)) 8px max(8px, env(safe-area-inset-bottom)); cursor: zoom-out; }
+.lb-content { display: flex; flex-direction: column; align-items: center; max-width: 100%; max-height: 100%; }
+.lb img { max-width: 100%; min-height: 0; object-fit: contain; }
+.lb .content-actions { flex-shrink: 0; justify-content: center; }
 .card.ask { border-color: color-mix(in srgb, var(--warn) 55%, var(--line)); }
 .ask .q { margin-top: 10px; }
 .ask .qt { font-weight: 600; margin: 4px 0 6px; }
@@ -111,7 +118,7 @@ h2 { font-size: 14px; color: var(--muted); margin: 18px 0 8px; font-weight: 600;
 button.b.opt { text-align: left; padding: 8px 10px; }
 button.b.opt.on { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 14%, var(--panel)); }
 .opt-d { font-size: 12px; color: var(--muted); margin-top: 2px; }
-.askpre { margin: 6px 0 0; padding: 8px; background: var(--code); border-radius: 8px; white-space: pre-wrap; word-break: break-word; font: 12px/1.4 ui-monospace, Menlo, monospace; max-height: 40vh; overflow: auto; }
+.ask .text-block pre { max-height: 40vh; }
 </style>
 </head>
 <body>
@@ -121,7 +128,7 @@ button.b.opt.on { border-color: var(--accent); background: color-mix(in srgb, va
 </header>
 <main id="main"></main>
 <button id="up" class="b scrolltop">↑</button>
-<div id="toast" class="toast"></div>
+<div id="toast" class="toast" role="status"></div>
 <script>
 "use strict";
 const L = (navigator.language || "ko").toLowerCase().startsWith("ko") ? "ko" : "en";
@@ -144,6 +151,10 @@ const S = {
     allow: "허용", allowAlways: "허용하고 다시 묻지 않기", deny: "거부", dismiss: "웹에서 닫기", denyPh: "거부 사유(선택, 에이전트에게 전함)",
     askOther: "직접 입력", askSend: "답 보내기", askPick: "모든 질문에 답을 고르거나 입력하세요", askContent: "내용 보기",
     askGone: "이미 답했거나 사라진 요청입니다", askCount: (n) => `답을 기다리는 요청 ${n}건`, imageGone: "🖼 이미지를 더 볼 수 없습니다(오래되어 비웠음)",
+    copyMessage: "메시지 복사", copyText: "텍스트 복사", copyImage: "이미지 복사", copied: "클립보드에 복사했습니다",
+    copyFailed: "복사하지 못했습니다. 텍스트를 선택해 복사해 주세요.",
+    imageCopyHelp: "이미지를 길게 누르거나 마우스 오른쪽 버튼을 눌러 복사해 주세요.",
+    viewImage: "이미지 확대", download: "다운로드", downloadImage: "이미지 다운로드", downloadFailed: "파일을 다운로드할 수 없습니다",
     cliRunning: (n) => `${n} 실행 중`, cliBusy: "터미널에서 명령이 실행 중입니다", restartNeeded: "이 터미널은 재시작해야 업무를 보낼 수 있습니다",
     restartWarn: (what) => `${what}. 보내면 터미널을 재시작하므로 지금 세션은 끊깁니다.`,
     talkState: { pending: "준비 중", ready: "준비됨", running: "진행 중", waiting_user: "답을 기다림", wrapping_up: "정리 중", review: "검토", finished: "끝남", paused: "멈춤", "waiting-usage": "사용량 대기" },
@@ -174,6 +185,10 @@ const S = {
     allow: "Allow", allowAlways: "Allow and don't ask again", deny: "Deny", dismiss: "Close here", denyPh: "Reason (optional, sent to the agent)",
     askOther: "Type an answer", askSend: "Send answer", askPick: "Pick or type an answer for every question", askContent: "Show content",
     askGone: "Already answered or gone", askCount: (n) => `${n} request(s) waiting`, imageGone: "🖼 Image no longer available (cleared)",
+    copyMessage: "Copy message", copyText: "Copy text", copyImage: "Copy image", copied: "Copied to clipboard",
+    copyFailed: "Could not copy. Select the text and copy it manually.",
+    imageCopyHelp: "Touch and hold the image or right-click it to copy.",
+    viewImage: "Enlarge image", download: "Download", downloadImage: "Download image", downloadFailed: "Could not download this file",
     cliRunning: (n) => `${n} running`, cliBusy: "A command is running in the terminal", restartNeeded: "This terminal must restart to receive the task",
     restartWarn: (what) => `${what}. Sending restarts the terminal, so the current session ends.`,
     talkState: { pending: "Pending", ready: "Ready", running: "Running", waiting_user: "Waiting for you", wrapping_up: "Wrapping up", review: "Review", finished: "Finished", paused: "Paused", "waiting-usage": "Waiting for usage" },
@@ -219,6 +234,57 @@ function toast(text) {
   const t = document.getElementById("toast");
   t.textContent = text; t.classList.add("show");
   clearTimeout(toastTimer); toastTimer = setTimeout(() => t.classList.remove("show"), 2600);
+}
+async function copyText(text) {
+  try {
+    if (navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(text);
+      return toast(S.copied);
+    }
+  } catch (_) { /* HTTP 또는 권한 제한에서는 선택 영역을 복사한다. */ }
+  const focused = document.activeElement;
+  const field = el("textarea", { readonly: true, style: "position:fixed;top:0;left:0;opacity:0;pointer-events:none" });
+  field.value = text;
+  document.body.append(field);
+  let copied = false;
+  try {
+    field.focus();
+    field.select();
+    copied = document.execCommand("copy");
+  } catch (_) {
+  } finally {
+    field.remove();
+    focused?.focus({ preventScroll: true });
+  }
+  toast(copied ? S.copied : S.copyFailed);
+}
+function copyButton(text, label = S.copyText) {
+  return el("button", { class: "b", type: "button", text: label, onclick: () => copyText(text) });
+}
+function textBlock(text) {
+  return el("div", { class: "text-block" }, el("pre", { text }),
+    text && el("div", { class: "content-actions" }, copyButton(text)));
+}
+function downloadButton(label, url, name, failed = S.downloadFailed) {
+  return el("button", { class: "b", type: "button", text: label, onclick: async (e) => {
+    const button = e.currentTarget;
+    button.disabled = true;
+    try {
+      const res = await fetch(url, { headers: { Authorization: "Bearer " + token }, cache: "no-store" });
+      if (res.status === 401) { toast(S.unauthorized); return; }
+      if (!res.ok) { toast(res.status === 404 ? failed : S.downloadFailed); return; }
+      const blobUrl = URL.createObjectURL(await res.blob());
+      const link = el("a", { href: blobUrl, download: name, hidden: true });
+      document.body.append(link);
+      link.click();
+      link.remove();
+      setTimeout(() => URL.revokeObjectURL(blobUrl), 30000);
+    } catch (_) {
+      toast(S.downloadFailed);
+    } finally {
+      button.disabled = false;
+    }
+  } });
 }
 function setDot(cls) { document.getElementById("dot").className = "dot " + cls; }
 async function api(path, opts = {}) {
@@ -471,18 +537,17 @@ function renderQuestions(a, d) {
 /** 도구별로 무엇을 허락하는지 보인다(명령·파일·주소·계획). 모르는 도구는 입력 JSON. */
 function permDetail(a) {
   const i = a.toolInput || {};
-  const pre = (t) => el("pre", { class: "askpre", text: t });
   const file = i.file_path || i.notebook_path || i.path;
-  const fold = (label, text) => el("details", { class: "tool" }, el("summary", { text: label }), pre(text));
+  const fold = (label, text) => el("details", { class: "tool" }, el("summary", { text: label }), textBlock(text));
   const diff = (o, n) => [...String(o || "").split("\n").map((l) => "- " + l), ...String(n || "").split("\n").map((l) => "+ " + l)].join("\n");
   switch (a.toolName) {
-    case "Bash": return [pre(i.command || ""), i.description && el("div", { class: "sub", style: "white-space:normal", text: i.description })];
+    case "Bash": return [textBlock(i.command || ""), i.description && el("div", { class: "sub", style: "white-space:normal", text: i.description })];
     case "Write": return [el("div", { class: "sub", text: file }), fold(S.askContent, i.content || "")];
-    case "Edit": return [el("div", { class: "sub", text: file }), pre(diff(i.old_string, i.new_string))];
-    case "MultiEdit": return [el("div", { class: "sub", text: file }), pre((i.edits || []).map((e) => diff(e.old_string, e.new_string)).join("\n⋯\n"))];
-    case "WebFetch": return [pre(i.url || ""), i.prompt && el("div", { class: "sub", style: "white-space:normal", text: i.prompt })];
-    case "ExitPlanMode": return [pre(i.plan || "")];
-    default: return [file && el("div", { class: "sub", text: file }), pre(JSON.stringify(i, null, 2))];
+    case "Edit": return [el("div", { class: "sub", text: file }), textBlock(diff(i.old_string, i.new_string))];
+    case "MultiEdit": return [el("div", { class: "sub", text: file }), textBlock((i.edits || []).map((e) => diff(e.old_string, e.new_string)).join("\n⋯\n"))];
+    case "WebFetch": return [textBlock(i.url || ""), i.prompt && el("div", { class: "sub", style: "white-space:normal", text: i.prompt })];
+    case "ExitPlanMode": return [textBlock(i.plan || "")];
+    default: return [file && el("div", { class: "sub", text: file }), textBlock(JSON.stringify(i, null, 2))];
   }
 }
 function renderPermission(a, d) {
@@ -752,34 +817,100 @@ function placeItem(box, it) {
     st.last = { el: blk, side };
   }
 }
+function messageBody(text) {
+  const parts = [];
+  let start = 0;
+  let fence = "";
+  function prose(end) {
+    const paragraph = text.slice(start, end);
+    if (paragraph.trim()) parts.push(el("div", { class: "msg-text", text: paragraph }));
+  }
+  for (const line of text.matchAll(/^ {0,3}(`{3,}|~{3,})([^\r\n]*)(?:\r?\n|$)/gm)) {
+    const [, marker, info] = line;
+    if (fence) {
+      if (marker[0] !== fence[0] || marker.length < fence.length || info.trim()) continue;
+      parts.push(textBlock(text.slice(start, line.index)));
+      fence = "";
+    } else {
+      if (marker[0] === "`" && info.includes("`")) continue;
+      prose(line.index);
+      fence = marker;
+    }
+    start = line.index + line[0].length;
+  }
+  if (fence) parts.push(textBlock(text.slice(start)));
+  else prose(text.length);
+  return parts;
+}
+async function copyImage(img) {
+  if (navigator.clipboard?.write && typeof ClipboardItem !== "undefined") {
+    try {
+      const png = img.decode().then(() => new Promise((resolve, reject) => {
+        const canvas = el("canvas", { width: img.naturalWidth, height: img.naturalHeight });
+        canvas.getContext("2d").drawImage(img, 0, 0);
+        canvas.toBlob((blob) => blob ? resolve(blob) : reject(new Error()), "image/png");
+      }));
+      // Safari는 이미지 변환을 기다리기 전에 클릭 이벤트 안에서 write를 호출해야 한다.
+      await Promise.all([png, navigator.clipboard.write([new ClipboardItem({ "image/png": png })])]);
+      return toast(S.copied);
+    } catch (_) { /* 브라우저가 이미지 클립보드 쓰기를 막으면 기본 동작을 안내한다. */ }
+  }
+  toast(S.imageCopyHelp);
+}
+function imageActions(img, url, name) {
+  return el("div", { class: "content-actions", onclick: (e) => e.stopPropagation() },
+    el("button", { class: "b", type: "button", text: S.copyImage, onclick: () => copyImage(img) }),
+    downloadButton(S.downloadImage, url, name, S.imageGone));
+}
+const IMAGE_EXTENSIONS = { "image/png": "png", "image/jpeg": "jpg", "image/gif": "gif", "image/webp": "webp" };
 function renderItem(it) {
   const side = it.sidechain ? " side" : "";
+  const agent = encodeURIComponent(view.agent);
   if (it.kind === "image") {
     if (!it.image) return el("div", { class: "tool", text: S.imageGone });
-    const src = `/api/image/${encodeURIComponent(view.agent)}/${encodeURIComponent(it.image.id)}?t=${token}`;
+    const url = `/api/image/${agent}/${encodeURIComponent(it.image.id)}`;
+    const src = `${url}?t=${token}`;
+    const name = `image-${it.image.id}.${IMAGE_EXTENSIONS[it.image.mediaType] || "bin"}`;
     const img = el("img", { class: "shot" + side, loading: "lazy", alt: "", src });
-    img.onerror = () => img.replaceWith(el("div", { class: "tool", text: S.imageGone }));
-    img.onclick = () => openLightbox(src);
-    return el("div", { class: "imgwrap " + it.role }, img);
+    const opener = el("button", { type: "button", class: "shot-open", "aria-label": S.viewImage,
+      onclick: () => openLightbox(src, url, name, opener) }, img);
+    const wrap = el("div", { class: "imgwrap " + it.role }, opener, imageActions(img, url, name));
+    img.onerror = () => wrap.replaceWith(el("div", { class: "tool", text: S.imageGone }));
+    return wrap;
   }
-  if (it.kind === "text") return el("div", { class: "msg " + it.role + side, text: it.text });
+  if (it.kind === "text") {
+    const epoch = logs.get(view.agent).epoch;
+    const actions = (it.files || []).map((file, index) =>
+      downloadButton(`${S.download} · ${file.name}`, `/api/file/${agent}/${epoch}/${it.seq}/${index}`, file.name));
+    if (it.text) actions.unshift(copyButton(it.text, S.copyMessage));
+    return el("div", { class: "msg " + it.role + side }, messageBody(it.text),
+      actions.length > 0 && el("div", { class: "content-actions" }, actions));
+  }
   if (it.kind === "tool_use") {
     const head = (it.toolName ? it.toolName + ": " : "⤷ ") + firstLine(it.text);
     if (!it.toolName) return el("div", { class: "tool" + side, text: head });
-    return el("details", { class: "tool" + side }, el("summary", { text: "🔧 " + head }), el("pre", { text: it.text }));
+    return el("details", { class: "tool" + side }, el("summary", { text: "🔧 " + head }), textBlock(it.text));
   }
   const n = (it.text || "").split("\n").length;
   return el("details", { class: "tool" + (it.isError ? " err" : "") + side },
-    el("summary", { text: `↳ ${S.result} · ${n}${L === "ko" ? "" : " "}${S.lines} · ${firstLine(it.text, 60)}` }), el("pre", { text: it.text }));
+    el("summary", { text: `↳ ${S.result} · ${n}${L === "ko" ? "" : " "}${S.lines} · ${firstLine(it.text, 60)}` }), textBlock(it.text));
 }
 
-/** 이미지를 화면 가득 본다. 누르거나 Esc·뒤로 가기로 닫는다. */
-function openLightbox(src) {
-  const box = el("div", { class: "lb", onclick: () => close() }, el("img", { src, alt: "" }));
+/** 이미지를 화면 가득 본다. 누르거나 Esc로 닫는다. */
+function openLightbox(src, url, name, opener) {
+  const img = el("img", { src, alt: "" });
+  const actions = imageActions(img, url, name);
+  const box = el("div", { class: "lb", onclick: () => close() },
+    el("div", { class: "lb-content" }, img, actions));
   const onKey = (e) => { if (e.key === "Escape") close(); };
-  const close = () => { box.remove(); document.removeEventListener("keydown", onKey); };
+  const close = () => {
+    box.remove();
+    document.removeEventListener("keydown", onKey);
+    opener.focus({ preventScroll: true });
+  };
   document.addEventListener("keydown", onKey);
   document.body.append(box);
+  actions.firstElementChild.focus({ preventScroll: true });
 }
 
 function renderTalks() {

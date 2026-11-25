@@ -75,6 +75,7 @@ tauri-plugin-single-instance = "2" # 같은 identifier(=같은 app_data)의 두 
 # 안에서만 돌아 CLI가 쓸 수 없다.
 pulldown-cmark = { version = "0.13", default-features = false, features = ["html"] }
 ammonia = "4"
+percent-encoding = "2" # 대화 로그의 로컬 파일 링크에 있는 URL 이스케이프 해제
 
 # 세션 핸드오프(unix 전용): poll 기반 인터럽트
 # 가능 리더, sessiond와의 UDS+SCM_RIGHTS(fd 전달), TIOCSWINSZ/killpg.
