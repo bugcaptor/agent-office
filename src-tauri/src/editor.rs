@@ -1,20 +1,6 @@
-// src-tauri/src/vscode.rs
-//
-// 에이전트 작업 폴더를 Visual Studio Code로 여는 `open_in_vscode` 커맨드의
-// 구현부. OS별 실행 후보를 순서대로 시도해 첫 성공에서 멈춘다:
-// - macOS: PATH의 `code` CLI -> `open -a "Visual Studio Code"` 폴백.
-//   번들 GUI 앱은 PATH가 최소셋(/usr/bin 등)이라 `code`가 안 잡히는 경우가
-//   흔한데, `open -a`는 LaunchServices 경유라 PATH와 무관하게 동작한다.
-// - Windows: PATH의 `code.cmd` -> 사용자 설치(%LOCALAPPDATA%) ->
-//   시스템 설치(Program Files) 경로 순. .cmd는 Rust std가 cmd.exe 경유로
-//   안전하게(인젝션 이스케이프 포함) 실행해 준다. 콘솔 창이 튀지 않도록
-//   CREATE_NO_WINDOW를 건다(claude_cli.rs와 동일 관례).
-// - 그 외(Linux 등): PATH의 `code`.
-//
-// `code`/`open` 런처는 앱을 띄운 뒤 곧바로 종료하므로 `.status()`로 짧게
-// 기다려 성공(exit 0) 여부를 판정한다 -- spawn만 하면 `open -a`가 "앱
-// 없음"으로 실패해도 감지할 수 없다.
-
+// 편집기 CLI가 GUI 앱의 PATH에 없을 수 있다. macOS에서는 LaunchServices로,
+// Windows에서는 기본 설치 경로의 런처로 다시 시도한다. 명령과 인자는 따로 전달한다.
+use crate::persistence::settings_store::FolderEditor;
 use std::path::Path;
 use std::process::{Command, Stdio};
 
@@ -37,7 +23,11 @@ impl LaunchCandidate {
 /// OS별 VS Code 실행 후보를 시도 순서대로 돌려준다. 순수 함수 --
 /// `os`는 `std::env::consts::OS` 값, `local_app_data`는 Windows의
 /// `%LOCALAPPDATA%`(다른 OS에서는 None).
-pub fn launch_candidates(os: &str, dir: &str, local_app_data: Option<&str>) -> Vec<LaunchCandidate> {
+pub fn vscode_candidates(
+    os: &str,
+    dir: &str,
+    local_app_data: Option<&str>,
+) -> Vec<LaunchCandidate> {
     match os {
         "macos" => vec![
             LaunchCandidate::new("code", &[dir]),
@@ -61,17 +51,43 @@ pub fn launch_candidates(os: &str, dir: &str, local_app_data: Option<&str>) -> V
     }
 }
 
-/// `dir`을 VS Code로 연다. 경로(폴더 또는 파일)가 없거나 전 후보 실패 시
-/// 사용자에게 그대로 보여줄 수 있는 한국어 에러 문자열을 돌려준다. 이슈 #11의
-/// "작업 폴더 보기"에서 개별 파일을 클릭해 여는 경우가 있어, 디렉터리뿐 아니라
-/// 실존하는 파일 경로도 허용한다(`code`/`open -a`는 파일도 새 탭으로 연다).
-pub fn open_dir_in_vscode(dir: &str) -> Result<(), String> {
+fn sublime_candidates(os: &str, dir: &str) -> Vec<LaunchCandidate> {
+    match os {
+        "macos" => vec![
+            LaunchCandidate::new("subl", &["--", dir]),
+            LaunchCandidate::new("open", &["-a", "Sublime Text", dir]),
+        ],
+        "windows" => {
+            let mut candidates = vec![LaunchCandidate::new("subl.exe", &["--", dir])];
+            for base in ["ProgramFiles", "ProgramFiles(x86)"]
+                .iter()
+                .filter_map(std::env::var_os)
+            {
+                let launcher = Path::new(&base).join(r"Sublime Text\subl.exe");
+                candidates.push(LaunchCandidate::new(
+                    &launcher.to_string_lossy(),
+                    &["--", dir],
+                ));
+            }
+            candidates
+        }
+        _ => vec![LaunchCandidate::new("subl", &["--", dir])],
+    }
+}
+
+pub fn open_in_editor(dir: &str, editor: FolderEditor) -> Result<(), String> {
     if !Path::new(dir).exists() {
         return Err(format!("경로를 찾을 수 없습니다: {dir}"));
     }
 
-    let local_app_data = std::env::var("LOCALAPPDATA").ok();
-    for c in launch_candidates(std::env::consts::OS, dir, local_app_data.as_deref()) {
+    let os = std::env::consts::OS;
+    let candidates = match editor {
+        FolderEditor::Vscode => {
+            vscode_candidates(os, dir, std::env::var("LOCALAPPDATA").ok().as_deref())
+        }
+        FolderEditor::Sublime => sublime_candidates(os, dir),
+    };
+    for c in candidates {
         let mut cmd = Command::new(&c.program);
         cmd.args(&c.args)
             .stdin(Stdio::null())
@@ -89,7 +105,13 @@ pub fn open_dir_in_vscode(dir: &str) -> Result<(), String> {
             return Ok(());
         }
     }
-    Err("Visual Studio Code를 찾을 수 없습니다. VS Code 설치 여부를 확인해 주세요.".to_string())
+    let name = match editor {
+        FolderEditor::Vscode => "Visual Studio Code",
+        FolderEditor::Sublime => "Sublime Text",
+    };
+    Err(format!(
+        "편집기를 실행하지 못했습니다. {name} 설치 여부를 확인해 주세요."
+    ))
 }
 
 #[cfg(test)]
@@ -98,7 +120,7 @@ mod tests {
 
     #[test]
     fn macos_candidates_are_code_then_open_fallback() {
-        let v = launch_candidates("macos", "/Users/me/proj", None);
+        let v = vscode_candidates("macos", "/Users/me/proj", None);
         assert_eq!(
             v,
             vec![
@@ -110,7 +132,11 @@ mod tests {
 
     #[test]
     fn windows_candidates_include_user_and_system_installs() {
-        let v = launch_candidates("windows", "C:\\work\\proj", Some("C:\\Users\\me\\AppData\\Local"));
+        let v = vscode_candidates(
+            "windows",
+            "C:\\work\\proj",
+            Some("C:\\Users\\me\\AppData\\Local"),
+        );
         assert_eq!(
             v,
             vec![
@@ -129,21 +155,36 @@ mod tests {
 
     #[test]
     fn windows_without_local_app_data_skips_user_install() {
-        let v = launch_candidates("windows", "C:\\work\\proj", None);
+        let v = vscode_candidates("windows", "C:\\work\\proj", None);
         assert_eq!(v.len(), 2);
         assert_eq!(v[0].program, "code.cmd");
-        assert_eq!(v[1].program, "C:\\Program Files\\Microsoft VS Code\\bin\\code.cmd");
+        assert_eq!(
+            v[1].program,
+            "C:\\Program Files\\Microsoft VS Code\\bin\\code.cmd"
+        );
     }
 
     #[test]
     fn other_os_uses_path_code_only() {
-        let v = launch_candidates("linux", "/home/me/proj", None);
+        let v = vscode_candidates("linux", "/home/me/proj", None);
         assert_eq!(v, vec![LaunchCandidate::new("code", &["/home/me/proj"])]);
     }
 
     #[test]
+    fn sublime_keeps_a_spaced_folder_in_one_argument_for_both_mac_launchers() {
+        let dir = "/Users/me/My Project";
+        assert_eq!(
+            sublime_candidates("macos", dir),
+            vec![
+                LaunchCandidate::new("subl", &["--", dir]),
+                LaunchCandidate::new("open", &["-a", "Sublime Text", dir]),
+            ]
+        );
+    }
+
+    #[test]
     fn nonexistent_dir_is_rejected_before_any_launch() {
-        let err = open_dir_in_vscode("/definitely/not/a/dir").unwrap_err();
+        let err = open_in_editor("/definitely/not/a/dir", FolderEditor::Vscode).unwrap_err();
         assert!(err.contains("/definitely/not/a/dir"), "err={err}");
     }
 }

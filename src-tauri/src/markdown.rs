@@ -3,7 +3,7 @@
 // 에이전트 작업 폴더 안의 마크다운 파일을 프런트가 목록·읽기·쓰기 할 수 있게
 // 하는 IPC 커맨드(`markdown_list_files`/`markdown_read_file`/
 // `markdown_write_file`/`markdown_open_local_link`)의 구현부.
-// vscode.rs/shell_export.rs와 같은 골격 --
+// editor.rs/shell_export.rs와 같은 골격 --
 // `#[tauri::command]` 얇은 래퍼가 테스트 가능한 순수 함수에 위임한다. 에러는
 // `"{code}: {상세}"`(앱 공통 관례) — 문구가 아니라 안정적인 코드를 내려보내고,
 // 사용자에게 보일 문장은 프런트 카탈로그(`common:errors.*`)가 고른다.

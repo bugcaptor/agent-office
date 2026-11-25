@@ -287,6 +287,10 @@ export const tauriApi: AgentOfficeApi = {
     await invoke(Commands.openInVscode, { path });
   },
 
+  async openFolderInEditor(path, editor) {
+    await invoke(Commands.openFolderInEditor, { path, editor });
+  },
+
   async openInTerminal(path) {
     await invoke(Commands.openInTerminal, { path });
   },

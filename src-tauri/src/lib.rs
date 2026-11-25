@@ -64,7 +64,7 @@ pub mod types;
 // pub: contract 테스트가 `agent_office_lib::usage::{UsageSnapshot, ...}`에 닿아야
 // 한다. 로직 변경 없음 — 가시성만 승격.
 pub mod usage;
-mod vscode;
+mod editor;
 pub mod webdash;
 // pub: contract 테스트가 `agent_office_lib::workdir::{GitStatusResult, ...}`에
 // 닿아야 한다(model.rs가 이미 `pub use model::*`로 재수출). 로직 변경 없음 —
@@ -875,6 +875,7 @@ pub fn run() {
             ipc::commands::control_revoke,
             ipc::commands::work_agent_models,
             ipc::commands::open_in_vscode,
+            ipc::commands::open_folder_in_editor,
             ipc::commands::open_in_terminal,
             ipc::commands::open_in_file_manager,
             ipc::commands::export_terminal_output,
@@ -1130,6 +1131,8 @@ mod tests {
             sound_volume: 0.5,
             external_terminal: Default::default(),
             external_editor: Default::default(),
+            workdir_viewer: Default::default(),
+            folder_editor: Default::default(),
             attention_hold_ms: 5000,
             git_status_enabled: true,
             workdir_show_ignored: false,

@@ -106,6 +106,7 @@ export const Commands = {
   workAgentModels: "work_agent_models",
   listAvailableShells: "list_available_shells",
   openInVscode: "open_in_vscode",
+  openFolderInEditor: "open_folder_in_editor",
   openInTerminal: "open_in_terminal",
   openInFileManager: "open_in_file_manager",
   exportTerminalOutput: "export_terminal_output",

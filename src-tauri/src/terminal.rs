@@ -1,17 +1,17 @@
 // src-tauri/src/terminal.rs
 //
 // 에이전트 작업 폴더를 OS 기본 터미널 앱으로 여는 `open_in_terminal`
-// 커맨드의 구현부(vscode.rs와 동일 골격). OS별 실행 후보를 순서대로
+// 커맨드의 구현부(editor.rs와 동일 골격). OS별 실행 후보를 순서대로
 // 시도해 첫 성공에서 멈춘다:
 // - macOS: `open -a Terminal <dir>` — LaunchServices 경유라 번들 GUI 앱의
 //   최소 PATH와 무관하게 동작하고, Terminal.app은 OS 기본 제공이다.
 // - Windows: 기존 Windows Terminal 창(`wt -w 0 new-tab`) -> 기존 `wt -d`
 //   동작 -> `cmd /c start` 순으로 폴백한다. 모두 런처라 곧바로 종료한다.
-//   콘솔 창이 튀지 않도록 CREATE_NO_WINDOW를 건다(vscode.rs와 동일 관례).
+//   콘솔 창이 튀지 않도록 CREATE_NO_WINDOW를 건다(editor.rs와 동일 관례).
 // - 그 외(Linux 등): gnome-terminal -> konsole -> xfce4-terminal ->
 //   x-terminal-emulator 순.
 //
-// vscode.rs와 달리 후보마다 `wait_for_exit`가 있다: konsole·xterm류는
+// editor.rs와 달리 후보마다 `wait_for_exit`가 있다: konsole·xterm류는
 // 창이 닫힐 때까지 프로세스가 살아있어 `.status()`로 기다리면 커맨드가
 // 창 수명만큼 블록된다 — 이런 후보는 spawn 성공(바이너리 실행됨) 자체를
 // 성공으로 판정한다. 실행 파일 부재가 주 실패 모드이므로 spawn 에러만으로

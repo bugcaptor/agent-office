@@ -71,6 +71,10 @@
     "attentionHoldHelp": "질문 알림을 이 시간만큼 보류하고, 그 사이 에이전트가 계속 일하면(오토모드 자동 승인 등) 알림을 내지 않습니다. 0이면 즉시 알림."
   },
   "system": {
+    "folderSettings": "폴더 열기 설정",
+    "builtinViewer": "앱 내 탐색기",
+    "systemViewer": "시스템 파일 탐색기",
+    "folderEditor": "폴더 편집기",
     "gitStatusTitle": "작업 폴더 git 상태 표시",
     "gitStatusHelp": "\"작업 폴더 보기\"에서 파일별 git 변경 상태(수정·추가·삭제 등)를 조회해 뱃지로 보여줍니다. 거대 저장소에서 느리면 끄세요.",
     "workdirShowIgnoredTitle": "무시·숨김 파일도 목록에 표시",

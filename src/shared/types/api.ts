@@ -28,6 +28,7 @@ import type {
   SummaryPurpose,
   GetAppSettingsResult,
   AppSettings,
+  FolderEditor,
   ControlStatus,
   WebDashConfig,
   WebDashLabel,
@@ -241,6 +242,7 @@ export interface AgentOfficeApi {
   listAvailableShells(): Promise<AvailableShell[]>;
   /** 디렉터리를 Visual Studio Code로 연다. VS Code 미설치/경로 부재 시 reject. */
   openInVscode(path: string): Promise<void>;
+  openFolderInEditor(path: string, editor: FolderEditor): Promise<void>;
   /** 디렉터리를 OS 기본 터미널 앱으로 연다. 경로 부재/실행 실패 시 reject. */
   openInTerminal(path: string): Promise<void>;
   /** 디렉터리를 OS 파일 탐색기(macOS Finder / Windows 탐색기 / Linux 기본 파일

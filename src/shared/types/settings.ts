@@ -37,6 +37,9 @@ export type ExternalTerminalApp = "terminal" | "iterm";
  * 기본은 OS 기본 연결(system). */
 export type ExternalEditorApp = "system" | "vscode";
 
+export type WorkdirViewer = "builtin" | "system";
+export type FolderEditor = "vscode" | "sublime";
+
 /** 파일 목록 스캔 백엔드 — Rust `FileIndexBackend` 미러. 기본 walker. */
 export type FileIndexBackend = "walker" | "everything";
 
@@ -118,6 +121,8 @@ export interface AppSettings {
   externalTerminal: ExternalTerminalApp;
   /** 셸 출력 내보내기(.txt)를 열 에디터. 기본 OS 기본 연결. */
   externalEditor: ExternalEditorApp;
+  workdirViewer: WorkdirViewer;
+  folderEditor: FolderEditor;
   /** 질문(Hook) 알림을 방출 전 보류하는 시간(ms). 그 사이 세션이 계속
    * 일하면(오토모드 자동 승인 등) 알림을 조용히 폐기한다. 0이면 즉시 알림. 기본 5000. */
   attentionHoldMs: number;

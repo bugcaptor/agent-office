@@ -351,6 +351,7 @@
 }
 
 /* 프로세스 종료 시 표시되는 "다시 띄우기" 배너 (터미널 위 오버레이) */
+.folder-open-error,
 .terminal-exited-banner {
   position: absolute;
   top: 8px;
@@ -367,3 +368,5 @@
   border: 2px solid var(--accent-error);
   z-index: 2;
 }
+
+.folder-open-error { top: 40px; overflow-wrap: anywhere; }

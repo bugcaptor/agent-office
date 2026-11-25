@@ -93,6 +93,8 @@ const DEFAULT_APP_SETTINGS: AppSettings = {
   soundVolume: 0.5,
   externalTerminal: "terminal",
   externalEditor: "system",
+  workdirViewer: "builtin",
+  folderEditor: "vscode",
   attentionHoldMs: 5000,
   gitStatusEnabled: true,
   workdirShowIgnored: false,
@@ -404,6 +406,8 @@ interface AppState {
         | "soundVolume"
         | "externalTerminal"
         | "externalEditor"
+        | "workdirViewer"
+        | "folderEditor"
         | "attentionHoldMs"
         | "gitStatusEnabled"
         | "workdirShowIgnored"

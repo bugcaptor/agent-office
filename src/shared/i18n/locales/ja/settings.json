@@ -71,6 +71,10 @@
     "attentionHoldHelp": "質問の通知をこの時間だけ保留し、その間にエージェントが作業を続けたら（オートモードの自動承認など）通知しません。0 なら即時に通知します。"
   },
   "system": {
+    "folderSettings": "フォルダーを開く設定",
+    "builtinViewer": "アプリ内のファイルブラウザー",
+    "systemViewer": "システムのファイルマネージャー",
+    "folderEditor": "フォルダーを開くエディター",
     "gitStatusTitle": "作業フォルダーの git 状態を表示",
     "gitStatusHelp": "「作業フォルダーを見る」でファイルごとの git 変更状態（変更・追加・削除など）を取得してバッジで表示します。巨大なリポジトリで遅いときはオフにしてください。",
     "workdirShowIgnoredTitle": "無視・隠しファイルも一覧に表示",

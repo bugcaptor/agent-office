@@ -71,6 +71,10 @@
     "attentionHoldHelp": "把提问通知搁置这段时间，其间智能体若继续工作（如自动模式自动批准）就不发出通知。设为 0 则立即通知。"
   },
   "system": {
+    "folderSettings": "文件夹打开设置",
+    "builtinViewer": "内置文件浏览器",
+    "systemViewer": "系统文件管理器",
+    "folderEditor": "打开文件夹的编辑器",
     "gitStatusTitle": "显示工作文件夹的 git 状态",
     "gitStatusHelp": "在“查看工作文件夹”中查询每个文件的 git 变更状态（修改·新增·删除等）并以徽标显示。若在超大仓库中变慢请关闭。",
     "workdirShowIgnoredTitle": "在列表中显示被忽略和隐藏的文件",

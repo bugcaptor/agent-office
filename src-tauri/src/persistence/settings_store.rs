@@ -123,6 +123,22 @@ pub enum ExternalEditor {
     Vscode,
 }
 
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum WorkdirViewer {
+    #[default]
+    Builtin,
+    System,
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum FolderEditor {
+    #[default]
+    Vscode,
+    Sublime,
+}
+
 /// 파일 목록 스캔 백엔드(이슈 #67). `Walker`는 `ignore::WalkBuilder` 병렬
 /// 스캔(기본), `Everything`은 Windows 전용 es.exe(Voidtools Everything CLI)로
 /// 후보를 빠르게 얻은 뒤 gitignore 등가성 필터를 거친다 -- md 팔레트에만
@@ -248,6 +264,10 @@ pub struct AppSettings {
     /// 셸 출력 내보내기(.txt)를 열 외부 에디터. 기본은 OS 기본 연결.
     #[serde(default)]
     pub external_editor: ExternalEditor,
+    #[serde(default)]
+    pub workdir_viewer: WorkdirViewer,
+    #[serde(default)]
+    pub folder_editor: FolderEditor,
     /// 질문(Hook) 알림을 방출 전 보류하는 시간(ms). 그 사이 세션이 계속
     /// 일하면(오토모드 자동 승인 등) 알림을 조용히 폐기한다. 0이면 즉시 알림.
     #[serde(default = "default_attention_hold_ms")]
@@ -367,6 +387,8 @@ impl Default for AppSettings {
             sound_volume: 0.5,
             external_terminal: ExternalTerminal::Terminal,
             external_editor: ExternalEditor::System,
+            workdir_viewer: Default::default(),
+            folder_editor: Default::default(),
             attention_hold_ms: 5000,
             git_status_enabled: true,
             workdir_show_ignored: false,
@@ -587,6 +609,8 @@ mod tests {
             sound_volume: 0.5,
             external_terminal: ExternalTerminal::Terminal,
             external_editor: ExternalEditor::System,
+            workdir_viewer: Default::default(),
+            folder_editor: Default::default(),
             attention_hold_ms: 5000,
             git_status_enabled: true,
             workdir_show_ignored: false,
@@ -874,6 +898,8 @@ mod tests {
             sound_volume: 0.5,
             external_terminal: ExternalTerminal::Iterm,
             external_editor: ExternalEditor::Vscode,
+            workdir_viewer: WorkdirViewer::System,
+            folder_editor: FolderEditor::Sublime,
             attention_hold_ms: 5000,
             git_status_enabled: true,
             workdir_show_ignored: false,
@@ -1064,6 +1090,8 @@ mod tests {
             ExternalEditor::System,
             "부재 시 기본 시스템 에디터"
         );
+        assert_eq!(s.workdir_viewer, WorkdirViewer::Builtin);
+        assert_eq!(s.folder_editor, FolderEditor::Vscode);
         assert_eq!(s.attention_hold_ms, 5000, "부재 시 기본 홀드 5초");
         let _ = fs::remove_dir_all(file.parent().unwrap());
     }

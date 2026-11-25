@@ -1,7 +1,7 @@
 // src-tauri/src/file_manager.rs
 //
 // 작업 폴더를 OS 파일 탐색기(macOS Finder / Windows 탐색기 / Linux 기본 파일
-// 관리자)로 여는 `open_in_file_manager` 커맨드의 구현부. vscode.rs·terminal.rs와
+// 관리자)로 여는 `open_in_file_manager` 커맨드의 구현부. editor.rs·terminal.rs와
 // 같은 골격 -- OS별 실행 후보를 순서대로 시도해 첫 성공에서 멈춘다.
 //
 // OS별 사정:
@@ -53,8 +53,8 @@ pub fn launch_candidates(os: &str, dir: &str) -> Vec<LaunchCandidate> {
 /// `dir`을 OS 파일 탐색기로 연다. 경로가 없거나 전 후보 실패 시 사용자에게
 /// 그대로 보여줄 수 있는 한국어 에러 문자열.
 pub fn open_dir_in_file_manager(dir: &str) -> Result<(), String> {
-    if !Path::new(dir).exists() {
-        return Err(format!("경로를 찾을 수 없습니다: {dir}"));
+    if !Path::new(dir).is_dir() {
+        return Err(format!("폴더를 찾을 수 없습니다: {dir}"));
     }
 
     for c in launch_candidates(std::env::consts::OS, dir) {
@@ -106,6 +106,12 @@ mod tests {
     fn other_os_uses_xdg_open() {
         let v = launch_candidates("linux", "/home/me/proj");
         assert_eq!(v, vec![LaunchCandidate::new("xdg-open", &["/home/me/proj"], true)]);
+    }
+
+    #[test]
+    fn regular_file_is_rejected_before_launching_its_associated_app() {
+        let file = tempfile::NamedTempFile::new().unwrap();
+        assert!(open_dir_in_file_manager(file.path().to_str().unwrap()).is_err());
     }
 
     #[test]

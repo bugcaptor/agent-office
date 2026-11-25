@@ -34,7 +34,8 @@ vi.mock("../../office/gen/characterFactory", () => ({
 
 // `tauriApi`는 실제 @tauri-apps/api invoke를 부르므로 jsdom에서는 mock
 // (ProfileDialog 테스트와 동일한 관례). "VS Code로 열기" 경로 전달 검증용.
-const openInVscode = vi.fn().mockResolvedValue(undefined);
+const openInFileManager = vi.fn().mockResolvedValue(undefined);
+const openFolderInEditor = vi.fn().mockResolvedValue(undefined);
 const exportTerminalOutput = vi.fn().mockResolvedValue("/tmp/out.txt");
 // 컨텍스트 메뉴를 열면 이어하기 후보를 조회한다 — 기본은 빈 목록(항목 비활성).
 const listClaudeResumeSessions = vi.fn().mockResolvedValue({});
@@ -56,7 +57,8 @@ const runRecipesRead = vi.fn().mockResolvedValue({
 });
 vi.mock("../../ipc/tauriApi", () => ({
   tauriApi: {
-    openInVscode: (...args: unknown[]) => openInVscode(...args),
+    openInFileManager: (...args: unknown[]) => openInFileManager(...args),
+    openFolderInEditor: (...args: unknown[]) => openFolderInEditor(...args),
     exportTerminalOutput: (...args: unknown[]) => exportTerminalOutput(...args),
     listClaudeResumeSessions: (...args: unknown[]) => listClaudeResumeSessions(...args),
     loadMemo: (...args: unknown[]) => loadMemo(...args),
@@ -110,7 +112,8 @@ beforeEach(() => {
   listMemoArchive.mockClear().mockResolvedValue([]);
   runRecipesRead.mockClear();
   generateSpritePreview.mockClear();
-  openInVscode.mockClear();
+  openInFileManager.mockClear();
+  openFolderInEditor.mockClear();
   exportTerminalOutput.mockClear();
   exportTerminalOutput.mockResolvedValue("/tmp/out.txt");
   terminalRegistryHas.mockClear().mockReturnValue(false);
@@ -583,7 +586,7 @@ describe("탭 우클릭 컨텍스트 메뉴", () => {
     expect(queryByRole("menu")).toBeNull();
   });
 
-  it("cwd가 있는 프로필: 'VS Code로 열기' 선택 시 해당 경로로 openInVscode를 호출하고 메뉴는 닫힌다", () => {
+  it("cwd가 있는 프로필: 'VS Code로 열기' 선택 시 해당 경로로 openFolderInEditor를 호출하고 메뉴는 닫힌다", () => {
     const s = useAppStore.getState();
     s.addAgent({ ...mkProfile("a1"), cwd: "/Users/me/proj" });
     s.openTerminal("a1");
@@ -592,7 +595,7 @@ describe("탭 우클릭 컨텍스트 메뉴", () => {
     fireEvent.contextMenu(getAllByRole("tab")[0]);
     fireEvent.click(getByRole("menuitem", { name: "VS Code로 열기" }));
 
-    expect(openInVscode).toHaveBeenCalledWith("/Users/me/proj");
+    expect(openFolderInEditor).toHaveBeenCalledWith("/Users/me/proj", "vscode");
     expect(queryByRole("menu")).toBeNull();
   });
 
@@ -606,7 +609,24 @@ describe("탭 우클릭 컨텍스트 메뉴", () => {
     fireEvent.contextMenu(getAllByRole("tab")[0]);
     fireEvent.click(getByRole("menuitem", { name: "VS Code로 열기" }));
 
-    expect(openInVscode).toHaveBeenCalledWith("/Users/me/current");
+    expect(openFolderInEditor).toHaveBeenCalledWith("/Users/me/current", "vscode");
+  });
+
+  it("시스템 탐색기는 프로필 폴더를, Sublime Text는 현재 세션 폴더를 연다", () => {
+    const s = useAppStore.getState();
+    s.addAgent({ ...mkProfile("a1"), cwd: "/start" });
+    s.openTerminal("a1");
+    useAppStore.setState({
+      appSettings: { ...s.appSettings, workdirViewer: "system", folderEditor: "sublime" },
+      taskLabels: { a1: { sessionId: "s1", cwd: "/current" } },
+    });
+    const { getByRole } = render(<AgentTabStrip />);
+    fireEvent.contextMenu(getByRole("tab"));
+    fireEvent.click(getByRole("menuitem", { name: "작업 폴더 보기" }));
+    expect(openInFileManager).toHaveBeenCalledWith("/start");
+    fireEvent.contextMenu(getByRole("tab"));
+    fireEvent.click(getByRole("menuitem", { name: "Sublime Text로 열기" }));
+    expect(openFolderInEditor).toHaveBeenCalledWith("/current", "sublime");
   });
 
   it("프로필 cwd가 없어도 현재 세션 cwd가 있으면 'VS Code로 열기'가 활성화된다", () => {
@@ -620,7 +640,7 @@ describe("탭 우클릭 컨텍스트 메뉴", () => {
     const item = getByRole("menuitem", { name: "VS Code로 열기" });
     expect(item).toHaveProperty("disabled", false);
     fireEvent.click(item);
-    expect(openInVscode).toHaveBeenCalledWith("/Users/me/current");
+    expect(openFolderInEditor).toHaveBeenCalledWith("/Users/me/current", "vscode");
   });
 
   it("cwd 미설정 프로필: 'VS Code로 열기'가 비활성화되고 클릭해도 호출되지 않는다", () => {
@@ -632,7 +652,7 @@ describe("탭 우클릭 컨텍스트 메뉴", () => {
     expect(item).toHaveProperty("disabled", true);
 
     fireEvent.click(item);
-    expect(openInVscode).not.toHaveBeenCalled();
+    expect(openFolderInEditor).not.toHaveBeenCalled();
   });
 
   it("터미널이 있으면 '셸 출력을 에디터로 보기' 선택 시 이름+버퍼로 exportTerminalOutput을 호출한다", () => {

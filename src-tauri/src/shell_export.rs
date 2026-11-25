@@ -2,7 +2,7 @@
 //
 // 이슈 #42: 터미널 탭 화면의 현재 버퍼(스크롤백 포함)를 plain text로 받아
 // 임시 .txt 파일로 쓰고, 사용자가 설정한 외부 에디터로 여는
-// `export_terminal_output` 커맨드의 구현부(vscode.rs/terminal.rs와 동일 골격).
+// `export_terminal_output` 커맨드의 구현부(editor.rs/terminal.rs와 동일 골격).
 //
 // 파일은 매번 새로 쓴다 -- 파일명에 timestamp가 들어가므로 덮어쓰기가
 // 없다(같은 에이전트를 여러 번 내보내도 각각 별도 파일). 쓰기는
@@ -10,7 +10,7 @@
 // 열 일이 없다.
 //
 // 에디터 실행은 두 갈래다:
-// - VS Code: vscode.rs의 후보(code CLI -> open -a / code.cmd 경로)를 재사용.
+// - VS Code: editor.rs의 후보(code CLI -> open -a / code.cmd 경로)를 재사용.
 //   전부 즉시 끝나는 런처이므로 `.status()`로 성공 판정한다(wait_for_exit=true).
 // - 시스템 기본: macOS `open`, Windows `cmd /c start`, 그 외 `xdg-open`.
 //   이들도 파일을 기본 연결 앱에 넘기고 곧바로 종료하는 런처다.
@@ -96,7 +96,7 @@ impl LaunchCandidate {
 /// OS·에디터별 .txt 열기 후보를 시도 순서대로 돌려준다. 순수 함수 --
 /// `os`는 `std::env::consts::OS`, `local_app_data`는 Windows `%LOCALAPPDATA%`.
 ///
-/// `use_vscode`=true면 vscode.rs의 후보를 재사용해 wait_for_exit=true로 감싼다
+/// `use_vscode`=true면 editor.rs의 후보를 재사용해 wait_for_exit=true로 감싼다
 /// (vscode 후보는 전부 즉시 끝나는 런처). false면 OS 기본 연결로 연다:
 /// macOS `open`, Windows `cmd /c start`, 그 외 `xdg-open`.
 pub fn launch_candidates(
@@ -106,7 +106,7 @@ pub fn launch_candidates(
     local_app_data: Option<&str>,
 ) -> Vec<LaunchCandidate> {
     if use_vscode {
-        return crate::vscode::launch_candidates(os, file, local_app_data)
+        return crate::editor::vscode_candidates(os, file, local_app_data)
             .into_iter()
             .map(|c| LaunchCandidate {
                 program: c.program,

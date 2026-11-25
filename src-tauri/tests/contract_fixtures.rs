@@ -346,6 +346,8 @@ fn get_app_settings_result_matches_fixture() {
             sound_volume: 0.5,
             external_terminal: ExternalTerminal::Terminal,
             external_editor: ExternalEditor::System,
+            workdir_viewer: Default::default(),
+            folder_editor: Default::default(),
             attention_hold_ms: 5000,
             git_status_enabled: true,
             workdir_show_ignored: false,

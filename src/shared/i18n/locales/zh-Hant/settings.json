@@ -71,6 +71,10 @@
     "attentionHoldHelp": "把提問通知保留這麼久，期間 Agent 若繼續工作（自動模式自動核准等）就不發出通知。設 0 則立刻通知。"
   },
   "system": {
+    "folderSettings": "資料夾開啟設定",
+    "builtinViewer": "內建檔案瀏覽器",
+    "systemViewer": "系統檔案管理員",
+    "folderEditor": "開啟資料夾的編輯器",
     "gitStatusTitle": "顯示工作資料夾的 git 狀態",
     "gitStatusHelp": "在「瀏覽工作資料夾」查詢每個檔案的 git 變更狀態（修改、新增、刪除等）並以標記顯示。在超大儲存庫覺得慢就關掉。",
     "workdirShowIgnoredTitle": "在清單中顯示被忽略與隱藏的檔案",

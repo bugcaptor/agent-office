@@ -8,6 +8,7 @@ import ReactDOM from "react-dom/client";
 // 별도 webview라 메인 창의 i18n 초기화를 물려받지 못한다 — 여기서도 켠다.
 // 이 창은 설정을 읽지 않으므로 localStorage 캐시(메인 창이 남긴 값)가 곧 언어다.
 import "../i18n";
+import "../ui/suppressBrowserMenu";
 import MascotApp from "./MascotApp";
 
 ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(<MascotApp />);

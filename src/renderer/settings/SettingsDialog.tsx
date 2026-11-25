@@ -5,7 +5,7 @@
 //
 // 항목이 불어나 한 화면 스크롤로는 못 찾겠어서 탭 5개(일반/소리/
 // 단축키/시스템/제어)로 나눴다. 탭은 다이얼로그 로컬 상태이고 기억하지 않는다 —
-// 열 때마다 첫 탭. 그래서 게이팅(SettingsDialog)과 본체(SettingsDialogBody)를
+// 기본은 첫 탭이고, 프로필 메뉴의 폴더 설정은 시스템 탭에서 시작한다. 그래서 게이팅(SettingsDialog)과 본체(SettingsDialogBody)를
 // 나눠, 닫으면 본체가 언마운트되며 탭 상태가 함께 사라지게 한다(이 컴포넌트는
 // App에 상시 마운트돼 있어 useState만으로는 초기화되지 않는다).
 //
@@ -37,14 +37,14 @@ const SETTINGS_TABS: { id: SettingsTabId; labelKey: string }[] = [
 export function SettingsDialog() {
   const modal = useAppStore((s) => s.modal);
   if (modal.kind !== "settings") return null;
-  return <SettingsDialogBody />;
+  return <SettingsDialogBody initialTab={modal.initialTab} />;
 }
 
-function SettingsDialogBody() {
+function SettingsDialogBody({ initialTab = "general" }: { initialTab?: SettingsTabId }) {
   const { t } = useTranslation("settings");
   const closeModal = useAppStore((s) => s.closeModal);
   const cliEnabled = useAppStore((s) => s.appSettings.cliEnabled);
-  const [tab, setTab] = useState<SettingsTabId>(SETTINGS_TABS[0].id);
+  const [tab, setTab] = useState<SettingsTabId>(initialTab);
 
   return (
     <div

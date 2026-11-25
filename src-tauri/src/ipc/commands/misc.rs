@@ -6,6 +6,7 @@
 
 use tauri::{AppHandle, Emitter, Manager, State};
 
+use crate::persistence::settings_store::FolderEditor;
 use crate::state::AppState;
 
 #[tauri::command(rename_all = "camelCase")]
@@ -108,10 +109,19 @@ pub async fn mascot_activate(app: AppHandle, agent_id: String) -> Result<(), Str
 /// 에이전트 작업 폴더를 Visual Studio Code로 연다. `path`는 렌더러가
 /// 프로필의 `cwd`를 그대로 전달한다(미설정 시 메뉴가 비활성화되므로 폴백
 /// 없음). 시작 폴더 UI가 `~/dev/foo`류 입력을 허용하므로 세션 생성과
-/// 동일한 틸드 확장을 거친다. 구현/OS별 실행 전략은 `crate::vscode` 참조.
+/// 동일한 틸드 확장을 거친다. 구현/OS별 실행 전략은 `crate::editor` 참조.
 #[tauri::command(rename_all = "camelCase")]
 pub async fn open_in_vscode(path: String) -> Result<(), String> {
-    crate::vscode::open_dir_in_vscode(&crate::session::manager::expand_tilde(path))
+    crate::editor::open_in_editor(&crate::session::manager::expand_tilde(path), FolderEditor::Vscode)
+}
+
+#[tauri::command(rename_all = "camelCase")]
+pub async fn open_folder_in_editor(path: String, editor: FolderEditor) -> Result<(), String> {
+    let dir = crate::session::manager::expand_tilde(path);
+    if !std::path::Path::new(&dir).is_dir() {
+        return Err(format!("폴더를 찾을 수 없습니다: {dir}"));
+    }
+    crate::editor::open_in_editor(&dir, editor)
 }
 
 /// 에이전트 작업 폴더를 외부 터미널 앱으로 연다. 전달/확장 규칙은

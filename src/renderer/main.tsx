@@ -9,6 +9,7 @@ import ReactDOM from "react-dom/client";
 // 첫 render 때 이미 언어가 정해져 있다(테마 선적용과 같은 이유: 문구 플래시 차단).
 // 실제 설정(AppSettings.language)은 비동기라, 그때까지는 localStorage 캐시를 쓴다.
 import "./i18n";
+import "./ui/suppressBrowserMenu";
 import App from "./App";
 import { bootApp } from "./bootstrap";
 import { applyTheme } from "./theme/applyTheme";

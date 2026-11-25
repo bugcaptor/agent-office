@@ -11,6 +11,8 @@ import { XTERM_PALETTES, XTERM_PALETTE_ORDER } from "../terminal/palettes";
 import type { XtermThemeOverride } from "../terminal/theme";
 import type {
   ExternalEditorApp,
+  FolderEditor,
+  WorkdirViewer,
   ExternalTerminalApp,
   FileIndexBackend,
 } from "@shared/types";
@@ -23,6 +25,29 @@ export function SystemTab() {
 
   return (
     <div className="settings-form">
+      <fieldset className="folder-open-settings">
+        <legend>{t("system.folderSettings")}</legend>
+        <label className="settings-item">
+          <strong>{t("terminal:menu.workdir")}</strong>
+          <select
+            value={appSettings.workdirViewer}
+            onChange={(e) => updateAppSettings({ workdirViewer: e.target.value as WorkdirViewer })}
+          >
+            <option value="builtin">{t("system.builtinViewer")}</option>
+            <option value="system">{t("system.systemViewer")}</option>
+          </select>
+        </label>
+        <label className="settings-item">
+          <strong>{t("system.folderEditor")}</strong>
+          <select
+            value={appSettings.folderEditor}
+            onChange={(e) => updateAppSettings({ folderEditor: e.target.value as FolderEditor })}
+          >
+            <option value="vscode">VS Code</option>
+            <option value="sublime">Sublime Text</option>
+          </select>
+        </label>
+      </fieldset>
       <label className="settings-item">
         <input type="checkbox" checked={appSettings.workPanelsEnabled} onChange={(e) => updateAppSettings({ workPanelsEnabled: e.target.checked })} />
         <span><strong>{t("workpanels:settingsTitle")}</strong><small>{t("workpanels:settingsHelp")}</small></span>

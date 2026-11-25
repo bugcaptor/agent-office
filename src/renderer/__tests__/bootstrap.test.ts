@@ -280,6 +280,8 @@ describe("bootApp", () => {
       soundVolume: 0.5,
       externalTerminal: "terminal",
       externalEditor: "system",
+      workdirViewer: "builtin",
+      folderEditor: "vscode",
       attentionHoldMs: 5000,
       gitStatusEnabled: true,
       workdirShowIgnored: false,

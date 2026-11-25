@@ -579,6 +579,15 @@ body {
 
 /* 설정 폼(첫 실행/설정 다이얼로그 공유): 토글 + 설명 2단 구성 */
 .settings-form { display: flex; flex-direction: column; gap: 12px; margin: 12px 0; }
+.folder-open-settings {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 12em), 1fr));
+  gap: 10px;
+  margin: 0;
+  padding: 10px;
+  border: 1px solid var(--border-dark);
+}
+.folder-open-settings legend { padding: 0 4px; }
 .settings-item { display: flex; gap: 10px; align-items: flex-start; cursor: pointer; }
 .settings-item small { display: block; opacity: 0.75; margin-top: 2px; }
 /* 볼륨 슬라이더 줄: 체크박스 줄과 달리 값 폭 채우기 + 세로 중앙 정렬 */

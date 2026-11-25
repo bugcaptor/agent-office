@@ -71,6 +71,10 @@
     "attentionHoldHelp": "Holds a question alert this long; if the agent keeps working in the meantime (auto-approve and such), no alert is raised. 0 alerts immediately."
   },
   "system": {
+    "folderSettings": "Folder opening preferences",
+    "builtinViewer": "Built-in browser",
+    "systemViewer": "System file manager",
+    "folderEditor": "Folder editor",
     "gitStatusTitle": "Git status in work folder",
     "gitStatusHelp": "Looks up each file's git change state (modified, added, deleted…) in \"Browse work folder\" and shows it as a badge. Turn it off if huge repos feel slow.",
     "workdirShowIgnoredTitle": "Show ignored and hidden files",

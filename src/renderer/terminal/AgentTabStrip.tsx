@@ -227,6 +227,16 @@ export function AgentTabStrip() {
     x: number;
     y: number;
   } | null>(null);
+  const workdirViewer = useAppStore((s) => s.appSettings.workdirViewer);
+  const folderEditor = useAppStore((s) => s.appSettings.folderEditor);
+  const menuWorkdir = menu ? agents[menu.agentId]?.cwd : undefined;
+  const menuEditorDir = menu ? effectiveCwd(taskLabels[menu.agentId], menuWorkdir) : undefined;
+  const editorName = folderEditor === "sublime" ? "Sublime Text" : "VS Code";
+  const [folderError, setFolderError] = useState("");
+  const reportOpenFailure = (app: string, path: string, error: unknown) => {
+    console.warn("AgentTabStrip: failed to open folder", error);
+    setFolderError(t("menu.folderOpenFailed", { app, path }));
+  };
   // 대화 탭의 우클릭 메뉴(출력 내보내기·대화 끝내기만).
   const [chatMenu, setChatMenu] = useState<{
     agentId: string;
@@ -420,6 +430,7 @@ export function AgentTabStrip() {
               onClick={() => openTerminal(tab.id)}
               onContextMenu={(e) => {
                 e.preventDefault();
+                setFolderError("");
                 setMenu({ agentId: tab.id, x: e.clientX, y: e.clientY });
                 // 메뉴가 열리는 동안 이어하기 후보를 조회한다. 응답이 오면
                 // 리렌더되어 해당 항목의 활성 여부가 갱신된다(약간의 지연 허용).
@@ -556,6 +567,14 @@ export function AgentTabStrip() {
           ×
         </button>
       </div>
+      {folderError && (
+        <div className="folder-open-error" role="alert">
+          {folderError}
+          <button type="button" className="pixel-btn" onClick={() => setFolderError("")}>
+            {t("settings:dialog.close")}
+          </button>
+        </div>
+      )}
       {chatMenu && (
         <ContextMenu
           x={chatMenu.x}
@@ -626,45 +645,31 @@ export function AgentTabStrip() {
               label: t("menu.workdir"),
               icon: "📁",
               // 작업 폴더(cwd) 미설정 프로필은 비활성화 — 홈 디렉터리 폴백 없음.
-              disabled: !agents[menu.agentId]?.cwd,
+              disabled: !menuWorkdir,
               onSelect: () => {
-                const cwd = agents[menu.agentId]?.cwd;
-                if (cwd) openWorkdirPalette(cwd, menu.agentId);
+                if (!menuWorkdir) return;
+                if (workdirViewer === "system") {
+                  void tauriApi.openInFileManager(menuWorkdir).catch((err) =>
+                    reportOpenFailure(t("settings:system.systemViewer"), menuWorkdir, err));
+                } else {
+                  openWorkdirPalette(menuWorkdir, menu.agentId);
+                }
               },
             },
-            ...(runRecipesEnabled
-              ? [
-                  {
-                    label: t("menu.run"),
-                    icon: "▶",
-                    disabled: !agents[menu.agentId]?.cwd,
-                    onSelect: () => {
-                      const cwd = agents[menu.agentId]?.cwd;
-                      if (cwd) openRunPalette(cwd, menu.agentId);
-                    },
-                  },
-                ]
-              : []),
             {
-              label: t("menu.vscode"),
+              label: t("menu.openInEditor", { editor: editorName }),
               icon: "💻",
-              // 현재 세션이 cd한 폴더가 있으면 프로필 시작 폴더보다 우선한다.
-              disabled: !effectiveCwd(
-                taskLabels[menu.agentId],
-                agents[menu.agentId]?.cwd,
-              ),
+              disabled: !menuEditorDir,
               onSelect: () => {
-                const cwd = effectiveCwd(
-                  taskLabels[menu.agentId],
-                  agents[menu.agentId]?.cwd,
-                );
-                if (!cwd) return;
-                void tauriApi
-                  .openInVscode(cwd)
-                  .catch((err) =>
-                    console.warn("AgentTabStrip: open in VS Code failed", err),
-                  );
+                if (!menuEditorDir) return;
+                void tauriApi.openFolderInEditor(menuEditorDir, folderEditor).catch((err) =>
+                  reportOpenFailure(editorName, menuEditorDir, err));
               },
+            },
+            {
+              label: t("menu.folderSettings"),
+              icon: "⚙",
+              onSelect: () => openModal({ kind: "settings", initialTab: "system" }),
             },
             {
               // 인앱 PTY(터미널 재시작/종료)와 구분되는 외부 OS 터미널 앱.
@@ -684,6 +689,19 @@ export function AgentTabStrip() {
                   );
               },
             },
+            ...(runRecipesEnabled
+              ? [
+                  {
+                    label: t("menu.run"),
+                    icon: "▶",
+                    disabled: !agents[menu.agentId]?.cwd,
+                    onSelect: () => {
+                      const cwd = agents[menu.agentId]?.cwd;
+                      if (cwd) openRunPalette(cwd, menu.agentId);
+                    },
+                  },
+                ]
+              : []),
             {
               // 이슈 #42: 현재 터미널 버퍼(스크롤백 포함)를 .txt로 내보내 에디터로 연다.
               label: t("menu.exportShell"),

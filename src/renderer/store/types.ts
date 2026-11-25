@@ -67,7 +67,7 @@ export type ModalState =
   | { kind: "confirm-close-task-chat"; agentId: string }
   /** 토의 참가자 탭 닫기(CLI가 살아 있을 때). agentId는 `discuss-…`. */
   | { kind: "confirm-close-discussion-session"; agentId: string }
-  | { kind: "settings" }
+  | { kind: "settings"; initialTab?: "system" }
   | { kind: "analytics" }
   | { kind: "usage" }
   | { kind: "about" }
