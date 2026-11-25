@@ -7,17 +7,45 @@
 // 바뀌면 들고 있던 항목을 버린다.
 //
 // 수집기는 누군가 그 캐릭터 로그를 볼 때만 만들고, 한동안 아무도 안 보면 버린다.
+//
+// 전사에 실린 이미지(붙여 넣은 그림, 도구가 읽은 그림)는 항목에 base64로 싣지 않는다.
+// 디코딩한 바이트를 캐릭터별 상자에 넣고 항목에는 id만 둔다 — 브라우저는
+// `/api/image/<캐릭터>/<id>`로 따로 받는다. 상자는 개수·바이트 상한에서 오래된 것부터 버린다.
 use std::collections::{HashMap, VecDeque};
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
+use base64::Engine as _;
 use serde::Serialize;
 
 use crate::session_log::agent_transcript::{
-    self, AgentSessionLookup, TranscriptItem, TranscriptTailer, BACKFILL_MAX_BYTES,
+    self, AgentSessionLookup, ItemKind, TranscriptItem, TranscriptTailer, BACKFILL_MAX_BYTES,
     BACKFILL_MAX_ITEMS,
 };
+
+/// 캐릭터당 들고 있는 이미지 수 상한.
+const MAX_IMAGES: usize = 60;
+/// 캐릭터당 들고 있는 이미지 바이트 상한.
+const MAX_IMAGE_STORE_BYTES: usize = 64 * 1024 * 1024;
+/// 이보다 큰 이미지 하나는 받지 않는다.
+const MAX_IMAGE_BYTES: usize = 24 * 1024 * 1024;
+
+/// 항목에 붙는 이미지 참조.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ImageMeta {
+    pub id: String,
+    pub media_type: String,
+    pub bytes: usize,
+}
+
+struct StoredImage {
+    id: String,
+    media_type: String,
+    bytes: Arc<Vec<u8>>,
+}
 
 /// 캐릭터당 들고 있는 최대 항목 수.
 const MAX_ITEMS: usize = 300;
@@ -32,6 +60,8 @@ pub struct LogItem {
     pub seq: u64,
     #[serde(flatten)]
     pub item: TranscriptItem,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub image: Option<ImageMeta>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -54,20 +84,69 @@ struct AgentLog {
     epoch: u64,
     last_tick: Option<Instant>,
     last_access: Instant,
+    /// 이미지를 보이는가(웹 상태판 설정). 끄면 이미지 항목을 아예 쌓지 않는다.
+    show_images: bool,
+    images: VecDeque<StoredImage>,
 }
 
 impl AgentLog {
-    fn push(&mut self, item: TranscriptItem) {
+    fn push(&mut self, mut item: TranscriptItem) {
+        let image = match (item.kind, item.image.take()) {
+            (ItemKind::Image, Some(img)) => {
+                if !self.show_images {
+                    return;
+                }
+                let Some(meta) = self.store_image(&img.media_type, &img.data) else {
+                    return;
+                };
+                Some(meta)
+            }
+            (ItemKind::Image, None) => return,
+            _ => None,
+        };
         self.next_seq += 1;
-        self.items.push_back(LogItem { seq: self.next_seq, item: item.clamped_for_web() });
+        self.items.push_back(LogItem { seq: self.next_seq, item: item.clamped_for_web(), image });
         while self.items.len() > MAX_ITEMS {
             self.items.pop_front();
         }
     }
 
+    /// base64를 풀어 상자에 넣는다. 같은 그림이면 있던 것을 쓴다.
+    fn store_image(&mut self, media_type: &str, data: &str) -> Option<ImageMeta> {
+        let engine = base64::engine::general_purpose::STANDARD;
+        let bytes = engine
+            .decode(data)
+            .or_else(|_| engine.decode(data.split_ascii_whitespace().collect::<String>()))
+            .ok()?;
+        if bytes.is_empty() || bytes.len() > MAX_IMAGE_BYTES {
+            return None;
+        }
+        let id = image_id(&bytes);
+        if let Some(pos) = self.images.iter().position(|i| i.id == id) {
+            let found = self.images.remove(pos).expect("position is in range");
+            let meta = ImageMeta { id, media_type: found.media_type.clone(), bytes: found.bytes.len() };
+            self.images.push_back(found);
+            return Some(meta);
+        }
+        let meta = ImageMeta { id: id.clone(), media_type: media_type.to_string(), bytes: bytes.len() };
+        self.images.push_back(StoredImage { id, media_type: media_type.to_string(), bytes: Arc::new(bytes) });
+        let mut total: usize = self.images.iter().map(|i| i.bytes.len()).sum();
+        while self.images.len() > MAX_IMAGES || (total > MAX_IMAGE_STORE_BYTES && self.images.len() > 1) {
+            if let Some(old) = self.images.pop_front() {
+                total -= old.bytes.len();
+            }
+        }
+        Some(meta)
+    }
+
+    fn image(&self, id: &str) -> Option<(String, Arc<Vec<u8>>)> {
+        self.images.iter().find(|i| i.id == id).map(|i| (i.media_type.clone(), i.bytes.clone()))
+    }
+
     /// 붙은 파일의 최근 항목으로 버퍼를 새로 채운다.
     fn reseed(&mut self) {
         self.items.clear();
+        self.images.clear();
         self.epoch = new_epoch();
         for item in self.tailer.backfill(BACKFILL_MAX_BYTES, BACKFILL_MAX_ITEMS) {
             self.push(item);
@@ -105,6 +184,15 @@ impl AgentLog {
     }
 }
 
+/// 내용으로 정한 이미지 id(같은 그림은 같은 id).
+fn image_id(bytes: &[u8]) -> String {
+    use std::hash::{Hash, Hasher};
+    let mut h = std::collections::hash_map::DefaultHasher::new();
+    bytes.len().hash(&mut h);
+    bytes.hash(&mut h);
+    format!("{:016x}", h.finish())
+}
+
 fn new_epoch() -> u64 {
     let id = uuid::Uuid::new_v4();
     u64::from_le_bytes(id.as_bytes()[..8].try_into().expect("8 bytes")) >> 11
@@ -126,11 +214,29 @@ pub fn production_sources(lookup: Arc<dyn AgentSessionLookup>) -> SourceFactory 
 pub struct LogCache {
     sources: SourceFactory,
     agents: Mutex<HashMap<String, Arc<Mutex<AgentLog>>>>,
+    show_images: AtomicBool,
 }
 
 impl LogCache {
     pub fn new(sources: SourceFactory) -> Self {
-        Self { sources, agents: Mutex::new(HashMap::new()) }
+        Self { sources, agents: Mutex::new(HashMap::new()), show_images: AtomicBool::new(true) }
+    }
+
+    /// 이미지 보이기 설정. 바뀌면 들고 있던 로그를 버린다 — 다음 요청이 새 epoch로 다시 채운다.
+    pub fn set_show_images(&self, on: bool) {
+        if self.show_images.swap(on, Ordering::SeqCst) != on {
+            self.agents.lock().unwrap().clear();
+        }
+    }
+
+    /// 로그에 실린 이미지 하나(형식, 바이트). 설정이 꺼졌거나 상자에서 밀려났으면 None.
+    pub fn image(&self, agent_id: &str, id: &str) -> Option<(String, Arc<Vec<u8>>)> {
+        if !self.show_images.load(Ordering::SeqCst) {
+            return None;
+        }
+        let log = self.agents.lock().unwrap().get(agent_id).cloned()?;
+        let log = log.lock().unwrap();
+        log.image(id)
     }
 
     /// 한 캐릭터의 로그 쪽. 파일을 읽으므로 블로킹 스레드에서 부른다.
@@ -156,6 +262,8 @@ impl LogCache {
                         epoch: new_epoch(),
                         last_tick: None,
                         last_access: Instant::now(),
+                        show_images: self.show_images.load(Ordering::SeqCst),
+                        images: VecDeque::new(),
                     }))
                 })
                 .clone()
@@ -185,6 +293,53 @@ mod tests {
         fn parse(&self, raw: &str) -> Vec<TranscriptItem> {
             vec![TranscriptItem::speech(ItemRole::User, raw)]
         }
+    }
+
+    /// 줄마다 이미지 항목 하나(본문은 줄 그대로 base64로 본다).
+    struct ImageSource(PathBuf);
+    impl TranscriptSource for ImageSource {
+        fn label(&self) -> &'static str {
+            "img"
+        }
+        fn locate(&mut self, _: &str, _: &str) -> Option<PathBuf> {
+            Some(self.0.clone())
+        }
+        fn parse(&self, raw: &str) -> Vec<TranscriptItem> {
+            let img = agent_transcript::ItemImage::new("image/png", raw).unwrap();
+            vec![TranscriptItem::speech(ItemRole::User, "보세요"), TranscriptItem::image(ItemRole::User, img)]
+        }
+    }
+
+    #[test]
+    fn images_are_served_by_id_not_sent_inline_and_can_be_turned_off() {
+        let dir = std::env::temp_dir().join(format!("webdash-img-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("i.jsonl");
+        let engine = base64::engine::general_purpose::STANDARD;
+        append(&path, &engine.encode(b"PNG-ONE"));
+        append(&path, "%%not base64%%");
+        let cache = LogCache::new({
+            let path = path.clone();
+            Arc::new(move || vec![Box::new(ImageSource(path.clone())) as Box<dyn TranscriptSource>])
+        });
+        let page = cache.read("x", "/w", None, None);
+        let images: Vec<&ImageMeta> = page.items.iter().filter_map(|i| i.image.as_ref()).collect();
+        // 풀 수 없는 base64는 버리고, 글 항목은 그대로 남는다.
+        assert_eq!(images.len(), 1);
+        assert_eq!(page.items.len(), 3);
+        let wire = serde_json::to_string(&page).unwrap();
+        assert!(!wire.contains(&engine.encode(b"PNG-ONE")), "{wire}");
+        assert!(wire.contains(r#""kind":"image""#), "{wire}");
+        let (media, bytes) = cache.image("x", &images[0].id).unwrap();
+        assert_eq!((media.as_str(), bytes.as_slice()), ("image/png", b"PNG-ONE".as_slice()));
+        assert!(cache.image("x", "nope").is_none());
+
+        cache.set_show_images(false);
+        assert!(cache.image("x", &images[0].id).is_none());
+        let off = cache.read("x", "/w", None, None);
+        assert_ne!(off.epoch, page.epoch);
+        assert!(off.items.iter().all(|i| i.item.kind != ItemKind::Image));
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     fn append(path: &PathBuf, line: &str) {

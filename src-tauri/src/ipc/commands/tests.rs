@@ -1102,7 +1102,7 @@
         let dash = state.web_dash.clone();
         let status = dash
             .configure(
-                crate::webdash::WebDashConfig { enabled: true, bind: crate::webdash::WebDashBind::Tailnet, port },
+                crate::webdash::WebDashConfig { enabled: true, bind: crate::webdash::WebDashBind::Tailnet, port, images: true },
                 state.control_ctx.clone(),
                 dash.clone(),
             )
@@ -1194,7 +1194,7 @@
         // 끄면 내려간다.
         let off = dash
             .configure(
-                crate::webdash::WebDashConfig { enabled: false, bind: crate::webdash::WebDashBind::Tailnet, port },
+                crate::webdash::WebDashConfig { enabled: false, bind: crate::webdash::WebDashBind::Tailnet, port, images: true },
                 state.control_ctx.clone(),
                 dash.clone(),
             )

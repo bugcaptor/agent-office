@@ -642,7 +642,7 @@ fn web_dash_status_serializes_to_fixture() {
     use agent_office_lib::webdash::{WebDashBind, WebDashConfig, WebDashStatus};
     let fixture = include_str!("../../src/shared/contract-fixtures/web-dash-status.json");
     let status = WebDashStatus {
-        config: WebDashConfig { enabled: true, bind: WebDashBind::Both, port: 7788 },
+        config: WebDashConfig { enabled: true, bind: WebDashBind::Both, port: 7788, images: true },
         running: true,
         urls: vec!["http://100.101.2.3:7788/#t=0123abcd".into(), "http://127.0.0.1:7788/#t=0123abcd".into()],
         error: Some("web-dash-no-network".into()),

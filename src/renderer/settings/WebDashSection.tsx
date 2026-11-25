@@ -1,6 +1,6 @@
 // src/renderer/settings/WebDashSection.tsx
 //
-// 설정 다이얼로그 "제어" 탭의 웹 상태판 섹션. 켜기·네트워크·포트를 고르고 접속 주소(토큰 포함)를
+// 설정 다이얼로그 "제어" 탭의 웹 상태판 섹션. 켜기·네트워크·포트·이미지 보이기를 고르고 접속 주소(토큰 포함)를
 // 복사한다. 설정은 앱 설정과 따로 `web-dash.json`에 저장된다.
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
@@ -93,6 +93,13 @@ export function WebDashSection() {
               onBlur={commitPort}
               onKeyDown={(e) => { if (e.key === "Enter") commitPort(); }}
             />
+          </label>
+          <label style={{ display: "flex", gap: 8, alignItems: "flex-start" }}>
+            <input type="checkbox" checked={config.images !== false} disabled={busy} onChange={(e) => void apply({ images: e.target.checked })} />
+            <span>
+              <span>{t("webDash.images")}</span>
+              <small style={{ display: "block", opacity: 0.7 }}>{t("webDash.imagesHelp")}</small>
+            </span>
           </label>
           <div style={{ fontSize: 12, opacity: 0.85 }}>
             {status.running ? t("webDash.running", { count: status.clients }) : t("webDash.stopped")}

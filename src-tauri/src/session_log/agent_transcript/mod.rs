@@ -64,13 +64,45 @@ pub enum ItemRole {
     Assistant,
 }
 
-/// 항목의 종류. thinking·이미지·서명 블롭은 애초에 항목이 되지 않는다.
+/// 항목의 종류. thinking·서명 블롭은 애초에 항목이 되지 않는다.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ItemKind {
     Text,
     ToolUse,
     ToolResult,
+    /// 대화에 실린 이미지(붙여 넣은 그림, 도구가 읽은 이미지 파일). 세션 로그에는 남기지
+    /// 않고 웹 상태판만 쓴다. 바이트는 `image`에 있고 와이어로는 나가지 않는다.
+    Image,
+}
+
+/// 웹에서 보일 수 있는 이미지 형식. SVG는 스크립트를 품을 수 있어 받지 않는다.
+pub const IMAGE_MEDIA_TYPES: [&str; 4] = ["image/png", "image/jpeg", "image/gif", "image/webp"];
+
+/// 전사에 base64로 실린 이미지 하나.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ItemImage {
+    pub media_type: String,
+    /// base64 본문(디코딩은 쓰는 쪽이 한다 — 세션 로그는 쓰지 않으므로 비용을 치르지 않는다).
+    pub data: String,
+}
+
+impl ItemImage {
+    /// `media_type`이 받는 형식이고 본문이 있으면 만든다.
+    pub fn new(media_type: &str, data: &str) -> Option<Self> {
+        let media_type = media_type.trim().to_ascii_lowercase();
+        let media_type = if media_type == "image/jpg" { "image/jpeg".to_string() } else { media_type };
+        (IMAGE_MEDIA_TYPES.contains(&media_type.as_str()) && !data.trim().is_empty())
+            .then(|| Self { media_type, data: data.trim().to_string() })
+    }
+
+    /// `data:image/png;base64,....` 꼴(Codex `input_image`).
+    pub fn from_data_url(url: &str) -> Option<Self> {
+        let rest = url.strip_prefix("data:")?;
+        let (meta, data) = rest.split_once(',')?;
+        let media_type = meta.strip_suffix(";base64")?;
+        Self::new(media_type, data)
+    }
 }
 
 /// 전사 한 조각(= 채팅 버블 하나 / 로그 블록 하나).
@@ -92,6 +124,9 @@ pub struct TranscriptItem {
     /// 서브에이전트(sidechain) 대화인가. 로그에서는 `⤷` 표식이 붙는다.
     #[serde(default)]
     pub sidechain: bool,
+    /// `Image` 항목의 이미지. 직렬화하지 않는다(웹은 따로 받은 id로 내려받는다).
+    #[serde(skip)]
+    pub image: Option<ItemImage>,
 }
 
 impl TranscriptItem {
@@ -103,6 +138,7 @@ impl TranscriptItem {
             tool_name: None,
             is_error: false,
             sidechain: false,
+            image: None,
         }
     }
 
@@ -114,6 +150,7 @@ impl TranscriptItem {
             tool_name: name,
             is_error: false,
             sidechain: false,
+            image: None,
         }
     }
 
@@ -125,6 +162,19 @@ impl TranscriptItem {
             tool_name: None,
             is_error,
             sidechain: false,
+            image: None,
+        }
+    }
+
+    pub fn image(role: ItemRole, image: ItemImage) -> Self {
+        Self {
+            role,
+            kind: ItemKind::Image,
+            text: String::new(),
+            tool_name: None,
+            is_error: false,
+            sidechain: false,
+            image: Some(image),
         }
     }
 
@@ -184,6 +234,8 @@ fn format_item(item: &TranscriptItem) -> Vec<String> {
                 }
             }
         },
+        // 세션 로그는 글로 읽는 회고 자료다 — 이미지는 남기지 않는다(예전과 같다).
+        ItemKind::Image => Vec::new(),
         ItemKind::ToolResult => {
             let glyph = if item.is_error {
                 "⇤ 결과(오류):"
@@ -322,7 +374,11 @@ impl TranscriptTailer {
             for line in complete_lines(&chunk, from_start) {
                 out.extend(source.parse(line));
             }
-            if from_start || window >= BACKFILL_SEARCH_MAX_BYTES || last_prompt(&out).is_some() {
+            if from_start || window >= BACKFILL_SEARCH_MAX_BYTES {
+                break;
+            }
+            // 창 시작이 이미지 base64 한가운데를 잘랐으면 그 이미지가 빠진다 — 넓혀서 다시 읽는다.
+            if last_prompt(&out).is_some() && !cut_inside_blob(&chunk) {
                 break;
             }
             window = window.saturating_mul(4).min(BACKFILL_SEARCH_MAX_BYTES);
@@ -459,6 +515,18 @@ fn read_tail(path: &Path, max_bytes: u64) -> Option<(String, bool)> {
     Some((String::from_utf8_lossy(&buf).into_owned(), start == 0))
 }
 
+/// 꼬리 조각의 첫(잘린) 줄이 base64 덩어리 한가운데서 시작하는가. 이미지가 실린 줄은
+/// 수 MB라 창 경계가 대개 그 본문 안에 떨어진다.
+fn cut_inside_blob(chunk: &str) -> bool {
+    const MIN_FRAGMENT: usize = 4096;
+    let fragment = chunk.split('\n').next().unwrap_or("");
+    fragment.len() >= MIN_FRAGMENT
+        && fragment
+            .bytes()
+            .take(512)
+            .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'+' | b'/' | b'='))
+}
+
 /// 꼬리 조각에서 **완전한 줄만** 골라낸다(순수 함수).
 ///
 /// - `from_start`가 false면 첫 줄은 중간에서 잘렸을 수 있으므로 버린다.
@@ -566,6 +634,24 @@ pub(crate) fn block(prefix: &str, body: &str) -> Vec<String> {
 mod tests {
     use super::*;
     use std::io::Write;
+
+    #[test]
+    fn cut_inside_blob_spots_a_window_that_starts_inside_base64() {
+        let blob = format!("{}\"}}]}}\n{{\"next\":1}}\n", "A".repeat(8000));
+        assert!(cut_inside_blob(&blob));
+        assert!(!cut_inside_blob("ab\"}\n{\"x\":1}\n"));
+        let text = format!("{} 한글 {}\n", "word ".repeat(1000), "x");
+        assert!(!cut_inside_blob(&text));
+    }
+
+    #[test]
+    fn data_url_images_are_parsed_and_unknown_types_rejected() {
+        let img = ItemImage::from_data_url("data:image/jpg;base64,/9j/").unwrap();
+        assert_eq!(img.media_type, "image/jpeg");
+        assert!(ItemImage::from_data_url("data:image/svg+xml;base64,PHN2Zz4=").is_none());
+        assert!(ItemImage::from_data_url("https://x/y.png").is_none());
+        assert!(ItemImage::from_data_url("data:image/png,raw").is_none());
+    }
 
     struct EchoSource {
         path: PathBuf,

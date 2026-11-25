@@ -89,6 +89,45 @@ async fn handle_hook(
     ok_response()
 }
 
+/// 권한 요청 하나를 붙들고 있는 최대 시간. Claude 훅 설정의 timeout(`claude.rs`)과 같다.
+pub const PERMISSION_MAX_WAIT: std::time::Duration = std::time::Duration::from_secs(super::claude::PERMISSION_HOOK_TIMEOUT_SECS);
+
+/// 연결이 어떻게 끝나든(답·끊김·상한) 대기열에서 내린다.
+struct Withdraw(Arc<super::permission::PermissionRelay>, String);
+
+impl Drop for Withdraw {
+    fn drop(&mut self) {
+        self.0.withdraw(&self.1);
+    }
+}
+
+/// Claude `PermissionRequest` 훅(forwarder 장기 대기). 웹에서 답이 오면 결정 JSON을, 아니면
+/// 빈 본문을 돌려준다 — 빈 답이면 Claude는 터미널 대화상자로 계속 기다린다.
+async fn handle_permission(
+    State(runtime): State<Arc<ObserverRuntime>>,
+    Query(query): Query<HookQuery>,
+    body: Bytes,
+) -> axum::response::Response {
+    let empty = || (axum::http::StatusCode::OK, "").into_response();
+    if query.provider.as_deref().and_then(ObserverProvider::parse) != Some(ObserverProvider::Claude) {
+        return empty();
+    }
+    let relay = runtime.permissions().clone();
+    let Some((id, rx)) = relay.open(&query.session, &body) else {
+        return empty();
+    };
+    let _withdraw = Withdraw(relay, id);
+    match tokio::time::timeout(PERMISSION_MAX_WAIT, rx).await {
+        Ok(Ok(decision)) => (
+            axum::http::StatusCode::OK,
+            [(axum::http::header::CONTENT_TYPE, "application/json")],
+            decision,
+        )
+            .into_response(),
+        _ => empty(),
+    }
+}
+
 pub async fn serve(
     runtime: Arc<ObserverRuntime>,
     shutdown_rx: oneshot::Receiver<()>,
@@ -97,6 +136,7 @@ pub async fn serve(
     let port = listener.local_addr()?.port();
     let app = Router::new()
         .route("/hook", post(handle_hook))
+        .route("/permission", post(handle_permission))
         .with_state(runtime);
     let handle = tokio::spawn(async move {
         let _ = axum::serve(listener, app)
@@ -308,6 +348,55 @@ mod tests {
             let _ = shutdown_rx.await;
         });
         Ok((port, shutdown, handle))
+    }
+
+    #[tokio::test]
+    async fn permission_route_waits_for_a_web_answer_and_returns_the_decision() {
+        use crate::observer::permission::AskDecision;
+        let (runtime, _events) = fixture();
+        let state = ObserverServerState::default();
+        let port = state.ensure(runtime.clone()).await.unwrap();
+        let url = format!("http://127.0.0.1:{port}/permission?session=s1&provider=claude&event=PermissionRequest");
+        let body = r#"{"tool_name":"Bash","tool_input":{"command":"touch x"}}"#;
+        let client = reqwest::Client::new();
+
+        // 중계가 꺼져 있으면(웹 상태판 꺼짐) 바로 빈 답 — 터미널 대화상자만 남는다.
+        let off = client.post(&url).body(body).send().await.unwrap().text().await.unwrap();
+        assert_eq!(off, "");
+
+        runtime.permissions().set_enabled(true);
+        let waiting = tokio::spawn({
+            let (client, url) = (client.clone(), url.clone());
+            async move { client.post(&url).body(body).send().await.unwrap().text().await.unwrap() }
+        });
+        let relay = runtime.permissions().clone();
+        let id = loop {
+            if let Some(a) = relay.list("s1").pop() {
+                break a.id;
+            }
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        };
+        relay.answer(&id, AskDecision::Allow { answers: None, always: false }).unwrap();
+        let out: serde_json::Value = serde_json::from_str(&waiting.await.unwrap()).unwrap();
+        assert_eq!(out["hookSpecificOutput"]["decision"]["behavior"], "allow");
+
+        // 터미널에서 먼저 답하면 다음 훅(PostToolUse)이 대기를 풀고 빈 답이 돌아간다.
+        let waiting = tokio::spawn({
+            let (client, url) = (client.clone(), url.clone());
+            async move { client.post(&url).body(body).send().await.unwrap().text().await.unwrap() }
+        });
+        while relay.list("s1").is_empty() {
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+        client
+            .post(format!("http://127.0.0.1:{port}/hook?session=s1&provider=claude&event=PostToolUse"))
+            .body(r#"{"tool_name":"Bash","tool_input":{"command":"touch x"},"tool_response":{}}"#)
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(waiting.await.unwrap(), "");
+        assert!(relay.list("s1").is_empty());
+        state.shutdown();
     }
 
     #[tokio::test]

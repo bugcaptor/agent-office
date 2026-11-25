@@ -83,6 +83,8 @@ fn router(ctx: Arc<Dash>) -> Router {
         .route("/state", get(state))
         .route("/log/:agent", get(log))
         .route("/portrait/:agent", get(portrait))
+        .route("/image/:agent/:id", get(image))
+        .route("/asks/:id", post(answer_ask))
         .route("/usage", get(usage))
         .route("/tasks", get(tasks).post(create_task))
         .route("/tasks/:id/send", post(send_task))
@@ -232,6 +234,7 @@ async fn state(State(ctx): Ctx) -> Json<Value> {
             let turn = session.and_then(|(sid, _)| ctx.ctl.turns.get(sid));
             let probe = probes.get(&a.id).copied().unwrap_or_default();
             let waiting = waiting_of(&ctx, &a.id);
+            let asks = session.map(|(sid, _)| ctx.ctl.observer.permissions().list(sid)).unwrap_or_default();
             json!({
                 "agentId": a.id,
                 "name": a.name,
@@ -243,6 +246,7 @@ async fn state(State(ctx): Ctx) -> Json<Value> {
                 "session": session.map(|(sid, st)| json!({ "sessionId": sid, "state": session_state_str(*st) })),
                 "turn": turn,
                 "waiting": waiting,
+                "asks": asks,
                 "label": ctx.dash.label(&a.id),
                 "cli": probe.cli,
                 "atPrompt": probe.at_prompt,
@@ -255,6 +259,7 @@ async fn state(State(ctx): Ctx) -> Json<Value> {
         json!({
             "session": session.map(|(sid, st)| json!({ "sessionId": sid, "state": session_state_str(*st) })),
             "turn": session.and_then(|(sid, _)| ctx.ctl.turns.get(sid)),
+            "asks": session.map(|(sid, _)| ctx.ctl.observer.permissions().list(sid)).unwrap_or_default(),
             "cli": probe.cli,
             "atPrompt": probe.at_prompt,
             "cwd": session.and_then(|_| ctx.ctl.gate.sink().cwd_of(OFFICE_AGENT_ID)),
@@ -332,6 +337,25 @@ async fn portrait(State(ctx): Ctx, Path(agent): Path<String>) -> Response {
     };
     let mut res = Response::new(Body::from(bytes));
     res.headers_mut().insert(header::CONTENT_TYPE, HeaderValue::from_static("image/png"));
+    res
+}
+
+/// 대화 로그에 실린 이미지. `<img>`라 토큰은 쿼리(`t=`)로 온다.
+async fn image(State(ctx): Ctx, Path((agent, id)): Path<(String, String)>) -> Response {
+    // 로그 수집기 잠금은 파일을 읽는 동안 잡혀 있을 수 있다 — 블로킹 스레드에서 기다린다.
+    let dash = ctx.dash.clone();
+    let found = tokio::task::spawn_blocking(move || dash.logs.image(&agent, &id)).await.ok().flatten();
+    let Some((media_type, bytes)) = found else {
+        return StatusCode::NOT_FOUND.into_response();
+    };
+    let Ok(content_type) = HeaderValue::from_str(&media_type) else {
+        return StatusCode::NOT_FOUND.into_response();
+    };
+    let mut res = Response::new(Body::from(bytes.as_ref().clone()));
+    let h = res.headers_mut();
+    h.insert(header::CONTENT_TYPE, content_type);
+    h.insert(header::X_CONTENT_TYPE_OPTIONS, HeaderValue::from_static("nosniff"));
+    h.insert(header::CONTENT_SECURITY_POLICY, HeaderValue::from_static("default-src 'none'; sandbox"));
     res
 }
 
@@ -761,6 +785,59 @@ async fn answer_discussion(State(ctx): Ctx, Path(id): Path<String>, Json(a): Jso
         Ok(v) => {
             activity(&ctx, "discuss-answer", None, None);
             ok(v)
+        }
+        Err(e) => fail(e),
+    }
+}
+
+// ── 권한 요청·선택지 ─────────────────────────────────────────────────
+// Claude `PermissionRequest` 훅이 붙들고 있는 요청에 답한다(`observer/permission.rs`).
+// 터미널 대화상자도 함께 떠 있어 먼저 답한 쪽이 이긴다 — 이미 답한 요청이면 `ask-gone`.
+
+#[derive(Deserialize)]
+struct AskAnswer {
+    /// allow | always | deny | dismiss
+    action: String,
+    /// AskUserQuestion: 질문 → 답.
+    #[serde(default)]
+    answers: Option<HashMap<String, String>>,
+    /// 거부 사유(에이전트에게 전한다).
+    #[serde(default)]
+    message: Option<String>,
+}
+
+async fn answer_ask(State(ctx): Ctx, Path(id): Path<String>, Json(a): Json<AskAnswer>) -> Json<Value> {
+    use crate::observer::permission::AskDecision;
+    for text in a.answers.iter().flat_map(|m| m.values()).chain(a.message.iter()) {
+        if let Err(e) = check_text(text) {
+            return fail(e);
+        }
+    }
+    let relay = ctx.ctl.observer.permissions().clone();
+    // 누구의 요청인가(앱 알림에 이름을 싣는다).
+    let mut owner = None;
+    for (sid, agent, _) in ctx.ctl.registry.snapshot() {
+        if let Some(ask) = relay.list(&sid).into_iter().find(|x| x.id == id) {
+            owner = Some((agent, ask.tool_name));
+            break;
+        }
+    }
+    let question = owner.as_ref().is_some_and(|(_, tool)| tool == "AskUserQuestion");
+    let (decision, op) = match a.action.as_str() {
+        "allow" => (AskDecision::Allow { answers: a.answers, always: false }, if question { "ask-answer" } else { "ask-allow" }),
+        "always" => (AskDecision::Allow { answers: None, always: true }, "ask-allow"),
+        "deny" => (AskDecision::Deny { message: a.message }, "ask-deny"),
+        "dismiss" => (AskDecision::Dismiss, ""),
+        _ => return fail("bad-request"),
+    };
+    match relay.answer(&id, decision) {
+        Ok(()) => {
+            if !op.is_empty() {
+                let (agent, tool) = owner.map(|(a, t)| (Some(a), Some(t))).unwrap_or((None, None));
+                let agent = agent.filter(|a| !is_office_agent_id(a));
+                activity(&ctx, op, agent.as_deref(), tool.as_deref());
+            }
+            ok(json!({}))
         }
         Err(e) => fail(e),
     }

@@ -31,6 +31,9 @@ pub fn run_forwarder(provider: &str, event: Option<&str>) -> i32 {
         Ok(runtime) => runtime,
         Err(_) => return 0,
     };
+    if provider == "claude" && event == Some("PermissionRequest") {
+        return forward_permission(&runtime, parsed_url, &session, provider, &body);
+    }
     let client = match reqwest::Client::builder()
         .no_proxy()
         .redirect(reqwest::redirect::Policy::none())
@@ -56,6 +59,54 @@ pub fn run_forwarder(provider: &str, event: Option<&str>) -> i32 {
                 &client, retry_url, &session, provider, event, &body,
             ));
         }
+    }
+    0
+}
+
+/// 권한 요청: 옵저버 서버 `/permission`이 웹의 답을 줄 때까지 기다렸다가 결정 JSON을
+/// stdout으로 낸다(Claude가 훅 출력으로 읽는다). 답이 없거나 앱이 꺼져 있으면 아무것도
+/// 쓰지 않고 끝난다 — 그러면 Claude는 터미널 대화상자로 계속 기다린다.
+fn forward_permission(
+    runtime: &tokio::runtime::Runtime,
+    hook_url: reqwest::Url,
+    session: &str,
+    provider: &str,
+    body: &[u8],
+) -> i32 {
+    let Ok(client) = reqwest::Client::builder()
+        .no_proxy()
+        .redirect(reqwest::redirect::Policy::none())
+        .connect_timeout(Duration::from_secs(2))
+        .timeout(super::server::PERMISSION_MAX_WAIT + Duration::from_secs(30))
+        .build()
+    else {
+        return 0;
+    };
+    let event = Some("PermissionRequest");
+    let mut url = hook_url;
+    url.set_path("/permission");
+    let mut result = runtime.block_on(post(&client, url.clone(), session, provider, event, body));
+    if result.as_ref().err().is_some_and(reqwest::Error::is_connect) {
+        if let Some(retry_url) = retry_url_from_port_file(&url) {
+            result = runtime.block_on(post(&client, retry_url, session, provider, event, body));
+        }
+    }
+    let Ok(response) = result else {
+        return 0;
+    };
+    if !response.status().is_success() {
+        return 0;
+    }
+    let Ok(text) = runtime.block_on(response.text()) else {
+        return 0;
+    };
+    let text = text.trim();
+    if !text.is_empty() && serde_json::from_str::<serde_json::Value>(text).is_ok() {
+        use std::io::Write;
+        let mut out = std::io::stdout().lock();
+        let _ = out.write_all(text.as_bytes());
+        let _ = out.write_all(b"\n");
+        let _ = out.flush();
     }
     0
 }

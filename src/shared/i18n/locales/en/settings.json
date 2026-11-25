@@ -203,6 +203,8 @@
     "copied": "Copied",
     "rotate": "New token",
     "rotateHelp": "If an address leaked, make a new token. Connected devices are dropped and must open the new address.",
+    "images": "Show images in the conversation",
+    "imagesHelp": "Show images from agent conversations (pasted pictures, image files the agent read) as thumbnails in the web conversation log.",
     "errors": {
       "web-dash-no-network": "No address found on the chosen network, so it is open on this computer (127.0.0.1) only. Check that Tailscale is on or that you are on a LAN. It attaches automatically when an address appears.",
       "web-dash-bind-failed": "Could not open the port. If another program uses it, pick another port.",

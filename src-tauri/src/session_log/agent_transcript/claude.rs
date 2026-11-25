@@ -21,7 +21,8 @@ use std::sync::Arc;
 use serde_json::Value;
 
 use super::{
-    clamp_value, compact_json_brief, AgentSessionLookup, ItemRole, TranscriptItem, TranscriptSource,
+    clamp_value, compact_json_brief, AgentSessionLookup, ItemImage, ItemRole, TranscriptItem,
+    TranscriptSource,
 };
 
 /// `<CLAUDE_CONFIG_DIR 또는 ~/.claude>/projects`. 홈도 오버라이드도 없으면 None
@@ -215,12 +216,35 @@ fn parse_block(b: &Value, role: ItemRole, side: bool) -> Vec<TranscriptItem> {
                 .get("is_error")
                 .and_then(Value::as_bool)
                 .unwrap_or(false);
-            vec![TranscriptItem::tool_result(body, failed).with_sidechain(side)]
+            let mut out = vec![TranscriptItem::tool_result(body, failed).with_sidechain(side)];
+            // 도구가 읽은 이미지(Read로 연 그림 파일, 스크린샷 도구)는 결과 뒤에 붙인다.
+            if let Some(Value::Array(items)) = b.get("content") {
+                out.extend(items.iter().filter_map(image_block).map(|img| {
+                    TranscriptItem::image(ItemRole::User, img).with_sidechain(side)
+                }));
+            }
+            out
         }
-        // thinking/signature/이미지 등은 남기지 않는다 -- 서명 블롭과 base64는
-        // 로그를 못 읽게 만들고, 사고 과정은 원본 JSONL에 그대로 있다.
+        // 붙여 넣은 이미지. 세션 로그 포매터는 이미지 항목을 버린다(웹 상태판만 쓴다).
+        "image" => image_block(b)
+            .map(|img| vec![TranscriptItem::image(role, img).with_sidechain(side)])
+            .unwrap_or_default(),
+        // thinking/signature 등은 남기지 않는다 -- 서명 블롭은 로그를 못 읽게
+        // 만들고, 사고 과정은 원본 JSONL에 그대로 있다.
         _ => Vec::new(),
     }
+}
+
+/// `{type:"image", source:{type:"base64", media_type, data}}` 블록의 이미지.
+fn image_block(b: &Value) -> Option<ItemImage> {
+    if b.get("type").and_then(Value::as_str) != Some("image") {
+        return None;
+    }
+    let source = b.get("source")?;
+    if source.get("type").and_then(Value::as_str) != Some("base64") {
+        return None;
+    }
+    ItemImage::new(source.get("media_type")?.as_str()?, source.get("data")?.as_str()?)
 }
 
 /// 도구 입력을 한눈에 보이는 한 덩어리로. 알아보는 키가 있으면 그 값만,
@@ -366,6 +390,31 @@ mod tests {
                 {"type":"tool_result","tool_use_id":"t1","is_error":true,"content":"boom"}]}}"#,
         );
         assert_eq!(err, vec!["⇤ 결과(오류): boom"]);
+    }
+
+    #[test]
+    fn pasted_and_tool_images_become_image_items_but_not_log_lines() {
+        let pasted = r#"{"type":"user","message":{"role":"user","content":[
+            {"type":"text","text":"이 화면 봐"},
+            {"type":"image","source":{"type":"base64","media_type":"image/png","data":"iVBORw0KGgo="}}]}}"#;
+        let items = parse(pasted);
+        assert_eq!(items.len(), 2);
+        assert_eq!(items[1].kind, super::super::ItemKind::Image);
+        assert_eq!(items[1].role, ItemRole::User);
+        let img = items[1].image.as_ref().unwrap();
+        assert_eq!((img.media_type.as_str(), img.data.as_str()), ("image/png", "iVBORw0KGgo="));
+        // 세션 로그는 예전처럼 글만 남는다.
+        assert_eq!(render(pasted), vec!["▶ 사용자: 이 화면 봐"]);
+
+        let read = parse(
+            r#"{"type":"user","message":{"role":"user","content":[{"type":"tool_result","content":[
+                {"type":"image","source":{"type":"base64","media_type":"image/jpeg","data":"/9j/4AAQ"}}]}]}}"#,
+        );
+        assert_eq!(read.iter().map(|i| i.kind).collect::<Vec<_>>(), [super::super::ItemKind::ToolResult, super::super::ItemKind::Image]);
+        assert_eq!(read[0].text, "(이미지)");
+        // SVG·URL 소스는 받지 않는다.
+        assert!(parse(r#"{"type":"user","message":{"content":[{"type":"image","source":{"type":"base64","media_type":"image/svg+xml","data":"PHN2Zz4="}}]}}"#).is_empty());
+        assert!(parse(r#"{"type":"user","message":{"content":[{"type":"image","source":{"type":"url","url":"https://x/y.png"}}]}}"#).is_empty());
     }
 
     #[test]

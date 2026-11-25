@@ -6,7 +6,9 @@
 // 터미널을 그대로 비추지 않는다(예전에 해 보니 폰에서 쓰기 나빴다). 대화는
 // CLI 전사(JSONL)를 **읽기만** 하고, 손을 대는 일은 간접 명령으로만 한다:
 // 터미널 재시작·종료·이어하기, 작업 중단, Claude/Codex 실행, 업무 만들기·보내기·
-// 자동 진행, 토의 시작·답하기. 권한 승인 같은 CLI 안 입력은 다루지 않는다.
+// 자동 진행, 토의 시작·답하기. CLI 안 입력 가운데 Claude의 권한 요청·선택지(AskUserQuestion)는
+// 키 입력이 아니라 `PermissionRequest` 훅으로 답한다(`observer/permission.rs`) — 서버가 떠 있는
+// 동안만 중계를 켠다. 전사에 실린 이미지는 대화 로그에 보인다(설정 `images`로 끈다).
 // 예외 하나: 일반 에이전트(캐릭터 없는 `office-agent` 곁 세션, `crate::office_agent`)에는 지시를 쓰고,
 // CLI가 턴을 마치고 입력을 기다릴 때만 같은 세션에 다음 지시를 잇는다. 머리에는 컴퓨터 이름을 보인다.
 //
@@ -59,11 +61,18 @@ pub struct WebDashConfig {
     pub bind: WebDashBind,
     #[serde(default = "default_port")]
     pub port: u16,
+    /// 대화 로그에 전사 속 이미지를 보이는가(기본 켜짐).
+    #[serde(default = "default_images")]
+    pub images: bool,
+}
+
+fn default_images() -> bool {
+    true
 }
 
 impl Default for WebDashConfig {
     fn default() -> Self {
-        Self { enabled: false, bind: WebDashBind::default(), port: DEFAULT_PORT }
+        Self { enabled: false, bind: WebDashBind::default(), port: DEFAULT_PORT, images: true }
     }
 }
 
@@ -141,6 +150,8 @@ impl WebDashState {
             .ok()
             .map(|t| t.trim().to_string())
             .filter(|t| !t.is_empty());
+        let logs = log::LogCache::new(sources);
+        logs.set_show_images(config.images);
         Self {
             data_dir,
             config: Mutex::new(config),
@@ -151,7 +162,7 @@ impl WebDashState {
             clients: Mutex::new(HashMap::new()),
             last_status: Mutex::new(None),
             labels: RwLock::new(HashMap::new()),
-            logs: log::LogCache::new(sources),
+            logs,
             bridge,
             events,
         }
@@ -255,6 +266,7 @@ impl WebDashState {
         std::fs::create_dir_all(&self.data_dir).map_err(|e| e.to_string())?;
         let bytes = serde_json::to_vec_pretty(&config).map_err(|e| e.to_string())?;
         std::fs::write(self.data_dir.join(CONFIG_FILE), bytes).map_err(|e| e.to_string())?;
+        self.logs.set_show_images(config.images);
         *self.config.lock().unwrap() = config;
         self.reconcile(ctx, me).await;
         Ok(self.status())
@@ -266,6 +278,7 @@ impl WebDashState {
         let config = self.config();
         if !config.enabled {
             self.stop();
+            ctx.observer.permissions().set_enabled(false);
             *self.error.lock().unwrap() = None;
             self.publish_status();
             return;
@@ -304,6 +317,8 @@ impl WebDashState {
         }
         let network_missing = bound.iter().all(|ip| ip.is_loopback());
         *self.error.lock().unwrap() = failed.or_else(|| network_missing.then(|| "web-dash-no-network".to_string()));
+        // 권한 요청은 받을 웹이 떠 있을 때만 붙든다. 아니면 훅이 바로 끝나 터미널만 남는다.
+        ctx.observer.permissions().set_enabled(!bound.is_empty());
         if !bound.is_empty() {
             *self.installed.lock().unwrap() = Some(Installed { addrs: bound, port: config.port, shutdowns });
         }
@@ -412,9 +427,11 @@ mod tests {
     #[test]
     fn config_defaults_when_missing_or_partial() {
         let c: WebDashConfig = serde_json::from_str(r#"{"enabled":true}"#).unwrap();
-        assert_eq!(c, WebDashConfig { enabled: true, bind: WebDashBind::Tailnet, port: DEFAULT_PORT });
+        assert_eq!(c, WebDashConfig { enabled: true, bind: WebDashBind::Tailnet, port: DEFAULT_PORT, images: true });
         let c: WebDashConfig = serde_json::from_str(r#"{"bind":"both","port":9000}"#).unwrap();
         assert_eq!(c.bind, WebDashBind::Both);
         assert!(!c.enabled);
+        let c: WebDashConfig = serde_json::from_str(r#"{"images":false}"#).unwrap();
+        assert!(!c.images);
     }
 }

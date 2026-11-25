@@ -203,6 +203,8 @@
     "copied": "Copié",
     "rotate": "Nouveau jeton",
     "rotateHelp": "Si une adresse a fuité, créez un nouveau jeton. Les appareils connectés sont déconnectés et doivent ouvrir la nouvelle adresse.",
+    "images": "Afficher les images dans la conversation",
+    "imagesHelp": "Affiche en miniatures, dans le journal web, les images des conversations des agents (images collées, fichiers image lus par l'agent).",
     "errors": {
       "web-dash-no-network": "Aucune adresse trouvée sur le réseau choisi : ouvert sur cet ordinateur (127.0.0.1) seulement. Vérifiez que Tailscale est actif ou que vous êtes sur un LAN. Il s'attache automatiquement dès qu'une adresse apparaît.",
       "web-dash-bind-failed": "Impossible d'ouvrir le port. S'il est utilisé par un autre programme, choisissez-en un autre.",

@@ -6,6 +6,7 @@ pub mod codex_usage;
 pub mod event;
 pub mod forwarder;
 pub mod hook_command;
+pub mod permission;
 pub mod server;
 
 use std::collections::HashMap;
@@ -92,6 +93,8 @@ pub struct ObserverRuntime {
     /// `ClaudeAdapter::transcript_usage_watermark`와 같은 자리: 세션이
     /// 끝나도 지워지지 않는 누수가 있지만 세션당 정수 하나 규모라 무시할 만하다.
     agy_usage_watermark: Mutex<HashMap<String, i64>>,
+    /// 권한 요청·선택지 중계(Claude `PermissionRequest` 훅 → 웹 상태판).
+    permissions: Arc<permission::PermissionRelay>,
 }
 
 impl ObserverRuntime {
@@ -132,7 +135,13 @@ impl ObserverRuntime {
             agy_session_sink: None,
             stop_reply_sink: None,
             agy_usage_watermark: Mutex::new(HashMap::new()),
+            permissions: Arc::new(permission::PermissionRelay::new()),
         }
+    }
+
+    /// 권한 요청 중계. 옵저버 서버(`/permission`)가 넣고 웹 상태판이 답한다.
+    pub fn permissions(&self) -> &Arc<permission::PermissionRelay> {
+        &self.permissions
     }
 
     /// Claude 리줌 캡처 sink를 배선한다(builder 스타일 — production/new의
@@ -225,6 +234,9 @@ impl ObserverRuntime {
                 );
             }
         }
+        if provider == ObserverProvider::Claude {
+            self.settle_permissions(session_id, &raw);
+        }
         let Some(event) = adapter.map_hook(&raw) else {
             return;
         };
@@ -236,6 +248,24 @@ impl ObserverRuntime {
             }
         }
         self.hub.ingest_observer(session_id, event);
+    }
+
+    /// 터미널에서 먼저 답한 권한 요청을 웹 대기열에서 내린다. 같은 도구 호출이 끝났거나
+    /// (PostToolUse) 턴 경계를 지났으면(새 프롬프트·메인 Stop·세션 시작/끝) 더 기다릴 답이 없다.
+    fn settle_permissions(&self, session_id: &str, raw: &RawObserverHook<'_>) {
+        match raw.event_name {
+            "PostToolUse" => {
+                let Ok(body) = serde_json::from_slice::<serde_json::Value>(raw.body) else {
+                    return;
+                };
+                if let (Some(name), Some(input)) = (body.get("tool_name").and_then(|v| v.as_str()), body.get("tool_input")) {
+                    self.permissions.settle_tool(session_id, name, input);
+                }
+            }
+            "Stop" if event::agent_id(raw.body).is_some() => {}
+            "UserPromptSubmit" | "Stop" | "SessionStart" | "SessionEnd" => self.permissions.settle_session(session_id),
+            _ => {}
+        }
     }
 
     pub fn ingest_pi_source(&self, session_id: &str, source: &str, body: &[u8]) {

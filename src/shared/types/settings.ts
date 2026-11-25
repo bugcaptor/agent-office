@@ -209,6 +209,8 @@ export interface WebDashConfig {
   enabled: boolean;
   bind: WebDashBind;
   port: number;
+  /** 대화 로그에 전사 속 이미지를 보이는가(기본 켜짐). */
+  images: boolean;
 }
 
 /** `web_dash_status` 응답·`web-dash-status` 이벤트. Rust `webdash::WebDashStatus` 미러. */

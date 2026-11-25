@@ -35,6 +35,10 @@ const ATTENTION_NOTIFICATION_TYPES: [&str; 6] = [
     "quota_auto_resume_stale",
 ];
 
+/// `PermissionRequest` 훅의 timeout(초). 사람이 폰으로 답할 때까지 기다려야 해서 길다.
+/// 이 시간이 지나도 터미널 대화상자는 그대로라 잃는 것은 웹 응답 경로뿐이다.
+pub const PERMISSION_HOOK_TIMEOUT_SECS: u64 = 12 * 60 * 60;
+
 const ATTENTION_NOTIFICATION_MATCHER: &str = "^(permission_prompt|idle_prompt|elicitation_dialog|elicitation_url_dialog|agent_needs_input|quota_auto_resume_stale)$";
 
 fn is_attention_notification(body: &[u8]) -> bool {
@@ -251,6 +255,15 @@ impl ClaudeAdapter {
         event: &str,
         matcher: &str,
     ) -> Result<serde_json::Value, ObserverAdapterError> {
+        self.hook_entry_with_timeout(event, matcher, None)
+    }
+
+    fn hook_entry_with_timeout(
+        &self,
+        event: &str,
+        matcher: &str,
+        timeout_secs: Option<u64>,
+    ) -> Result<serde_json::Value, ObserverAdapterError> {
         #[cfg(windows)]
         let handler = serde_json::json!({
             "type": "command",
@@ -262,6 +275,11 @@ impl ClaudeAdapter {
             "type": "command",
             "command": forwarder_shell_command(&self.forwarder_executable, &["claude", event])?,
         });
+        #[allow(unused_mut)]
+        let mut handler = handler;
+        if let Some(secs) = timeout_secs {
+            handler["timeout"] = serde_json::json!(secs);
+        }
         Ok(serde_json::json!([{ "matcher": matcher, "hooks": [handler] }]))
     }
 
@@ -278,7 +296,7 @@ impl ClaudeAdapter {
         // SessionStart/SessionEnd는 map_hook에서 이벤트로 매핑되지 않지만(허브
         // 무영향), ingest의 리줌 ID 캡처가 body를 본다 — 프롬프트 한 번 없이
         // 시작·종료한 세션도 리줌 ID를 남기기 위한 등록(리뷰 지적 반영).
-        // 8개 이벤트 모두 forwarder를 쓴다(위 hook_entry 주석: 예전 silent 변형은 불필요).
+        // 9개 이벤트 모두 forwarder를 쓴다(위 hook_entry 주석: 예전 silent 변형은 불필요).
         let mut settings = serde_json::json!({
             "hooks": {
                 "UserPromptSubmit": self.hook_entry("UserPromptSubmit", "")?,
@@ -289,6 +307,9 @@ impl ClaudeAdapter {
                 "SubagentStop": self.hook_entry("SubagentStop", "")?,
                 "SessionStart": self.hook_entry("SessionStart", "")?,
                 "SessionEnd": self.hook_entry("SessionEnd", "")?,
+                // 권한 대화상자가 뜨면 forwarder가 웹 상태판의 답을 기다린다(`permission.rs`).
+                // 터미널 대화상자는 그동안에도 그대로 떠 있어 먼저 답한 쪽이 이긴다.
+                "PermissionRequest": self.hook_entry_with_timeout("PermissionRequest", "", Some(PERMISSION_HOOK_TIMEOUT_SECS))?,
             },
         });
         // 동료 대화 등 추가 조각을 최상위에 얹는다(훅 키는 건드리지 않는다).
@@ -512,9 +533,13 @@ mod tests {
             "settings must not embed a spawn-time observer port: {raw}",
         );
         let json: serde_json::Value = serde_json::from_str(&raw).unwrap();
+        assert_eq!(
+            json["hooks"]["PermissionRequest"][0]["hooks"][0]["timeout"],
+            super::PERMISSION_HOOK_TIMEOUT_SECS,
+        );
         for event in [
             "UserPromptSubmit", "PostToolUse", "Notification", "Stop",
-            "SubagentStart", "SubagentStop", "SessionStart", "SessionEnd",
+            "SubagentStart", "SubagentStop", "SessionStart", "SessionEnd", "PermissionRequest",
         ] {
             let entry = &json["hooks"][event][0];
             let expected_matcher = if event == "Notification" {

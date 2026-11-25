@@ -19,7 +19,9 @@ use std::time::{Duration, SystemTime};
 
 use serde_json::Value;
 
-use super::{clamp_value, compact_json_brief, ItemRole, TranscriptItem, TranscriptSource};
+use super::{
+    clamp_value, compact_json_brief, ItemImage, ItemRole, TranscriptItem, TranscriptSource,
+};
 
 /// 이보다 오래 쓰이지 않은 rollout은 "이미 끝난 세션"으로 보고 붙지 않는다.
 const LIVE_WINDOW: Duration = Duration::from_secs(30 * 60);
@@ -213,10 +215,23 @@ fn parse_entry(v: &Value) -> Vec<TranscriptItem> {
         ("response_item", "custom_tool_call_output")
         | ("response_item", "function_call_output") => {
             let body = flatten_output(payload.get("output"));
-            if body.trim().is_empty() {
-                return Vec::new();
+            let images = input_images(payload.get("output"));
+            let mut out = Vec::new();
+            if !body.trim().is_empty() {
+                out.push(TranscriptItem::tool_result(body, false));
             }
-            vec![TranscriptItem::tool_result(body, false)]
+            // 도구가 본 이미지(view_image, 스크린샷)는 결과 뒤에 붙인다.
+            out.extend(images.into_iter().map(|img| TranscriptItem::image(ItemRole::User, img)));
+            out
+        }
+        // 사람이 붙여 넣은 이미지. 글은 event_msg 쪽에서 이미 받으므로 이미지만 꺼낸다.
+        ("response_item", "message")
+            if payload.get("role").and_then(Value::as_str) == Some("user") =>
+        {
+            input_images(payload.get("content"))
+                .into_iter()
+                .map(|img| TranscriptItem::image(ItemRole::User, img))
+                .collect()
         }
         // 나머지(reasoning=암호화, token_count, world_state, turn_context,
         // task_started/complete=중복)는 남기지 않는다.
@@ -244,6 +259,19 @@ fn flatten_output(output: Option<&Value>) -> String {
     }
 }
 
+/// `[{type:"input_image", image_url:"data:image/png;base64,…"}]` 배열의 이미지들.
+fn input_images(items: Option<&Value>) -> Vec<ItemImage> {
+    let Some(Value::Array(items)) = items else {
+        return Vec::new();
+    };
+    items
+        .iter()
+        .filter(|i| i.get("type").and_then(Value::as_str) == Some("input_image"))
+        .filter_map(|i| i.get("image_url").and_then(Value::as_str))
+        .filter_map(ItemImage::from_data_url)
+        .collect()
+}
+
 /// 홈의 기본 위치에서 Codex 소스를 만든다. 세션 디렉터리가 없으면 None.
 pub fn source() -> Option<Box<dyn TranscriptSource>> {
     let root = default_sessions_root()?;
@@ -264,6 +292,26 @@ mod tests {
 
     fn parse(raw: &str) -> Vec<TranscriptItem> {
         parse_entry(&serde_json::from_str(raw).unwrap())
+    }
+
+    #[test]
+    fn input_images_in_user_messages_and_tool_outputs_become_image_items() {
+        let user = parse(
+            r#"{"type":"response_item","payload":{"type":"message","role":"user","content":[
+                {"type":"input_text","text":"<image>"},{"type":"input_image","image_url":"data:image/png;base64,iVBORw0KGgo="}]}}"#,
+        );
+        assert_eq!(user.len(), 1);
+        assert_eq!(user[0].kind, super::super::ItemKind::Image);
+        assert_eq!(user[0].image.as_ref().unwrap().data, "iVBORw0KGgo=");
+        // 에이전트 쪽 message(암호화·중복)는 그대로 버린다.
+        assert!(parse(r#"{"type":"response_item","payload":{"type":"message","role":"assistant","content":[{"type":"output_text","text":"x"}]}}"#).is_empty());
+
+        let out = parse(
+            r#"{"type":"response_item","payload":{"type":"function_call_output","output":[
+                {"type":"input_text","text":"Wall time: 0.1s"},{"type":"input_image","image_url":"data:image/jpeg;base64,/9j/4AAQ"}]}}"#,
+        );
+        assert_eq!(out.iter().map(|i| i.kind).collect::<Vec<_>>(), [super::super::ItemKind::ToolResult, super::super::ItemKind::Image]);
+        assert_eq!(out[1].image.as_ref().unwrap().media_type, "image/jpeg");
     }
 
     #[test]
