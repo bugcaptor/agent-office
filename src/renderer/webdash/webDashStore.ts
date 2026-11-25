@@ -1,13 +1,16 @@
 // src/renderer/webdash/webDashStore.ts
 //
 // 웹 상태판의 앱 쪽 상태: 서버 상태(접속 수·주소)와 웹에서 들어온 명령 알림. 그리고 렌더러에만
-// 있는 캐릭터 라벨(목표·작업 폴더·브랜치)을 서버가 떠 있는 동안 백엔드로 밀어 준다.
+// 있는 캐릭터 라벨(목표·작업 폴더·브랜치·지금 세션 토큰과 추정 비용)을 서버가 떠 있는 동안 백엔드로 밀어 준다.
 import { create } from "zustand";
 import { listen } from "@tauri-apps/api/event";
 import { Events } from "@shared/ipc";
-import type { WebDashActivity, WebDashLabel, WebDashStatus } from "@shared/types";
+import { OFFICE_AGENT_ID } from "@shared/types";
+import type { WebDashActivity, WebDashLabel, WebDashStatus, WebDashUsage } from "@shared/types";
 import { tauriApi } from "../ipc/tauriApi";
 import { useAppStore } from "../store/appStore";
+import { formatTokenPair } from "../analytics/pricing";
+import { currentSessionTotals, formatSessionCost, grossTokens } from "../usage/sessionCost";
 
 interface WebDashNotice extends WebDashActivity {
   id: number;
@@ -38,7 +41,24 @@ export function setWebDashStatus(status: WebDashStatus): void {
   useWebDashStore.setState({ status });
 }
 
-/** 스토어의 작업 라벨 → 웹에 보일 라벨. */
+/** 캐릭터의 지금 세션 사용량 표기(터미널 요약 바와 같은 숫자). 설정이 꺼졌거나 아직 쓴 게 없으면 undefined. */
+function webDashUsage(agentId: string): WebDashUsage | undefined {
+  const { appSettings, sessionUsage, sessionUsageSeed } = useAppStore.getState();
+  if (!appSettings.sessionCostEnabled) return undefined;
+  const current = currentSessionTotals(sessionUsage, sessionUsageSeed, agentId);
+  if (!current) return undefined;
+  const { totals } = current;
+  const gross = grossTokens(totals);
+  if (totals.turns === 0 && gross === 0) return undefined;
+  return {
+    sessionId: current.sessionId,
+    tokens: formatTokenPair(totals.input + totals.output, gross),
+    cost: formatSessionCost(totals),
+    turns: totals.turns,
+  };
+}
+
+/** 스토어의 작업 라벨 → 웹에 보일 라벨. 일반 에이전트는 사용량만 싣는다. */
 function webDashLabels(): Record<string, WebDashLabel> {
   const { taskLabels, gitBranches, agents } = useAppStore.getState();
   const out: Record<string, WebDashLabel> = {};
@@ -47,9 +67,12 @@ function webDashLabels(): Record<string, WebDashLabel> {
     const cwd = label?.cwd ?? agents[agentId]?.cwd;
     const goal = label?.goal ?? label?.goalFallback;
     const branch = cwd ? gitBranches[cwd] : undefined;
-    if (!goal && !cwd) continue;
-    out[agentId] = { ...(goal ? { goal } : {}), ...(cwd ? { cwd } : {}), ...(branch ? { branch } : {}) };
+    const usage = webDashUsage(agentId);
+    if (!goal && !cwd && !usage) continue;
+    out[agentId] = { ...(goal ? { goal } : {}), ...(cwd ? { cwd } : {}), ...(branch ? { branch } : {}), ...(usage ? { usage } : {}) };
   }
+  const officeUsage = webDashUsage(OFFICE_AGENT_ID);
+  if (officeUsage) out[OFFICE_AGENT_ID] = { usage: officeUsage };
   return out;
 }
 
@@ -89,7 +112,11 @@ export function installWebDash(): () => void {
     schedule();
   }).catch(() => {});
   offs.push(useAppStore.subscribe((s, prev) => {
-    if (s.taskLabels !== prev.taskLabels || s.gitBranches !== prev.gitBranches || s.agents !== prev.agents) schedule();
+    if (
+      s.taskLabels !== prev.taskLabels || s.gitBranches !== prev.gitBranches || s.agents !== prev.agents
+      || s.sessionUsage !== prev.sessionUsage || s.sessionUsageSeed !== prev.sessionUsageSeed
+      || s.appSettings.sessionCostEnabled !== prev.appSettings.sessionCostEnabled
+    ) schedule();
   }));
 
   return () => {

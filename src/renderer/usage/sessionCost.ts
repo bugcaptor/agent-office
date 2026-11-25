@@ -12,7 +12,7 @@
 // 실시간 누적·과거 시딩)의 순수 함수만 갖고, 세션 경계 판정·이중 계산 방지
 // (`at > seedAt`)는 스토어(`appStore.ts`) 몫이다.
 import type { SessionEventRecord, SessionEventTokens, SessionId } from "@shared/types";
-import { estimateCostBreakdown } from "../analytics/pricing";
+import { estimateCostBreakdown, formatUsd } from "../analytics/pricing";
 
 /** 세션 하나의 토큰·비용 누계. 전부 불변값 — 갱신은 항상 새 객체를 만든다. */
 export interface SessionUsageTotals {
@@ -112,4 +112,30 @@ export function aggregateSeed(
     out[r.sessionId] = addTurn(prev, r.tokens, r.partial ?? false, r.at);
   }
   return out;
+}
+
+/** 비용 표기. 미지 단가만 있으면 —, 알려진 비용과 섞였으면 ~로 부분 집계를 표시한다. */
+export function formatSessionCost(totals: SessionUsageTotals): string {
+  if (totals.costUnknownTurns > 0 && totals.costUsd === 0) return "—";
+  return `${totals.costUnknownTurns > 0 ? "~" : ""}${formatUsd(totals.costUsd)}`;
+}
+
+/** 캐시 읽기·쓰기까지 포함한 전체 토큰(= 비용이 실제로 환산하는 대상). */
+export function grossTokens(totals: SessionUsageTotals): number {
+  return totals.input + totals.output + totals.cacheRead + totals.cacheWrite;
+}
+
+/**
+ * 캐릭터의 지금 세션 누계: 실시간(`sessionUsage`) + 같은 세션의 과거 시드.
+ * 실시간 항목이 없으면 undefined.
+ */
+export function currentSessionTotals(
+  sessionUsage: Record<string, { sessionId: string; totals: SessionUsageTotals }>,
+  seed: { bySession: Record<string, SessionUsageTotals> } | null,
+  agentId: string,
+): { sessionId: string; totals: SessionUsageTotals } | undefined {
+  const entry = sessionUsage[agentId];
+  if (!entry) return undefined;
+  const seeded = seed?.bySession[entry.sessionId];
+  return { sessionId: entry.sessionId, totals: seeded ? mergeTotals(seeded, entry.totals) : entry.totals };
 }

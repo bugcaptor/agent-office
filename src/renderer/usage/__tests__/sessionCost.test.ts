@@ -5,7 +5,7 @@
 // at<=maxAt 3중 필터.
 import { describe, expect, it } from "vitest";
 import type { SessionEventRecord } from "@shared/types";
-import { addTurn, aggregateSeed, emptyTotals, mergeTotals } from "../sessionCost";
+import { addTurn, aggregateSeed, currentSessionTotals, emptyTotals, formatSessionCost, mergeTotals } from "../sessionCost";
 
 function record(overrides: Partial<SessionEventRecord>): SessionEventRecord {
   return {
@@ -201,5 +201,24 @@ describe("aggregateSeed", () => {
     expect(out["s1"].input).toBe(17);
     expect(out["s1"].turns).toBe(1);
     expect(out["s2"].turns).toBe(1);
+  });
+});
+
+describe("currentSessionTotals / formatSessionCost", () => {
+  it("같은 세션 시드만 실시간 누계에 더한다", () => {
+    const live = { ...emptyTotals(), input: 5, turns: 1, costUsd: 0.5 };
+    const seed = { bySession: { s1: { ...emptyTotals(), input: 10, turns: 2, costUsd: 1 }, s0: { ...emptyTotals(), input: 99 } } };
+    const out = currentSessionTotals({ a: { sessionId: "s1", totals: live } }, seed, "a");
+    expect(out?.sessionId).toBe("s1");
+    expect(out?.totals.input).toBe(15);
+    expect(out?.totals.turns).toBe(3);
+    expect(currentSessionTotals({}, seed, "a")).toBeUndefined();
+    expect(currentSessionTotals({ a: { sessionId: "s2", totals: live } }, null, "a")?.totals).toBe(live);
+  });
+
+  it("미지 단가만 있으면 —, 섞였으면 ~를 붙인다", () => {
+    expect(formatSessionCost({ ...emptyTotals(), costUnknownTurns: 1 })).toBe("—");
+    expect(formatSessionCost({ ...emptyTotals(), costUsd: 3.456, costUnknownTurns: 1 })).toBe("~$3.46");
+    expect(formatSessionCost({ ...emptyTotals(), costUsd: 3.456 })).toBe("$3.46");
   });
 });

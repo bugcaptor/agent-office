@@ -57,13 +57,13 @@
 | 백엔드 이벤트 → 스토어 | `ipc/sessionBridge.ts` |
 | 오피스 씬(PixiJS)·캐릭터 생성 | `office/` (`OfficeScene.ts`, 생성기 `office/gen/`, 맵 `office/map/`) |
 | 터미널 탭·xterm | `terminal/` (`TerminalHost.tsx`, `TerminalRegistry.ts`, `AgentTabStrip.tsx`) |
-| 터미널 탭 대화 보기(전사 채팅·이미지·권한 카드·입력·대기열·상태 줄) | `chatView/` (`ChatView.tsx`, 순수 로직 `chatViewModel.ts`(생각 중·멈춤 판정 `liveState` 포함), 탭별 보기 `chatViewStore.ts`), Rust 커맨드 `ipc/commands/chat_view.rs`(수집기는 `WebDashState::app_logs`, 권한은 `observer/permission.rs`, 입력·대기열은 `chat_queue.rs`), gui 확인 `scripts/gui-steps/chat-view.mjs` |
+| 터미널 탭 대화 보기(최신이 위인 전사 채팅·이미지·권한 카드·입력·대기열·상태 줄) | `chatView/` (`ChatView.tsx`, 순수 로직 `chatViewModel.ts`(생각 중·멈춤 판정 `liveState` 포함), 탭별 보기 `chatViewStore.ts`), Rust 커맨드 `ipc/commands/chat_view.rs`(수집기는 `WebDashState::app_logs`, 권한은 `observer/permission.rs`, 입력·대기열은 `chat_queue.rs`), gui 확인 `scripts/gui-steps/chat-view.mjs` |
 | 업무 패널·자동 진행·태스크 대화 | `workpanels/` |
 | 예약(규칙 계산·실행기·팝업 영역) | `workpanels/workSchedule.ts`, `scheduleRunner.ts`, `WorkScheduleSection.tsx` |
 | 팀 토의 | `discussion/` — 아래 [팀 토의](#팀-토의) 절 |
 | 마스코트 창·신호등·말풍선 | `mascot/`, `store/mascotLights.ts`, `store/mascotSpeech.ts`(말풍선 텍스트 선정), `ipc/mascotBridge.ts`(말풍선 표시 시간 포함) |
 | 일반 에이전트 탭 | `officeAgent/officeAgentStore.ts`(탭·상태, 열기는 웹 상태판 요청 `office-agent-open`), gui 확인 `scripts/gui-steps/office-agent.mjs` |
-| 웹 상태판 | `webdash/` — 쓰기 요청 처리 `webDashControl.ts`(`web-dash-control` 이벤트), 접속 표시·알림·라벨 넘기기 `webDashStore.ts`·`WebDashIndicator.tsx`, 설정 `settings/WebDashSection.tsx` |
+| 웹 상태판 | `webdash/` — 쓰기 요청 처리 `webDashControl.ts`(`web-dash-control` 이벤트), 접속 표시·알림·라벨(세션 추정 사용량 포함) 넘기기 `webDashStore.ts`·`WebDashIndicator.tsx`, 설정 `settings/WebDashSection.tsx` |
 | 그 밖의 기능 | 기능 이름의 폴더(`usage/`, `analytics/`, `sessionlog/`, `awards/`, `workdir/`, `markdown/`, `diary/`, `settings/` …) |
 | 다국어 | 카탈로그 `src/shared/i18n/locales/`, 하드코딩 검사 `__tests__/noHardcodedHangul.test.ts` |
 

@@ -6,7 +6,7 @@
 // CLI 실행 중 재시작 경고, 끝난 업무 완료, 일반 에이전트 새 지시·이어서 보내기,
 // 대화 로그 속 이미지(썸네일·확대), 권한 요청·선택지 카드(AskUserQuestion 답·Bash 허용),
 // 텍스트·이미지 클립보드 복사와 이미지·파일 다운로드, 하단 사용량 바, 생각 중·멈춤 상태 줄,
-// 직접 입력과 보낼 대기열(쌓기·빼기).
+// 직접 입력과 보낼 대기열(쌓기·빼기), 로그 위 이 세션 추정 사용량.
 import assert from "node:assert/strict";
 import { createServer } from "node:http";
 import { readFile, mkdir } from "node:fs/promises";
@@ -25,7 +25,8 @@ const characters = [
         { label: "썸네일", description: "로그 안에 작게 보이고 누르면 확대" }, { label: "링크만", description: "누르면 새 창" }] },
       { question: "어디에 보일까요?", header: "위치", multiSelect: true, options: [{ label: "웹" }, { label: "앱" }] },
     ] } }],
-    label: { goal: "웹 상태판 대화 로그 정리", cwd: "/Volumes/ssd4tb/dev/very/long/path/to/agent-office", branch: "main" },
+    label: { goal: "웹 상태판 대화 로그 정리", cwd: "/Volumes/ssd4tb/dev/very/long/path/to/agent-office", branch: "main",
+      usage: { sessionId: "s1", tokens: "11.7K CH(1.7M)", cost: "~$3.45", turns: 12 } },
   },
   {
     agentId: "b", name: "보리", role: "리뷰", cwd: "/Users/me/work/backend-service",
@@ -175,6 +176,8 @@ await p.waitForFunction(() => !document.querySelector("#asks .card"));
 // 답하고 나면 생각 중 상태 줄(점이 움직임).
 await p.locator("#live.thinking .live-dots").waitFor();
 assert.match(await p.locator("#live").textContent(), /생각 중… 1분 1\d초/);
+assert.equal(await p.locator("#cost").textContent(), "이 세션 추정 사용량 · 토큰 11.7K CH(1.7M) · ~$3.45 · 12턴");
+await p.screenshot({ path: `${outDir}/agent-cost.png` });
 // 직접 입력: 작업 중이라 대기열에 쌓이고, 뺄 수 있다.
 await p.fill("#msgtext", "다음엔 테스트도 돌려 줘");
 await p.getByRole("button", { name: "대기열에 넣기" }).click();

@@ -266,6 +266,7 @@ async fn state(State(ctx): Ctx) -> Json<Value> {
             "cli": probe.cli,
             "atPrompt": probe.at_prompt,
             "cwd": session.and_then(|_| ctx.ctl.gate.sink().cwd_of(OFFICE_AGENT_ID)),
+            "label": ctx.dash.label(OFFICE_AGENT_ID),
             "opening": crate::office_agent::is_opening(),
             "error": crate::office_agent::last_error(),
         })

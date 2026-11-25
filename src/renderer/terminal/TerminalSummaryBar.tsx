@@ -16,8 +16,8 @@
 import { useTranslation } from "react-i18next";
 import { useAppStore } from "../store/appStore";
 import { deriveTaskLabelLines, effectiveCwd } from "../labels/labelText";
-import { formatTokenPair, formatTokens, formatUsd } from "../analytics/pricing";
-import { mergeTotals, type SessionUsageTotals } from "../usage/sessionCost";
+import { formatTokenPair, formatTokens } from "../analytics/pricing";
+import { currentSessionTotals, formatSessionCost, grossTokens, type SessionUsageTotals } from "../usage/sessionCost";
 import { useSessionUsageSeed } from "../usage/useSessionUsageSeed";
 import type { Translate } from "../shared/textKey";
 import "./terminal.css";
@@ -61,21 +61,11 @@ function netTokens(totals: SessionUsageTotals): number {
   return totals.input + totals.output;
 }
 
-/** 캐시 읽기·쓰기까지 포함한 전체 토큰(= 비용 셀이 실제로 환산하는 대상). */
-function grossTokens(totals: SessionUsageTotals): number {
-  return totals.input + totals.output + totals.cacheRead + totals.cacheWrite;
-}
-
 /** 토큰 셀 텍스트. 표기 규칙은 `pricing.formatTokenPair`(분석 패널과 공유). */
 function usageTokenText(totals: SessionUsageTotals): string {
   return formatTokenPair(netTokens(totals), grossTokens(totals));
 }
 
-/** 미지 단가만 있으면 —, 알려진 비용과 섞였으면 ~로 부분 집계를 표시한다. */
-function usageCostText(totals: SessionUsageTotals): string {
-  if (totals.costUnknownTurns > 0 && totals.costUsd === 0) return "—";
-  return `${totals.costUnknownTurns > 0 ? "~" : ""}${formatUsd(totals.costUsd)}`;
-}
 
 export function TerminalSummaryBar() {
   const { t } = useTranslation("terminal");
@@ -108,13 +98,7 @@ export function TerminalSummaryBar() {
 
   // 사용량: 실시간 누계(sessionUsage) + 과거 시드(sessionUsageSeed, 같은
   // sessionId일 때만)를 합친다. 첫 턴 도중이어도 토큰이 있으면 표시한다.
-  const usageEntry = sessionUsage[activeId];
-  const seedTotals = usageEntry ? sessionUsageSeed?.bySession[usageEntry.sessionId] : undefined;
-  const totals = usageEntry
-    ? seedTotals
-      ? mergeTotals(seedTotals, usageEntry.totals)
-      : usageEntry.totals
-    : undefined;
+  const totals = currentSessionTotals(sessionUsage, sessionUsageSeed, activeId)?.totals;
   const hasUsage = sessionCostEnabled && !!totals && (totals.turns > 0 || grossTokens(totals) > 0);
 
   // 표시할 게 없어도(라벨·사용량 둘 다 없음) 바를 *자리만* 남긴 채 숨긴다 —
@@ -137,7 +121,7 @@ export function TerminalSummaryBar() {
       {shownLine2 && <span className="terminal-summary-line2">{shownLine2}</span>}
       {hasUsage && (
         <span className="terminal-summary-usage" title={usageTooltip(totals!, t)}>
-          {`${usageTokenText(totals!)} · ${usageCostText(totals!)}`}
+          {`${usageTokenText(totals!)} · ${formatSessionCost(totals!)}`}
         </span>
       )}
     </div>

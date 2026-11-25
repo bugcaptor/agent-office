@@ -3,8 +3,12 @@
 // 터미널 탭의 "대화 보기". xterm은 아래에 그대로 붙어 있고(keep-alive), 이 판이 그 위를 덮는다.
 // 내용은 CLI 전사(JSONL)다 — 사람 말·에이전트 말(마크다운)·도구 호출과 결과(접힘)·이미지.
 // 권한 요청·질문은 카드로 뜨고 여기서 답할 수 있다. 터미널에도 같은 대화상자가 떠 있어
-// 어느 보기에서든 먼저 답한 쪽이 반영된다. 아래 입력칸은 CLI가 입력을 기다리면 같은 세션에 바로 잇고,
-// 작업 중이면 대기열(웹 상태판과 공유)에 쌓아 턴이 끝날 때 넣는다. 대화 끝에는 지금 상태를 보인다 —
+// 어느 보기에서든 먼저 답한 쪽이 반영된다. 위 입력칸은 CLI가 입력을 기다리면 같은 세션에 바로 잇고,
+// 작업 중이면 대기열(웹 상태판과 공유)에 쌓아 턴이 끝날 때 넣는다.
+// 웹 상태판처럼 최신이 맨 위다 — 블록 순서만 뒤집고, 도구 결과·이미지는 그 호출 블록 안에서 아래로
+// 붙는다(서브에이전트 블록도 같다). 맨 아래를 따라가는 자동 스크롤은 이미지처럼 뒤늦게 높이가 느는
+// 항목에서 자꾸 풀려서 버렸다. 맨 위에 있으면 새 항목이 그대로 보이고, 아래로 내려 읽는 중이면
+// 브라우저 스크롤 앵커링이 읽던 자리를 지킨다. 최신 블록 위에는 지금 상태를 보인다 —
 // 생각 중(움직임)과 출력이 끊긴 멈춤·입력 대기(정지)를 가른다.
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
@@ -26,8 +30,8 @@ import {
 import "./chatView.css";
 
 const POLL_MS = 1500;
-/** 아래 끝에서 이만큼 안쪽이면 "맨 아래를 보고 있다"로 보고 새 항목에 따라 내린다. */
-const STICK_PX = 80;
+/** 위 끝에서 이만큼 안쪽이면 "최신을 보고 있다"로 보고, 새 항목이 와도 맨 위에 붙여 둔다. */
+const TOP_PX = 8;
 
 /** 이미지 data URL 캐시(탭을 오가도 다시 받지 않는다). null은 비워진 이미지. */
 const imageCache = new Map<string, string | null>();
@@ -57,7 +61,7 @@ export function ChatView({ agentId, active, onShowTerminal }: { agentId: string;
   const noticeTimer = useRef<ReturnType<typeof setTimeout>>();
   const scrollRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
-  const stick = useRef(true);
+  const atTop = useRef(true);
   const pageRef = useRef<ChatLogPage | null>(null);
   pageRef.current = page;
 
@@ -128,12 +132,14 @@ export function ChatView({ agentId, active, onShowTerminal }: { agentId: string;
   const queueError = status?.queue.error;
   // 작업 중이거나 앞서 쌓인 것이 있으면 보내기는 대기열에 쌓는다.
   const willQueue = !!status && (status.phase === "working" || status.phase === "needs-human" || queued.length > 0);
-  const liveKey = live ? live.kind : "";
+  const newestFirst = useMemo(() => [...blocks].reverse(), [blocks]);
+  const liveKind = live ? live.kind : "";
 
+  // 맨 위에서 보고 있으면 위로 새 항목이 붙어도 맨 위에 남긴다(앵커링이 아래로 밀지 않게).
   useLayoutEffect(() => {
     const el = scrollRef.current;
-    if (el && stick.current) el.scrollTop = el.scrollHeight;
-  }, [blocks, asks, liveKey, queued.length]);
+    if (el && atTop.current) el.scrollTop = 0;
+  }, [newestFirst, asks, liveKind]);
 
   const refreshStatus = () => {
     tauriApi.chatViewStatus(agentId).then(setStatus, () => {});
@@ -147,7 +153,8 @@ export function ChatView({ agentId, active, onShowTerminal }: { agentId: string;
     try {
       const outcome = await tauriApi.chatViewSend(agentId, text);
       setDraft("");
-      stick.current = true;
+      atTop.current = true;
+      scrollRef.current?.scrollTo({ top: 0 });
       if (outcome === "queued") showActionNotice(t("chatView.queuedNotice"));
       refreshStatus();
     } catch (err) {
@@ -185,42 +192,6 @@ export function ChatView({ agentId, active, onShowTerminal }: { agentId: string;
         <span className="chat-view-bar-hint">{t("chatView.hint")}</span>
         <button type="button" className="pixel-btn" onClick={onShowTerminal}>{t("chatView.showTerminal")}</button>
       </div>
-      <div
-        className="chat-view-scroll"
-        ref={scrollRef}
-        onScroll={(e) => {
-          const el = e.currentTarget;
-          stick.current = el.scrollHeight - el.scrollTop - el.clientHeight < STICK_PX;
-        }}
-      >
-        {!page ? (
-          <div className="chat-view-empty">…</div>
-        ) : !page.attached ? (
-          <div className="chat-view-empty">{t("chatView.noLog")}</div>
-        ) : !blocks.length ? (
-          <div className="chat-view-empty">{t("chatView.noItems")}</div>
-        ) : (
-          blocks.map((b) => (
-            <Block key={`${page.epoch}/${b.key}`} block={b} agentId={agentId} epoch={page.epoch} onZoom={setZoom} onNotice={showActionNotice} />
-          ))
-        )}
-        {asks.map((a) => <AskCard key={a.id} ask={a} onAnswer={answer} onNotice={showActionNotice} />)}
-        {page?.attached && live && <LiveRow live={live} />}
-      </div>
-      {(queued.length > 0 || queueError) && (
-        <div className="chat-queue" aria-label={t("chatView.queueTitle", { count: queued.length })}>
-          {queued.length > 0 && <div className="chat-queue-title">{t("chatView.queueTitle", { count: queued.length })}</div>}
-          {queued.map((m, i) => (
-            <div key={m.id} className="chat-queue-item">
-              <span className="chat-queue-n">{i + 1}</span>
-              <span className="chat-queue-text" title={m.text}>{m.text}</span>
-              <button type="button" className="pixel-btn chat-queue-cancel" aria-label={t("chatView.queueCancel")} title={t("chatView.queueCancel")} onClick={() => void cancelQueued(m.id)}>✕</button>
-            </div>
-          ))}
-          {queueError && <div className="chat-queue-error">{errText(queueError)}</div>}
-        </div>
-      )}
-      {notice && <div className="chat-view-notice" role="status">{notice}</div>}
       <div className="chat-view-input">
         <textarea
           ref={inputRef}
@@ -239,6 +210,41 @@ export function ChatView({ agentId, active, onShowTerminal }: { agentId: string;
         <button type="button" className="pixel-btn primary" disabled={sending || !draft.trim()} onClick={() => void send()}>
           {willQueue ? t("chatView.queue") : t("chatView.send")}
         </button>
+      </div>
+      {notice && <div className="chat-view-notice" role="status">{notice}</div>}
+      {(queued.length > 0 || queueError) && (
+        <div className="chat-queue" aria-label={t("chatView.queueTitle", { count: queued.length })}>
+          {queued.length > 0 && <div className="chat-queue-title">{t("chatView.queueTitle", { count: queued.length })}</div>}
+          {queued.map((m, i) => (
+            <div key={m.id} className="chat-queue-item">
+              <span className="chat-queue-n">{i + 1}</span>
+              <span className="chat-queue-text" title={m.text}>{m.text}</span>
+              <button type="button" className="pixel-btn chat-queue-cancel" aria-label={t("chatView.queueCancel")} title={t("chatView.queueCancel")} onClick={() => void cancelQueued(m.id)}>✕</button>
+            </div>
+          ))}
+          {queueError && <div className="chat-queue-error">{errText(queueError)}</div>}
+        </div>
+      )}
+      <div
+        className="chat-view-scroll"
+        ref={scrollRef}
+        onScroll={(e) => {
+          atTop.current = e.currentTarget.scrollTop < TOP_PX;
+        }}
+      >
+        {asks.map((a) => <AskCard key={a.id} ask={a} onAnswer={answer} onNotice={showActionNotice} />)}
+        {page?.attached && live && <LiveRow live={live} />}
+        {!page ? (
+          <div className="chat-view-empty">…</div>
+        ) : !page.attached ? (
+          <div className="chat-view-empty">{t("chatView.noLog")}</div>
+        ) : !blocks.length ? (
+          <div className="chat-view-empty">{t("chatView.noItems")}</div>
+        ) : (
+          newestFirst.map((b) => (
+            <Block key={`${page.epoch}/${b.key}`} block={b} agentId={agentId} epoch={page.epoch} onZoom={setZoom} onNotice={showActionNotice} />
+          ))
+        )}
       </div>
       {zoom && (
         <div
@@ -265,7 +271,7 @@ export function ChatView({ agentId, active, onShowTerminal }: { agentId: string;
   );
 }
 
-/** 대화 끝의 지금 상태 한 줄. 생각 중은 움직이고, 멈춤·입력 대기는 멈춰 있다. */
+/** 최신 블록 위의 지금 상태 한 줄. 생각 중은 움직이고, 멈춤·입력 대기는 멈춰 있다. */
 function LiveRow({ live }: { live: LiveState }) {
   const { t } = useTranslation("terminal");
   const time = (ms: number) => {

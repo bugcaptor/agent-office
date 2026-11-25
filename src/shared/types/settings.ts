@@ -258,6 +258,19 @@ export interface WebDashLabel {
   goal?: string;
   cwd?: string;
   branch?: string;
+  /** 지금 세션의 토큰·추정 비용(설정 `sessionCostEnabled`가 켜져 있을 때만). 표기는 렌더러가 만든다. */
+  usage?: WebDashUsage;
+}
+
+/** 웹 상태판 로그에 보일 세션 사용량 추정치. 공개 API 요율 환산이라 구독제 청구액이 아니다. */
+export interface WebDashUsage {
+  /** 이 누계를 낸 세션. 웹은 지금 세션과 같을 때만 보인다. */
+  sessionId: string;
+  /** 토큰 표기(`formatTokenPair`, 예 `11.7K CH(1.7M)`). */
+  tokens: string;
+  /** 비용 표기(`formatSessionCost`, 예 `~$3.45`, 모르면 `—`). */
+  cost: string;
+  turns: number;
 }
 
 /** `control_status` 응답(이슈 #55) — CLI 제어의 2단계 승인 상태. */

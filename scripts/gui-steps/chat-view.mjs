@@ -13,21 +13,25 @@ export default async ({ page, shot, harness }) => {
   await page.waitForSelector(".chat-view .chat-ask");
   await page.waitForSelector(".chat-view .chat-image img");
   await shot("chat-view");
+  // 최신이 맨 위다. 도구 결과는 그 호출 블록 안에서 아래에 붙는다.
+  assert.match(await page.locator(".chat-block").first().textContent(), /Found the cause/);
+  assert.match(await page.locator(".chat-block").last().textContent(), /Look at this screen/);
+  assert.match(await page.locator(".chat-block", { hasText: "Read:" }).locator("> *").last().textContent(), /terminal/);
 
-  const user = page.locator(".chat-msg.user").first();
+  const user = page.locator(".chat-msg.user").last();
   await user.locator("button.chat-action").click();
   assert.equal(await clipboardText(), "Look at this screen and fix the layout");
-  const assistant = page.locator(".chat-msg.assistant").first();
+  const assistant = page.locator(".chat-msg.assistant").last();
   await assistant.locator(".chat-actions > button").last().click();
   assert.match(await clipboardText(), /\*\*the layout\*\*/);
   await assistant.locator(".markdown-body button.chat-action").click();
   assert.equal((await clipboardText()).trimEnd(), ".panel { display: grid; }");
 
-  const tool = page.locator("details.chat-tool").first();
+  const tool = page.locator("details.chat-tool:not(.nested)").last();
   await tool.locator("summary").click();
   await tool.locator("button.chat-action").click();
   assert.equal(await clipboardText(), "src/renderer/terminal/terminal.css");
-  const result = page.locator("details.chat-tool.nested").first();
+  const result = page.locator("details.chat-tool.nested").last();
   await result.locator("summary").click();
   await result.locator("button.chat-action").click();
   assert.equal(await clipboardText(), "1\t/* terminal */\n2\t.agent-tab-strip {");
@@ -64,7 +68,8 @@ export default async ({ page, shot, harness }) => {
   await page.locator(".chat-view-input textarea").fill("Use grid please");
   await page.keyboard.press("Enter");
   await page.waitForSelector(".chat-msg.user >> text=Use grid please");
-  // 작업 중이면 대화 끝에 움직이는 상태 줄이 보이고, "queue:" 메시지는 대기열에 쌓였다 뺄 수 있다.
+  assert.match(await page.locator(".chat-block").first().textContent(), /Use grid please/);
+  // 작업 중이면 최신 블록 위에 움직이는 상태 줄이 보이고, "queue:" 메시지는 대기열에 쌓였다 뺄 수 있다.
   await page.waitForSelector(".chat-live.thinking .chat-live-dots");
   await page.locator(".chat-view-input textarea").fill("queue: then run the tests");
   await page.keyboard.press("Enter");

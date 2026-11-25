@@ -136,6 +136,8 @@ body { padding-bottom: calc(44px + env(safe-area-inset-bottom)); }
 /* 대화 로그 맨 위(최신)의 지금 상태: 생각 중은 점이 움직이고, 멈춤·입력 대기는 멈춘 표식. */
 .live { display: flex; align-items: center; gap: 8px; margin: 10px 0 2px; font-size: 13px; color: var(--muted); }
 .live:empty { display: none; }
+.cost { margin: 6px 0 0; font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.cost:empty { display: none; }
 .live.thinking { color: var(--ok); }
 .live.stalled, .live.human { color: var(--warn); }
 .live-dots { display: inline-flex; gap: 3px; }
@@ -193,6 +195,7 @@ const S = {
     message: "직접 입력", messageHelp: "업무 보드에 남기지 않고 지금 세션의 CLI에 바로 넣습니다. 작업 중이면 대기열에 쌓았다가 턴이 끝날 때마다 하나씩 보냅니다.", messagePh: "에이전트에게 보낼 말",
     queueBtn: "대기열에 넣기", queued: "대기열에 넣었습니다. 턴이 끝나면 보냅니다.", queueTitle: (n) => `보낼 대기열 ${n}건 · 턴이 끝날 때마다 하나씩 보냅니다`, queueCancel: "빼기", queueRemoved: "대기열에서 뺐습니다",
     taskHelp: "업무 보드에 남김",
+    cost: (tokens, cost, turns) => `이 세션 추정 사용량 · 토큰 ${tokens} · ${cost} · ${turns}턴`, costHint: "공개 API 요율로 환산한 추정치입니다. 구독제 실제 청구액과 다릅니다. CH(…)는 캐시 포함 전체 토큰.",
     live: { thinking: (t) => `생각 중… ${t}`, tool: (tool, t) => `${tool} 실행 중… ${t}`, stalled: (t) => `작업 중이지만 ${t}째 화면 출력이 없습니다 — 멈췄을 수 있습니다`, human: "답을 기다리는 중 — 멈춘 게 아닙니다", idle: "턴이 끝났습니다 · 입력을 기다림", off: "CLI가 돌고 있지 않습니다", sec: (s) => `${s}초`, minSec: (m, s) => `${m}분 ${s}초` },
     stalled: "응답 없음",
     askPermission: (tool) => `권한 요청 · ${tool}`, askQuestion: "질문에 답해 주세요", askPlan: "계획 승인 요청",
@@ -234,6 +237,7 @@ const S = {
     message: "Message", messageHelp: "Goes straight to the CLI in the current session, without a task on the board. While it works, messages are queued and sent one per finished turn.", messagePh: "Message to the agent",
     queueBtn: "Queue", queued: "Queued. It will be sent when the turn ends.", queueTitle: (n) => `${n} queued · one is sent each time a turn ends`, queueCancel: "Remove", queueRemoved: "Removed from the queue",
     taskHelp: "kept on the task board",
+    cost: (tokens, cost, turns) => `Estimated session usage · ${tokens} tokens · ${cost} · ${turns} ${turns === 1 ? "turn" : "turns"}`, costHint: "Estimated at public API rates; not your subscription bill. CH(…) is the total including cache.",
     live: { thinking: (t) => `Thinking… ${t}`, tool: (tool, t) => `Running ${tool}… ${t}`, stalled: (t) => `Working, but no terminal output for ${t} — it may be stuck`, human: "Waiting for an answer — not stuck", idle: "Turn finished · waiting for input", off: "No CLI is running", sec: (s) => `${s}s`, minSec: (m, s) => `${m}m ${s}s` },
     stalled: "No response",
     askPermission: (tool) => `Permission request · ${tool}`, askQuestion: "Please answer", askPlan: "Plan approval",
@@ -481,7 +485,7 @@ function render() {
 /** 일반 에이전트를 캐릭터 모양으로 만든다(같은 머리 카드·로그 코드를 쓴다). */
 function officeChar() {
   const o = officeData || {};
-  return { agentId: OFFICE, office: true, name: S.office, role: S.officeSub, session: o.session, turn: o.turn, waiting: [], asks: o.asks || [], queue: o.queue, cli: o.cli, atPrompt: o.atPrompt, cwd: o.cwd, opening: o.opening, error: o.error };
+  return { agentId: OFFICE, office: true, name: S.office, role: S.officeSub, session: o.session, turn: o.turn, waiting: [], asks: o.asks || [], queue: o.queue, cli: o.cli, atPrompt: o.atPrompt, cwd: o.cwd, opening: o.opening, error: o.error, label: o.label };
 }
 function currentChar() {
   if (view.agent === OFFICE) return officeData ? officeChar() : null;
@@ -519,8 +523,8 @@ function renderAgent() {
   const back = el("button", { class: "back", text: S.back, onclick: () => { view.agent = null; render(); } });
   const c = currentChar();
   if (!c) return [back];
-  if (c.office) return [back, renderHead(c), renderAsks(c), renderOfficeForm(c), renderLive(c), renderLog(c.agentId)];
-  return [back, renderHead(c), renderAsks(c), renderSent(c), renderMsgForm(c), renderTaskForm(c), renderLive(c), renderLog(c.agentId)];
+  if (c.office) return [back, renderHead(c), renderAsks(c), renderOfficeForm(c), renderCost(c), renderLive(c), renderLog(c.agentId)];
+  return [back, renderHead(c), renderAsks(c), renderSent(c), renderMsgForm(c), renderTaskForm(c), renderCost(c), renderLive(c), renderLog(c.agentId)];
 }
 
 // ── 권한 요청·선택지 ──
@@ -741,6 +745,24 @@ function fillLive(box, c) {
   box.dataset.kind = live.kind;
   box.dataset.key = key;
   box.lastChild.textContent = text;
+}
+// ── 이 세션 추정 사용량 ──
+// 앱이 터미널 요약 바와 같은 숫자를 라벨에 실어 보낸다(설정 › 세션 비용 표시가 켜졌을 때). 지금 세션 것만 보인다.
+function costText(c) {
+  const u = c && c.label && c.label.usage;
+  if (!u || !c.session || c.session.sessionId !== u.sessionId) return "";
+  return S.cost(u.tokens, u.cost, u.turns);
+}
+function renderCost(c) {
+  const box = el("div", { id: "cost", class: "cost", title: S.costHint });
+  box.textContent = costText(c);
+  return box;
+}
+function refreshCost() {
+  const box = document.getElementById("cost");
+  if (!box) return;
+  const text = costText(currentChar());
+  if (box.textContent !== text) box.textContent = text;
 }
 function refreshLive() {
   const box = document.getElementById("live");
@@ -1296,6 +1318,7 @@ function updateAgentView(changed, logMode) {
   refreshAsks();
   refreshMsg();
   refreshLive();
+  refreshCost();
   if (logMode === "reset") { document.getElementById("log").replaceWith(renderLog(c.agentId)); markLog(); }
   else if (logMode === "append") prependLog(c.agentId);
 }
