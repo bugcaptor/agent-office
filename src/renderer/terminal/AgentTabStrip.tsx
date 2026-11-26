@@ -19,8 +19,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useShallow } from "zustand/react/shallow";
 import { useAppStore } from "../store/appStore";
-import { generateSpritePreview } from "../office/gen/characterFactory";
-import { resolveArchetype } from "../office/gen/archetypes";
+import { agentThumb } from "../portrait/agentThumb";
 import { ContextMenu } from "../ui/ContextMenu";
 import { deriveTaskLabelLines, effectiveCwd } from "../labels/labelText";
 import { tauriApi } from "../ipc/tauriApi";
@@ -86,21 +85,7 @@ export function AgentTabStrip() {
     () =>
       tabIds.map((id) => {
         const agent = agents[id];
-        const thumb =
-          portraits[id] ??
-          spritePreviews[id] ??
-          (agent
-            ? generateSpritePreview(
-                agent.seed || agent.id,
-                6,
-                undefined,
-                undefined,
-                // 월드(createCharacterAssets)와 동일한 아키타입 해석 —
-                // 누락 시 폴백 썸네일이 항상 human으로 렌더되는 버그.
-                resolveArchetype(agent.archetype, agent.seed || agent.id),
-                agent.colors,
-              )
-            : undefined);
+        const thumb = agentThumb(agent, portraits[id], spritePreviews[id]);
         // 탭 툴팁(이슈 #44 T2): 머리 위 라벨과 같은 파생 규칙으로 2줄을 만들어
         // native title로 붙인다(폭 넉넉히). 세션이 starting/running이 아니면
         // 실황(line2)은 stale이므로 line1만. 라벨이 없으면 title 생략.

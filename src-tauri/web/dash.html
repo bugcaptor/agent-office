@@ -102,6 +102,12 @@ button.b.confirm { background: var(--bad); color: #fff; border-color: transparen
 .msg.user { background: var(--user); margin-left: 24px; }
 .msg.assistant { background: var(--panel); border: 1px solid var(--line); margin-right: 12px; }
 .msg.side { opacity: .75; font-size: 13px; }
+.msgrow { display: flex; gap: 8px; align-items: flex-start; }
+.msgrow.user { flex-direction: row-reverse; padding-left: 24px; }
+.msgrow.assistant { padding-right: 12px; }
+.msgrow > .msg { flex: 1; min-width: 0; margin-left: 0; margin-right: 0; }
+.msgav { flex: 0 0 28px; width: 28px; height: 28px; margin-top: 8px; border-radius: 50%; display: grid; place-items: center; background: var(--chip); color: var(--muted); font-size: 16px; font-weight: 700; line-height: 1; object-fit: cover; overflow: hidden; }
+.msgrow.side .msgav { flex-basis: 22px; width: 22px; height: 22px; font-size: 13px; opacity: .75; }
 .tool { margin: 4px 0 4px 8px; font-size: 13px; color: var(--muted); }
 .tool summary { cursor: pointer; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; list-style: none; }
 .tool summary::-webkit-details-marker { display: none; }
@@ -1184,6 +1190,18 @@ function markdownBody(html) {
   }
   return box;
 }
+/** 말한 쪽 표시: 에이전트는 캐릭터 초상(없으면 이름 첫 글자, 일반 에이전트는 🤖), 사람은 👤.
+ * 같은 주소의 그림은 브라우저가 문서 안에서 다시 쓰므로 말마다 새로 받지 않는다. */
+function speakerAvatar(role) {
+  if (role === "user") return el("div", { class: "msgav", "aria-hidden": "true" }, "👤");
+  const c = currentChar();
+  if (!c || c.office) return el("div", { class: "msgav", "aria-hidden": "true" }, "🤖");
+  const initial = () => el("div", { class: "msgav", "aria-hidden": "true" }, (c.name || "?").slice(0, 1));
+  if (!c.portrait) return initial();
+  const img = el("img", { class: "msgav", alt: "", src: `/api/portrait/${encodeURIComponent(c.agentId)}?t=${token}&v=${c.portrait}` });
+  img.onerror = () => img.replaceWith(initial());
+  return img;
+}
 function renderItem(it) {
   const side = it.sidechain ? " side" : "";
   const agent = encodeURIComponent(view.agent);
@@ -1206,8 +1224,9 @@ function renderItem(it) {
     const actions = (it.files || []).map((file, index) =>
       downloadButton(`${S.download} · ${file.name}`, `/api/file/${agent}/${epoch}/${it.seq}/${index}`, file.name));
     if (it.text) actions.unshift(copyButton(it.text, S.copyMessage));
-    return el("div", { class: "msg " + it.role + side }, it.html ? markdownBody(it.html) : messageBody(it.text),
+    const msg = el("div", { class: "msg " + it.role + side }, it.html ? markdownBody(it.html) : messageBody(it.text),
       actions.length > 0 && el("div", { class: "content-actions" }, actions));
+    return el("div", { class: "msgrow " + it.role + side }, speakerAvatar(it.role), msg);
   }
   if (it.kind === "tool_use") {
     const head = (it.toolName ? it.toolName + ": " : "⤷ ") + firstLine(it.text);

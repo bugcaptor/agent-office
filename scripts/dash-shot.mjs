@@ -17,7 +17,7 @@ const page = await readFile(resolve("src-tauri/web/dash.html"), "utf8");
 const now = Date.now();
 const characters = [
   {
-    agentId: "a", name: "에이다", role: "개발", cwd: "/Volumes/ssd4tb/dev/very/long/path/to/agent-office",
+    agentId: "a", name: "에이다", role: "개발", cwd: "/Volumes/ssd4tb/dev/very/long/path/to/agent-office", portrait: 1,
     clockedOut: false, defaultCli: "claude", session: { sessionId: "s1", state: "running" },
     turn: { phase: "working", at: now, since: now - 75000 }, waiting: [], cli: "claude", atPrompt: false, queue: { items: [] },
     asks: [{ id: "ask-1", toolName: "AskUserQuestion", canAlways: false, sidechain: false, at: now, toolInput: { questions: [
@@ -91,6 +91,7 @@ const server = createServer(async (req, res) => {
   }
   if (url.pathname === "/api/usage") return send(usage);
   if (url.pathname.startsWith("/api/log/")) return send({ epoch: 1, last: items.at(-1).seq, attached: true, items: url.searchParams.get("after") ? [] : items });
+  if (url.pathname.startsWith("/api/portrait/")) { res.setHeader("content-type", "image/png"); return res.end(png); }
   if (url.pathname.startsWith("/api/image/")) {
     if (url.searchParams.get("t") !== "abc" && req.headers.authorization !== "Bearer abc") {
       res.statusCode = 401; return res.end();

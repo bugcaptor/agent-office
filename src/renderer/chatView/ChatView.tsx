@@ -10,7 +10,7 @@
 // 항목에서 자꾸 풀려서 버렸다. 맨 위에 있으면 새 항목이 그대로 보이고, 아래로 내려 읽는 중이면
 // 브라우저 스크롤 앵커링이 읽던 자리를 지킨다. 최신 블록 위에는 지금 상태를 보인다 —
 // 생각 중(움직임)과 출력이 끊긴 멈춤·입력 대기(정지)를 가른다.
-import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { createContext, memo, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { AskAction, ChatLiveStatus, ChatLogItem, ChatLogPage, PendingAsk } from "@shared/types";
 import { tauriApi } from "../ipc/tauriApi";
@@ -27,11 +27,22 @@ import {
   type ChatBlock,
   type LiveState,
 } from "./chatViewModel";
+import { useAgentThumb } from "../portrait/agentThumb";
 import "./chatView.css";
 
 const POLL_MS = 1500;
 /** 위 끝에서 이만큼 안쪽이면 "최신을 보고 있다"로 보고, 새 항목이 와도 맨 위에 붙여 둔다. */
 const TOP_PX = 8;
+
+/** 에이전트 말 옆에 붙일 캐릭터 얼굴 그림. 일반 에이전트(캐릭터 없음)는 undefined라 🤖를 쓴다. */
+const SpeakerThumb = createContext<string | undefined>(undefined);
+
+/** 말한 쪽 표시: 에이전트는 캐릭터 얼굴, 사람은 👤. */
+function Speaker({ role }: { role: ChatLogItem["role"] }) {
+  const thumb = useContext(SpeakerThumb);
+  if (role === "assistant" && thumb) return <img className="chat-avatar" src={thumb} alt="" aria-hidden="true" />;
+  return <span className="chat-avatar" aria-hidden="true">{role === "user" ? "👤" : "🤖"}</span>;
+}
 
 /** 이미지 data URL 캐시(탭을 오가도 다시 받지 않는다). null은 비워진 이미지. */
 const imageCache = new Map<string, string | null>();
@@ -126,6 +137,7 @@ export function ChatView({ agentId, active, onShowTerminal }: { agentId: string;
     };
   }, [active]);
 
+  const thumb = useAgentThumb(agentId);
   const blocks = useMemo(() => groupChatItems(page?.items ?? []), [page]);
   const live = liveState(status, runningTool(blocks));
   const queued = status?.queue.items ?? [];
@@ -243,9 +255,11 @@ export function ChatView({ agentId, active, onShowTerminal }: { agentId: string;
         ) : !blocks.length ? (
           <div className="chat-view-empty">{t("chatView.noItems")}</div>
         ) : (
-          newestFirst.map((b) => (
-            <Block key={`${page.epoch}/${b.key}`} block={b} agentId={agentId} epoch={page.epoch} onZoom={setZoom} onNotice={showActionNotice} />
-          ))
+          <SpeakerThumb.Provider value={thumb}>
+            {newestFirst.map((b) => (
+              <Block key={`${page.epoch}/${b.key}`} block={b} agentId={agentId} epoch={page.epoch} onZoom={setZoom} onNotice={showActionNotice} />
+            ))}
+          </SpeakerThumb.Provider>
         )}
       </div>
       {zoom && (
@@ -329,24 +343,27 @@ const Item = memo(function Item({ item, agentId, epoch, onZoom, onNotice, nested
   if (item.kind === "image") return <ChatImage item={item} agentId={agentId} onZoom={onZoom} onNotice={onNotice} />;
   if (item.kind === "text") {
     return (
-      <div className={`chat-msg ${item.role}`}>
-        {item.role === "assistant"
-          ? <ChatMarkdown text={item.text} onNotice={onNotice} />
-          : <ChatPlainText text={item.text} onNotice={onNotice} />}
-        {(item.text || !!item.files?.length) && (
-          <div className="chat-actions">
-            {item.text && <CopyButton text={item.text} message onNotice={onNotice} />}
-            {item.files?.map((file, index) => (
-              <DownloadButton
-                key={index}
-                agentId={agentId}
-                source={{ kind: "file", epoch, seq: item.seq, index }}
-                filename={file.name}
-                onNotice={onNotice}
-              />
-            ))}
-          </div>
-        )}
+      <div className={`chat-row ${item.role}`}>
+        <Speaker role={item.role} />
+        <div className={`chat-msg ${item.role}`}>
+          {item.role === "assistant"
+            ? <ChatMarkdown text={item.text} onNotice={onNotice} />
+            : <ChatPlainText text={item.text} onNotice={onNotice} />}
+          {(item.text || !!item.files?.length) && (
+            <div className="chat-actions">
+              {item.text && <CopyButton text={item.text} message onNotice={onNotice} />}
+              {item.files?.map((file, index) => (
+                <DownloadButton
+                  key={index}
+                  agentId={agentId}
+                  source={{ kind: "file", epoch, seq: item.seq, index }}
+                  filename={file.name}
+                  onNotice={onNotice}
+                />
+              ))}
+            </div>
+          )}
+        </div>
       </div>
     );
   }
