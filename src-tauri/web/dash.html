@@ -573,9 +573,15 @@ function renderOfficeCard() {
       chips(c)),
     wait && el("div", { class: "wait", text: wait }));
 }
+/** 작업 중인 캐릭터를 먼저, 나머지는 마지막 턴 관측(`turn.at`)이 최근인 순으로. 관측이 없으면 뒤로 가고 원래 순서를 지킨다. */
+function sortedChars() {
+  const rank = (c) => (phaseOf(c)[0] === "working" ? 0 : 1);
+  const at = (c) => (c.turn && c.turn.at) || 0;
+  return [...chars].sort((a, b) => rank(a) - rank(b) || at(b) - at(a));
+}
 function renderChars() {
   if (!chars) return [el("div", { class: "empty", text: "…" })];
-  return [renderOfficeCard(), ...chars.map((c) => {
+  return [renderOfficeCard(), ...sortedChars().map((c) => {
     const [cls] = phaseOf(c);
     const wait = cls === "human" ? waitingMessage(c) : null;
     const goal = goalOf(c);

@@ -30,11 +30,17 @@ const characters = [
   },
   {
     agentId: "b", name: "보리", role: "리뷰", cwd: "/Users/me/work/backend-service",
-    clockedOut: false, session: { sessionId: "s2", state: "running" }, turn: { phase: "idle", at: now },
+    clockedOut: false, session: { sessionId: "s2", state: "running" }, turn: { phase: "idle", at: now - 1000 },
     waiting: [], cli: null, atPrompt: true, label: { cwd: "/Users/me/work/backend-service" },
     asks: [{ id: "ask-2", toolName: "Bash", canAlways: true, sidechain: false, at: now,
       toolInput: { command: "npm run build && rm -rf dist/tmp", description: "빌드하고 임시 폴더 정리" } }],
   },
+  // 목록 정렬: 작업 중이면 맨 위, 나머지는 최근 턴 관측 순, 관측이 없으면 맨 뒤.
+  { agentId: "c", name: "체리", role: "문서", cwd: "/Users/me/docs", clockedOut: true, session: null, turn: null, waiting: [], asks: [] },
+  { agentId: "d", name: "도토리", role: "테스트", cwd: "/Users/me/work/backend-service", clockedOut: false,
+    session: { sessionId: "s4", state: "running" }, turn: { phase: "idle", at: now - 60000 }, waiting: [], asks: [], cli: "claude", atPrompt: false },
+  { agentId: "e", name: "이끼", role: "빌드", cwd: "/Users/me/work/backend-service", clockedOut: false,
+    session: { sessionId: "s5", state: "running" }, turn: { phase: "working", at: now - 300000, since: now - 300000 }, waiting: [], asks: [], cli: "codex", atPrompt: false },
 ];
 const code = '  printf "완료\\n"\n';
 const fileName = "실행 결과.txt";
@@ -139,7 +145,8 @@ await mkdir(outDir, { recursive: true });
 await p.goto(base);
 await p.waitForSelector(".card");
 await p.screenshot({ path: `${outDir}/list.png` });
-await p.locator(".card.clickable").nth(1).click();
+assert.deepEqual(await p.locator(".card.clickable .name").allTextContents(), ["일반 에이전트", "이끼", "에이다", "보리", "도토리", "체리"]);
+await p.locator(".card.clickable").filter({ hasText: "에이다" }).click();
 await p.waitForSelector("#log .msg");
 await p.waitForSelector("#sent .card");
 await p.waitForSelector("#asks .card.ask");
@@ -215,7 +222,7 @@ await p.getByRole("button", { name: "재시작하고 보내기" }).click();
 await p.getByRole("button", { name: "한 번 더 눌러 확인" }).click();
 await p.waitForTimeout(300);
 await p.locator(".back").click();
-await p.locator(".card.clickable").nth(2).click();
+await p.locator(".card.clickable").filter({ hasText: "보리" }).click();
 await p.waitForSelector("#taskform");
 await p.waitForSelector("#asks .card.ask");
 await p.screenshot({ path: `${outDir}/agent-shell.png`, fullPage: true });
@@ -241,7 +248,7 @@ await p.screenshot({ path: `${outDir}/office-follow.png`, fullPage: true });
 const http = await ctx.newPage();
 await http.goto(base.replace("127.0.0.1", "dashboard.test"));
 assert.equal(await http.evaluate(() => window.isSecureContext), false);
-await http.locator(".card.clickable").nth(1).click();
+await http.locator(".card.clickable").filter({ hasText: "에이다" }).click();
 await http.locator("#log .msg.assistant").first().getByRole("button", { name: "텍스트 복사" }).click();
 await http.locator("#toast.show").filter({ hasText: "클립보드에 복사했습니다" }).waitFor();
 await p.bringToFront();
