@@ -494,42 +494,66 @@ pub(crate) fn agy_prompt_text_from_value(value: &serde_json::Value) -> Option<St
 }
 
 /// tool_activity_detail/pi_tool_activity_detail과 같은 결의 "가장 의미 있는
-/// detail 한 조각" 탐색이지만, agy는 훅 가이드에 인자 필드명이 명시돼 있지
-/// 않아 정확한 스키마를 스파이크에서 확정하지
-/// 못했다. 흔한 키를 우선순위로 찾고 없으면 None(→ 도구 이름만 표시) —
-/// 실제 필드명이 다르면 이 함수만 고치면 되고 프로토콜(쿼리·body 계약)은
-/// 바뀌지 않는다.
+/// detail 한 조각" 탐색. agy(1.5.x 실측)는 인자 키를 PascalCase로 보낸다
+/// (`run_command` → `CommandLine`, `read_file` → `Path`). 다른 도구의 키는
+/// 실측하지 못해 흔한 키를 대소문자 무시로 찾고, 없으면 agy가 붙여 주는
+/// `toolSummary`(사람이 읽는 한 줄 설명)로, 그것도 없으면 None(→ 도구 이름만).
 fn agy_tool_activity_detail(input: &serde_json::Value) -> Option<String> {
+    const KEYS: [&str; 15] = [
+        "commandline",
+        "command",
+        "absolutepath",
+        "targetfile",
+        "path",
+        "file_path",
+        "directorypath",
+        "searchpath",
+        "pattern",
+        "query",
+        "url",
+        "description",
+        "summary",
+        "toolsummary",
+        "prompt",
+    ];
     let obj = input.as_object()?;
-    for key in ["command", "path", "file_path", "pattern", "description", "url", "query"] {
-        if let Some(value) = obj.get(key).and_then(|v| v.as_str()) {
-            let first_line = value.lines().next().unwrap_or(value).trim();
-            if !first_line.is_empty() {
-                return Some(first_line.to_string());
-            }
+    for key in KEYS {
+        let Some(value) = obj
+            .iter()
+            .find(|(k, _)| k.eq_ignore_ascii_case(key))
+            .and_then(|(_, v)| v.as_str())
+        else {
+            continue;
+        };
+        let first_line = value.lines().next().unwrap_or(value).trim();
+        // 전사 쪽 args는 경로를 `"\"/a/b\""`처럼 따옴표째 싣는 일이 있다.
+        let first_line = first_line.trim_matches('"').trim();
+        if !first_line.is_empty() {
+            return Some(first_line.to_string());
         }
     }
     None
 }
 
 /// agy PostToolUse 훅 body에서 라벨용 도구 요약을 만든다(Claude의
-/// `tool_activity_text`/pi의 `pi_tool_activity_text` 대응). 도구 이름은
-/// top-level `name`, 인자는 `toolInput`/`tool_input`가
-/// 있으면 그쪽을, 없으면 body 전체에서 찾는다. `name` 부재/공백/비문자열은
-/// None.
+/// `tool_activity_text`/pi의 `pi_tool_activity_text` 대응). agy 1.5.x는
+/// `toolCall: {name, args, id}`로 싣는다(실측). 예전 가정이던 top-level
+/// `name` + `toolInput`/`tool_input`도 받아 둔다. 이름 부재/공백/비문자열은 None.
 pub fn agy_tool_activity_text(body: &[u8]) -> Option<String> {
     agy_tool_activity_text_from_value(&serde_json::from_slice(body).ok()?)
 }
 
 pub(crate) fn agy_tool_activity_text_from_value(value: &serde_json::Value) -> Option<String> {
-    let tool_name = value.get("name")?.as_str()?.trim();
+    let (tool_name, args) = match value.get("toolCall").filter(|c| c.is_object()) {
+        Some(call) => (call.get("name")?.as_str()?.trim(), call.get("args").unwrap_or(&serde_json::Value::Null)),
+        None => (
+            value.get("name")?.as_str()?.trim(),
+            value.get("toolInput").or_else(|| value.get("tool_input")).unwrap_or(value),
+        ),
+    };
     if tool_name.is_empty() {
         return None;
     }
-    let args = value
-        .get("toolInput")
-        .or_else(|| value.get("tool_input"))
-        .unwrap_or(value);
     let detail = agy_tool_activity_detail(args);
     let summary = match detail {
         Some(detail) => format!("{tool_name}: {detail}"),
@@ -539,11 +563,11 @@ pub(crate) fn agy_tool_activity_text_from_value(value: &serde_json::Value) -> Op
 }
 
 /// agy Stop 훅 body에서 완료 메시지를 만든다. Stop payload에는 완료 서술
-/// 텍스트가 없고(`executionNum`/`terminationReason`/`error`/`fullyIdle`뿐)
-/// `terminationReason`만으로 갈린다 — `"error"`면 오류로 끝났음을
-/// 알리고, 그 외(`model_stop`/`max_steps_exceeded`/파싱 실패 등)는 고정
-/// 완료 문구를 쓴다. 항상 Some을 돌려준다 — pi/Claude와 달리
-/// "메시지 없음"이 아니라 "말할 것이 고정 문구뿐"인 경우라서.
+/// 텍스트가 없다(`executionNum`/`terminationReason`/`error`/`fullyIdle`/
+/// `continuationActive` 등). 비어 있지 않은 `error`가 있거나
+/// `terminationReason`이 대소문자 무시 `error`면 오류로 끝났음을 알리고, 그 외
+/// (1.5.x 실측 `NO_TOOL_CALL` 등, 파싱 실패 포함)는 고정 완료 문구를 쓴다.
+/// 항상 값을 돌려준다 — "메시지 없음"이 아니라 "말할 것이 고정 문구뿐"이라서.
 pub fn agy_stop_message(body: &[u8]) -> String {
     match serde_json::from_slice::<serde_json::Value>(body) {
         Ok(value) => agy_stop_message_from_value(&value),
@@ -552,8 +576,15 @@ pub fn agy_stop_message(body: &[u8]) -> String {
 }
 
 pub(crate) fn agy_stop_message_from_value(value: &serde_json::Value) -> String {
-    let reason = value.get("terminationReason").and_then(|v| v.as_str());
-    if reason == Some("error") {
+    let reason_is_error = value
+        .get("terminationReason")
+        .and_then(|v| v.as_str())
+        .is_some_and(|r| r.eq_ignore_ascii_case("error"));
+    let has_error = value
+        .get("error")
+        .and_then(|v| v.as_str())
+        .is_some_and(|e| !e.trim().is_empty());
+    if reason_is_error || has_error {
         "Antigravity stopped with an error".to_string()
     } else {
         "Antigravity finished a task".to_string()
@@ -1708,6 +1739,39 @@ mod tests {
         assert_eq!(agy_tool_activity_text(br#"{"name":"  "}"#), None);
         assert_eq!(agy_tool_activity_text(br#"{}"#), None);
         assert_eq!(agy_tool_activity_text(b"not json"), None);
+    }
+
+    /// agy 1.5.18 PostToolUse 실측 body(경로만 줄였다): `toolCall.{name,args}`, PascalCase 인자.
+    #[test]
+    fn agy_tool_activity_text_reads_tool_call_object_from_real_payloads() {
+        use super::agy_tool_activity_text;
+        let read = br#"{"conversationId":"c","hookEventName":"PostToolUse","error":"","stepIdx":2,
+            "toolCall":{"args":{"Path":"/w/note.txt"},"id":"call_1","name":"read_file"},
+            "workspacePaths":["/w"]}"#;
+        assert_eq!(agy_tool_activity_text(read).as_deref(), Some("read_file: /w/note.txt"));
+        let shell = br#"{"toolCall":{"args":{"CommandLine":"ls -la","WaitMsBeforeAsync":5000,
+            "toolSummary":"List directory contents"},"id":"call_2","name":"run_command"}}"#;
+        assert_eq!(agy_tool_activity_text(shell).as_deref(), Some("run_command: ls -la"));
+        let summary_only = br#"{"toolCall":{"args":{"Foo":1,"toolSummary":"Doing a thing"},"name":"mystery"}}"#;
+        assert_eq!(agy_tool_activity_text(summary_only).as_deref(), Some("mystery: Doing a thing"));
+        let quoted = br#"{"toolCall":{"args":{"Path":"\"/w/a.rs\""},"name":"read_file"}}"#;
+        assert_eq!(agy_tool_activity_text(quoted).as_deref(), Some("read_file: /w/a.rs"));
+        assert_eq!(agy_tool_activity_text(br#"{"toolCall":{"name":"bare"}}"#).as_deref(), Some("bare"));
+        assert_eq!(agy_tool_activity_text(br#"{"toolCall":{"args":{}}}"#), None);
+    }
+
+    #[test]
+    fn agy_stop_message_reads_real_uppercase_reason_and_error_field() {
+        use super::agy_stop_message;
+        assert_eq!(
+            agy_stop_message(br#"{"terminationReason":"NO_TOOL_CALL","error":"","fullyIdle":true}"#),
+            "Antigravity finished a task",
+        );
+        assert_eq!(agy_stop_message(br#"{"terminationReason":"ERROR"}"#), "Antigravity stopped with an error");
+        assert_eq!(
+            agy_stop_message(br#"{"terminationReason":"NO_TOOL_CALL","error":"model capacity exhausted"}"#),
+            "Antigravity stopped with an error",
+        );
     }
 
     #[test]

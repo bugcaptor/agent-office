@@ -191,12 +191,12 @@ fn clip(text: &str, max: usize) -> String {
 }
 
 /// 명령줄 → 에이전트 CLI 이름. `claude …`, `node /…/bin/codex …`,
-/// `codex-aarch64-apple-darwin`처럼 앞 두 토큰의 실행 파일 이름으로 본다.
+/// `codex-aarch64-apple-darwin`, `/…/.local/bin/agy …`처럼 앞 두 토큰의 실행 파일 이름으로 본다.
 pub(crate) fn cli_of_command(command: &str) -> Option<&'static str> {
     for token in command.split_whitespace().take(2) {
         let base = token.rsplit(['/', '\\']).next().unwrap_or(token);
         let base = base.strip_suffix(".exe").unwrap_or(base).to_ascii_lowercase();
-        for cli in ["claude", "codex"] {
+        for cli in ["claude", "codex", "agy"] {
             if base == cli || base.starts_with(&format!("{cli}-")) {
                 return Some(cli);
             }
@@ -829,7 +829,7 @@ async fn create_task(State(ctx): Ctx, Json(t): Json<NewTask>) -> Json<Value> {
             return fail("unknown-agent");
         }
     }
-    if t.cli.as_deref().is_some_and(|c| c != "claude" && c != "codex") {
+    if t.cli.as_deref().is_some_and(|c| !matches!(c, "claude" | "codex" | "agy")) {
         return fail("unknown-cli");
     }
     // 보내기가 터미널 재시작을 부르면(CLI가 돌고 있음) 웹에서 확인을 받은 뒤에만 한다.
@@ -1000,6 +1000,8 @@ mod tests {
         assert_eq!(cli_of_command("claude --model opus"), Some("claude"));
         assert_eq!(cli_of_command("/Users/me/.local/bin/claude"), Some("claude"));
         assert_eq!(cli_of_command("node /opt/homebrew/bin/codex -m gpt-5"), Some("codex"));
+        assert_eq!(cli_of_command("/Users/me/.local/bin/agy --dangerously-skip-permissions"), Some("agy"));
+        assert_eq!(cli_of_command("agyx"), None);
         assert_eq!(cli_of_command("/opt/codex/codex-aarch64-apple-darwin"), Some("codex"));
         assert_eq!(cli_of_command("C:\\tools\\Codex.exe"), Some("codex"));
         assert_eq!(cli_of_command("npm test"), None);

@@ -147,8 +147,8 @@ impl SummaryPurpose {
     /// agy(Google Antigravity CLI)의 모델명은 별도 reasoning 설정과 독립적이다.
     pub(super) fn agy_model(self) -> &'static str {
         match self {
-            Self::Label | Self::Diary => "gemini-3.6-flash-low",
-            Self::Study => "gemini-3.1-pro-low",
+            Self::Label | Self::Diary => "gemini-3.8-flash-low",
+            Self::Study => "gemini-3.8-flash-medium",
         }
     }
 
@@ -649,8 +649,8 @@ exit "$AO_FAKE_EXIT"
             (SummaryProvider::Codex, "gpt-5.4-mini", "gpt-5.4"),
             (
                 SummaryProvider::Agy,
-                "gemini-3.6-flash-low",
-                "gemini-3.1-pro-low",
+                "gemini-3.8-flash-low",
+                "gemini-3.8-flash-medium",
             ),
             (
                 SummaryProvider::Gemini,

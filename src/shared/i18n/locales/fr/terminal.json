@@ -78,7 +78,7 @@
     "title": "Conversation",
     "hint": "La CLI continue de tourner dans le terminal. Revenez à la vue terminal quand vous voulez.",
     "showTerminal": "Vue terminal",
-    "noLog": "Aucune conversation à lire dans cet onglet (pas une session Claude/Codex). Utilisez la vue terminal.",
+    "noLog": "Aucune conversation à lire dans cet onglet (pas une session Claude/Codex/Antigravity). Utilisez la vue terminal.",
     "noItems": "Pas encore de messages.",
     "inputPh": "Message à l'agent (Entrée pour envoyer, Maj+Entrée pour une nouvelle ligne)",
     "send": "Envoyer",

@@ -78,7 +78,7 @@
     "title": "對話檢視",
     "hint": "CLI 仍在終端機中執行。隨時可以切回終端機檢視。",
     "showTerminal": "終端機檢視",
-    "noLog": "此分頁沒有可讀的對話(不是 Claude/Codex 工作階段)。請使用終端機檢視。",
+    "noLog": "此分頁沒有可讀的對話(不是 Claude/Codex/Antigravity 工作階段)。請使用終端機檢視。",
     "noItems": "還沒有對話。",
     "inputPh": "傳給代理的訊息(Enter 傳送,Shift+Enter 換行)",
     "send": "傳送",

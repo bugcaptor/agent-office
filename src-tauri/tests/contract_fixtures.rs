@@ -33,6 +33,7 @@ use agent_office_lib::types::{
     WorkCli, WorkItem, WorkStatus,
 };
 use agent_office_lib::usage::{
+    AntigravityLiveOutcome, AntigravityLiveStatus,
     ClaudeLiveStatus, CodexLiveOutcome, CodexLiveStatus, FetchTransport, LiveFetchOutcome,
     ApiKeyLiveOutcome, ApiKeyLiveStatus, OpenRouterUsage,
     Provider, ProviderUsage, TokenSource, UsageSnapshot, UsageWindow, UsageWindowKind,
@@ -324,6 +325,38 @@ fn usage_snapshot_matches_fixture() {
             detail: Some("HTTP 502".into()),
             last_attempt_ms: Some(1784281400000),
             last_success_ms: Some(1784281000000),
+        },
+        // Antigravity는 파일 캐시가 없어 실시간 조회(`agy -p /usage`) 성공분만 실린다.
+        // 버킷이 모델 그룹 소속이라 창 종류는 모델별 갈래이고, 안 쓴 그룹(리셋
+        // 1970-01-01)·모르는 창은 백엔드가 버린다.
+        antigravity: Some(ProviderUsage {
+            provider: Provider::Antigravity,
+            fetched_at_ms: 1784281300000,
+            plan_label: None,
+            windows: vec![
+                UsageWindow {
+                    kind: UsageWindowKind::WeeklyModel,
+                    label: Some("Gemini Models".into()),
+                    used_percent: 1.05,
+                    resets_at_ms: Some(1784620227000),
+                    window_minutes: Some(10080),
+                    is_active: None,
+                },
+                UsageWindow {
+                    kind: UsageWindowKind::SessionModel,
+                    label: Some("Gemini Models".into()),
+                    used_percent: 1.2,
+                    resets_at_ms: Some(1784290000000),
+                    window_minutes: Some(300),
+                    is_active: None,
+                },
+            ],
+        }),
+        antigravity_live: AntigravityLiveStatus {
+            outcome: AntigravityLiveOutcome::Ok,
+            detail: None,
+            last_attempt_ms: Some(1784281300000),
+            last_success_ms: Some(1784281300000),
         },
     };
     assert_value_eq(fixture_json, serde_json::to_value(&value).unwrap());

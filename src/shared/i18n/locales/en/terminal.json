@@ -78,7 +78,7 @@
     "title": "Conversation",
     "hint": "The CLI keeps running in the terminal. Switch back to the terminal view any time.",
     "showTerminal": "Terminal view",
-    "noLog": "No conversation to read in this tab (not a Claude/Codex session). Use the terminal view.",
+    "noLog": "No conversation to read in this tab (not a Claude/Codex/Antigravity session). Use the terminal view.",
     "noItems": "No messages yet.",
     "inputPh": "Message to the agent (Enter to send, Shift+Enter for a new line)",
     "send": "Send",

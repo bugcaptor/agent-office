@@ -9,6 +9,7 @@
 // 단위 정규화는 전부 여기서: resets_at → epoch ms(Claude ISO8601 파싱,
 // Codex 유닉스 초→ms), 신선도(fetchedAtMs)도 epoch ms.
 
+mod antigravity_live;
 mod api_key_live;
 mod claude;
 mod claude_live;
@@ -22,6 +23,7 @@ use std::path::Path;
 
 use serde::Serialize;
 
+pub use antigravity_live::{AntigravityLiveOutcome, AntigravityLiveStatus};
 pub use claude_live::LiveUsageState;
 pub use codex_live::{CodexLiveOutcome, CodexLiveStatus};
 pub use api_key_live::{ApiKeyLiveOutcome, ApiKeyLiveStatus};
@@ -122,6 +124,9 @@ pub enum Provider {
     Codex,
     /// OpenCode Go 구독(앱 설정의 OpenCode API 키로 조회).
     Opencode,
+    /// Antigravity(`agy` CLI). 파일 캐시 미러가 없어 실시간 조회에만 의존한다
+    /// — antigravity_live.rs 헤더 주석 참고.
+    Antigravity,
 }
 
 /// 한도 윈도 1개. TS `UsageWindow` 미러(camelCase). nullable 필드는
@@ -177,6 +182,11 @@ pub struct UsageSnapshot {
     pub openrouter: Option<OpenRouterUsage>,
     /// OpenRouter 조회 진단(항상 존재). 키가 없으면 `NoKey`.
     pub openrouter_live: ApiKeyLiveStatus,
+    /// Antigravity 사용량. **파일 캐시 미러가 없다** — 실시간 조회가 한 번도
+    /// 성공하지 않았으면 None이고, 이상한 버킷은 파싱에서 버려진다.
+    pub antigravity: Option<ProviderUsage>,
+    /// Antigravity 실시간 조회 진단(항상 존재).
+    pub antigravity_live: AntigravityLiveStatus,
 }
 
 /// 키 저장소에서 방금 읽은 API 키들과, 상세 창을 열 때의 즉시 조회 요청.
@@ -201,6 +211,8 @@ pub fn load_usage_snapshot(claude_root: &Path, codex_root: &Path) -> UsageSnapsh
         opencode_live: ApiKeyLiveStatus::default(),
         openrouter: None,
         openrouter_live: ApiKeyLiveStatus::default(),
+        antigravity: None,
+        antigravity_live: AntigravityLiveStatus::default(),
     }
 }
 
@@ -241,6 +253,7 @@ pub async fn load_usage_snapshot_with_live(
     tokio::join!(
         refresh_claude_live(live, claude_config_dir, now_ms),
         refresh_codex_live(&live.codex, now_ms),
+        refresh_antigravity_live(&live.antigravity, now_ms),
         api_key_live::refresh(&live.openrouter, keys.openrouter, keys.force, now_ms, |key| {
             openrouter::fetch(key, now_ms)
         }),
@@ -257,6 +270,8 @@ pub async fn load_usage_snapshot_with_live(
     snapshot.opencode_live = live.opencode.status();
     snapshot.openrouter = live.openrouter.last_success();
     snapshot.openrouter_live = live.openrouter.status();
+    snapshot.antigravity = live.antigravity.last_success();
+    snapshot.antigravity_live = live.antigravity.status();
     snapshot
 }
 
@@ -308,6 +323,18 @@ async fn refresh_codex_live(live: &codex_live::CodexLiveState, now_ms: i64) {
 /// 실패로 끝나면 **1차 실패의 outcome을 유지**한다. 사용자가 고쳐야 할 대상은
 /// "앱이 왜 직접 못 가져오는가"이고, 폴백 갈래별 결과는 detail에 접두를 달아
 /// 함께 실어 보낸다("연결 실패 · curl: HTTP 401 · claude: 사용량 미제공").
+/// Antigravity 실시간 조회 1회분. 실패하면 직전 성공 값이 그대로 쓰이고,
+/// 그마저 없으면 이 provider는 스냅샷에서 None이다 — 강등할 파일 캐시가 없다.
+async fn refresh_antigravity_live(live: &antigravity_live::AntigravityLiveState, now_ms: i64) {
+    if !live.begin_attempt_if_due(now_ms) {
+        return;
+    }
+    match antigravity_live::fetch_live(now_ms).await {
+        Ok(usage) => live.record_success(usage),
+        Err(failure) => live.record_failure(failure),
+    }
+}
+
 async fn run_fallback_chain(
     live: &LiveUsageState,
     credentials: Option<(&str, TokenSource)>,

@@ -87,6 +87,9 @@
       "unexpectedShort": "即時查詢失敗（回應格式）",
       "detailUnknownCause": "原因不明"
     },
+    "antigravityLive": {
+      "ok": "應用程式正在直接向 agy CLI 查詢用量(最多每 15 分鐘一次)"
+    },
     "attempts": {
       "lastAttempt": "上次嘗試 {{ago}}",
       "lastSuccess": "上次成功 {{ago}}",
@@ -103,7 +106,8 @@
         "claude": "沒有用量資料。在 Claude Code 開啟一次 /usage 就會建立本機快取。",
         "codex": "沒有用量資料。執行 codex login 讓程式直接查詢，或執行一次 Codex CLI 建立本機紀錄。",
         "openrouter": "尚未取得 OpenRouter 花費。",
-        "opencode": "尚未取得 OpenCode Go 用量。"
+        "opencode": "尚未取得 OpenCode Go 用量。",
+        "antigravity": "尚未取得 Antigravity 用量。"
       },
       "allHidden": "沒有可顯示的用量。超過一天沒能從任何來源取得用量。"
     },

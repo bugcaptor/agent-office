@@ -108,6 +108,7 @@ function snap(
     opencodeLive: orLive({ outcome: "no_key" }),
     openrouter: null,
     openrouterLive: orLive({ outcome: "no_key" }),
+    antigravity: null, antigravityLive: { outcome: "never_attempted", detail: null, lastAttemptMs: null, lastSuccessMs: null },
   };
 }
 
@@ -826,6 +827,7 @@ describe("하단 뱃지 고르기", () => {
     opencodeLive: orLive(),
     openrouter: orUsage({ fetchedAtMs: now, usageDaily: 0.5, usageTotal: 3 }),
     openrouterLive: orLive(),
+    antigravity: null, antigravityLive: { outcome: "never_attempted", detail: null, lastAttemptMs: null, lastSuccessMs: null },
   });
 
   it("후보가 넷이어도 최근 사용 2개만, 고정 순서로", () => {
@@ -1039,5 +1041,54 @@ describe("카탈로그 렌더(en)", () => {
 
   afterAll(async () => {
     await initI18nForTest(SOURCE_LANGUAGE); // 정본 복구(파일 간 언어 상태 누수 방지)
+  });
+});
+
+describe("Antigravity(agy) 사용량", () => {
+  const now = 1_800_000_000_000;
+  const agWindow = (partial: Partial<UsageWindow>): UsageWindow => ({
+    kind: "weekly_model",
+    label: "Gemini Models",
+    usedPercent: 10,
+    resetsAtMs: now + 3_600_000,
+    windowMinutes: 10080,
+    isActive: null,
+    ...partial,
+  });
+  const agUsage = (windows: UsageWindow[]): ProviderUsage => ({
+    provider: "antigravity",
+    fetchedAtMs: now - 60_000,
+    planLabel: null,
+    windows,
+  });
+
+  it("값이 없으면 조회 실패여도 provider째 숨기고 실패 안내도 내지 않는다", () => {
+    for (const outcome of ["never_attempted", "cli_missing", "command_failed", "unexpected_response"] as const) {
+      const s = {
+        ...snap(null, null),
+        antigravityLive: { outcome, detail: "x", lastAttemptMs: now, lastSuccessMs: null },
+      };
+      expect(visibleUsageProviders(s, now)).not.toContain("antigravity");
+      expect(describeProviderLive(s, "antigravity")).toBeNull();
+    }
+  });
+
+  it("값이 있으면 보이고, 하루 넘게 낡으면 숨긴다", () => {
+    const usage = agUsage([agWindow({})]);
+    const live = { outcome: "ok", detail: null, lastAttemptMs: now, lastSuccessMs: now } as const;
+    expect(visibleUsageProviders({ ...snap(null, null), antigravity: usage, antigravityLive: live }, now)).toContain(
+      "antigravity",
+    );
+    const old = { ...usage, fetchedAtMs: now - DEAD_THRESHOLD_MS - 1 };
+    expect(visibleUsageProviders({ ...snap(null, null), antigravity: old, antigravityLive: live }, now)).not.toContain(
+      "antigravity",
+    );
+  });
+
+  it("뱃지는 가장 절박한 창의 그룹에서 [5시간, 주간]을 고른다", () => {
+    const geminiWeekly = agWindow({ usedPercent: 40 });
+    const gemini5h = agWindow({ kind: "session_model", usedPercent: 20, windowMinutes: 300 });
+    const thirdWeekly = agWindow({ label: "Claude and GPT models", usedPercent: 5 });
+    expect(badgeWindows(agUsage([thirdWeekly, geminiWeekly, gemini5h]))).toEqual([gemini5h, geminiWeekly]);
   });
 });

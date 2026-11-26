@@ -49,7 +49,7 @@ export interface UsageWindow {
  * `windows`는 가변 배열 — UI가 "5시간+주간 둘 다 있음"을 하드코딩하지 않는다.
  */
 export interface ProviderUsage {
-  provider: "claude" | "codex" | "opencode";
+  provider: "claude" | "codex" | "opencode" | "antigravity";
   /**
    * 신선도 기준 시각(epoch ms). 출처마다 갱신 조건이 다르다: 앱의 실시간
    * 조회가 성공하면 그 조회 시각이고, 실패하면 로컬 캐시(Claude는
@@ -220,4 +220,33 @@ export interface UsageSnapshot {
   /** OpenRouter 키 사용액. 키가 없거나 아직 못 받아왔으면 null. */
   openrouter: OpenRouterUsage | null;
   openrouterLive: ApiKeyLiveStatus;
+  /**
+   * Antigravity(agy) 사용량. 로컬 파일 캐시가 없어 실시간 조회(`agy -p /usage`)가
+   * 한 번도 성공하지 않았으면 null이다. 이상한 버킷(안 쓴 그룹·모르는 창)은
+   * 백엔드가 버리므로 실린 창은 모두 그릴 만한 값이다.
+   */
+  antigravity: ProviderUsage | null;
+  antigravityLive: AntigravityLiveStatus;
+}
+
+/**
+ * Antigravity 실시간 조회(`agy -p /usage --output-format json`)의 마지막 시도
+ * 결과. Rust `AntigravityLiveOutcome`(serde snake_case) 미러. 화면은 `ok`가
+ * 아닌 갈래를 따로 알리지 않는다 — 값이 없으면 provider째 숨긴다.
+ */
+export type AntigravityLiveOutcome =
+  | "never_attempted"
+  | "ok"
+  | "cli_missing"
+  | "cli_failed"
+  | "timeout"
+  | "command_failed"
+  | "unexpected_response";
+
+/** Antigravity 실시간 조회 진단. Rust `AntigravityLiveStatus` 미러. 항상 존재한다. */
+export interface AntigravityLiveStatus {
+  outcome: AntigravityLiveOutcome;
+  detail: string | null;
+  lastAttemptMs: number | null;
+  lastSuccessMs: number | null;
 }

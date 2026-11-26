@@ -547,12 +547,13 @@ pub fn run() {
             // agy 리줌 캡처: 기록까지만, 재개 UI는 범위 밖. claude와 같은
             // 결(스토어 → 레코더(sink) → observer runtime)이지만 provider별로
             // 스토어 파일을 나눈다.
+            let agy_resume_store = Arc::new(crate::persistence::agy_resume_store::AgyResumeStore::new(
+                data_dir.join("agy-resume.json"),
+            ));
             let agy_resume_recorder = Arc::new(
                 crate::observer::agy_resume_recorder::AgyResumeRecorder::new(
                     registry.clone(),
-                    Arc::new(crate::persistence::agy_resume_store::AgyResumeStore::new(
-                        data_dir.join("agy-resume.json"),
-                    )),
+                    agy_resume_store.clone(),
                 ),
             );
             // 사무실 shim 권한 사전 승인. 업무 수신함(office-task)은 업무 패널이 켜졌을
@@ -774,7 +775,7 @@ pub fn run() {
             // (Tailscale 켜짐·DHCP)는 감시 태스크가 따라간다.
             let web_dash = Arc::new(crate::webdash::WebDashState::new(
                 data_dir.clone(),
-                crate::webdash::log::production_sources(claude_resume_store.clone()),
+                crate::webdash::log::production_sources(claude_resume_store.clone(), agy_resume_store.clone()),
                 {
                     let handle = handle.clone();
                     Arc::new(crate::control::autorun::AutoRunBridge::new(move |request: &serde_json::Value| {

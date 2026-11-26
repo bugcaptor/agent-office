@@ -18,7 +18,7 @@ function provider(fetchedAtMs: number, windows: UsageWindow[], name: ProviderUsa
 }
 function snapshot(claude: ProviderUsage | null, codex: ProviderUsage | null = null): UsageSnapshot {
   const never = { outcome: "never_attempted", detail: null, lastAttemptMs: null, lastSuccessMs: null } as const;
-  return { claude, codex, opencode: null, openrouter: null, claudeLive: { ...never, tokenSource: null, via: null }, codexLive: never, opencodeLive: never, openrouterLive: never };
+  return { claude, codex, opencode: null, openrouter: null, claudeLive: { ...never, tokenSource: null, via: null }, codexLive: never, opencodeLive: never, openrouterLive: never, antigravity: null, antigravityLive: never };
 }
 function task(cost: number, patch: Partial<TaskSample> = {}): TaskSample {
   return { provider: "claude", cost, judgeCost: 0, durationMs: HOUR, at: T0, ...patch };

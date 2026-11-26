@@ -87,6 +87,9 @@
       "unexpectedShort": "Live fetch failed (response shape)",
       "detailUnknownCause": "cause unknown"
     },
+    "antigravityLive": {
+      "ok": "The app asks the agy CLI for usage directly (at most every 15 minutes)"
+    },
     "attempts": {
       "lastAttempt": "last try {{ago}}",
       "lastSuccess": "last success {{ago}}",
@@ -103,7 +106,8 @@
         "claude": "No usage data. Open /usage once in Claude Code to create the local cache.",
         "codex": "No usage data. Run codex login so the app can fetch it, or run Codex CLI once to create local records.",
         "openrouter": "No OpenRouter spend fetched yet.",
-        "opencode": "No OpenCode Go usage fetched yet."
+        "opencode": "No OpenCode Go usage fetched yet.",
+        "antigravity": "Antigravity usage has not been fetched yet."
       },
       "allHidden": "No usage to show — nothing could be fetched from any CLI for over a day."
     },

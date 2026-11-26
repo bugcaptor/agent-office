@@ -47,7 +47,7 @@ function usage(percent: number, resetsAtMs: number, fetchedAtMs = Date.now()): U
   return {
     claude: { provider: "claude", fetchedAtMs, planLabel: null, windows: [{ kind: "session", label: null, usedPercent: percent, resetsAtMs, windowMinutes: 300, isActive: null }] },
     codex: null, opencode: null, openrouter: null,
-    claudeLive: { ...never, tokenSource: null, via: null }, codexLive: never, opencodeLive: never, openrouterLive: never,
+    claudeLive: { ...never, tokenSource: null, via: null }, codexLive: never, opencodeLive: never, openrouterLive: never, antigravity: null, antigravityLive: never,
   };
 }
 /** 1달러 = 2%p, 최근 태스크 10달러, 후속 지시 한 턴 10달러. 다음 태스크는 +20%p로 본다. */

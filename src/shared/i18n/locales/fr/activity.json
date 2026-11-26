@@ -87,6 +87,9 @@
       "unexpectedShort": "Échec du relevé (format de réponse)",
       "detailUnknownCause": "cause inconnue"
     },
+    "antigravityLive": {
+      "ok": "L'app interroge directement la CLI agy sur l'utilisation (au plus toutes les 15 minutes)"
+    },
     "attempts": {
       "lastAttempt": "dernière tentative {{ago}}",
       "lastSuccess": "dernier succès {{ago}}",
@@ -103,7 +106,8 @@
         "claude": "Aucune donnée d'utilisation. Ouvrez /usage une fois dans Claude Code pour créer le cache local.",
         "codex": "Aucune donnée d'utilisation. Lancez codex login pour que l'app la relève, ou exécutez Codex CLI une fois pour créer les enregistrements locaux.",
         "openrouter": "Aucune dépense OpenRouter récupérée pour l'instant.",
-        "opencode": "Aucune utilisation OpenCode Go récupérée pour l'instant."
+        "opencode": "Aucune utilisation OpenCode Go récupérée pour l'instant.",
+        "antigravity": "L'utilisation d'Antigravity n'a pas encore été récupérée."
       },
       "allHidden": "Aucune utilisation à afficher — rien n'a pu être relevé depuis plus d'un jour, quel que soit le CLI."
     },

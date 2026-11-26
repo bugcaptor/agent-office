@@ -18,7 +18,7 @@ import type { ApiKeyStatus, SummaryProvider } from "@shared/types";
 export const SUMMARY_DEFAULT_MODELS: Record<SummaryProvider, { light: string; heavy: string }> = {
   claude: { light: "haiku", heavy: "sonnet" },
   codex: { light: "gpt-5.4-mini", heavy: "gpt-5.4" },
-  agy: { light: "gemini-3.6-flash-low", heavy: "gemini-3.1-pro-low" },
+  agy: { light: "gemini-3.8-flash-low", heavy: "gemini-3.8-flash-medium" },
   gemini: { light: "gemini-2.5-flash", heavy: "gemini-2.5-pro" },
   opencode: {
     light: "opencode-go/deepseek-v4-flash",

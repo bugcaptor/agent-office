@@ -505,7 +505,7 @@ function usage(percent: number, resetsAtMs = Date.now() + HOUR): UsageSnapshot {
   return {
     claude: { provider: "claude", fetchedAtMs: Date.now(), planLabel: null, windows: [{ kind: "session", label: null, usedPercent: percent, resetsAtMs, windowMinutes: 300, isActive: null }] },
     codex: null, opencode: null, openrouter: null,
-    claudeLive: { ...never, tokenSource: null, via: null }, codexLive: never, opencodeLive: never, openrouterLive: never,
+    claudeLive: { ...never, tokenSource: null, via: null }, codexLive: never, opencodeLive: never, openrouterLive: never, antigravity: null, antigravityLive: never,
   };
 }
 /** 진행 시간 누계를 바꾼다(스토어가 바뀌면 실행기가 깨어 상한을 본다). */

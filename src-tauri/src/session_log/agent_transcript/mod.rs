@@ -15,6 +15,7 @@
 // 어떤 실패도 세션이나 로그를 막지 않는다. 파일이 없으면 아무 일도 없고,
 // 파싱이 깨진 줄은 조용히 건너뛴다.
 
+pub mod agy;
 pub mod claude;
 pub mod codex;
 

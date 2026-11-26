@@ -224,11 +224,15 @@ fn new_epoch() -> u64 {
 pub type SourceFactory =
     Arc<dyn Fn() -> Vec<Box<dyn agent_transcript::TranscriptSource>> + Send + Sync>;
 
-pub fn production_sources(lookup: Arc<dyn AgentSessionLookup>) -> SourceFactory {
+pub fn production_sources(
+    lookup: Arc<dyn AgentSessionLookup>,
+    agy_store: Arc<crate::persistence::agy_resume_store::AgyResumeStore>,
+) -> SourceFactory {
     Arc::new(move || {
         let mut sources: Vec<Box<dyn agent_transcript::TranscriptSource>> = Vec::new();
         sources.extend(agent_transcript::claude::source(lookup.clone()));
         sources.extend(agent_transcript::codex::source());
+        sources.extend(agent_transcript::agy::source(agy_store.clone()));
         sources
     })
 }

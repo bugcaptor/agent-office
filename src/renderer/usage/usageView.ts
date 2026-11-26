@@ -12,6 +12,7 @@
 
 import type { TextKey } from "@renderer/shared/textKey";
 import type {
+  AntigravityLiveStatus,
   ApiKeyLiveStatus,
   ClaudeLiveStatus,
   CodexLiveStatus,
@@ -23,12 +24,16 @@ import type {
 } from "@shared/types";
 
 /** 한도 사용률(윈도 배열)을 표시하는 provider와 그 고정 순서. */
-export const USAGE_PROVIDERS = ["claude", "codex", "opencode"] as const;
+export const USAGE_PROVIDERS = ["claude", "codex", "antigravity", "opencode"] as const;
 
 export type UsageProvider = (typeof USAGE_PROVIDERS)[number];
 
 /** provider별 실시간 조회 진단의 합집합. 공통 필드만 읽는 자리에서 쓴다. */
-export type AnyLiveStatus = ClaudeLiveStatus | CodexLiveStatus | ApiKeyLiveStatus;
+export type AnyLiveStatus =
+  | ClaudeLiveStatus
+  | CodexLiveStatus
+  | ApiKeyLiveStatus
+  | AntigravityLiveStatus;
 
 /**
  * 앱 설정의 API 키로 조회하는 provider. 키가 없는 사용자가 대부분이라, 진단이
@@ -36,6 +41,13 @@ export type AnyLiveStatus = ClaudeLiveStatus | CodexLiveStatus | ApiKeyLiveStatu
  * 비치지 않게.
  */
 const KEYED_PROVIDERS: ReadonlySet<UsageProvider> = new Set(["opencode"]);
+
+/**
+ * 값이 있을 때만 보이는 provider. agy는 설치·로그인하지 않은 사용자가 많고,
+ * 조회가 안 되거나 값이 이상하면(백엔드가 버린 버킷) 굳이 알리지 않는다 —
+ * `AG —`나 실패 안내 없이 provider째 숨긴다.
+ */
+const VALUE_ONLY_PROVIDERS: ReadonlySet<UsageProvider> = new Set(["antigravity"]);
 
 /** 신선도가 이보다 오래되면(ms) stale로 보고 흐리게 표시한다. */
 export const STALE_THRESHOLD_MS = 30 * 60 * 1000;
@@ -64,6 +76,7 @@ export function usageLevel(usedPercent: number): UsageLevel {
 export const PROVIDER_SHORT: Record<UsageProvider, string> = {
   claude: "CL",
   codex: "CX",
+  antigravity: "AG",
   opencode: "OC",
 };
 
@@ -88,6 +101,8 @@ export function providerLive(
       return snapshot.codexLive;
     case "opencode":
       return snapshot.opencodeLive;
+    case "antigravity":
+      return snapshot.antigravityLive;
   }
 }
 
@@ -118,7 +133,9 @@ export function visibleUsageProviders(
 ): UsageProvider[] {
   return USAGE_PROVIDERS.filter((p) => {
     const live = providerLive(snapshot, p);
-    if (KEYED_PROVIDERS.has(p) && !live && !providerUsage(snapshot, p)) return false;
+    const usage = providerUsage(snapshot, p);
+    if (VALUE_ONLY_PROVIDERS.has(p) && (!usage || usage.windows.length === 0)) return false;
+    if (KEYED_PROVIDERS.has(p) && !live && !usage) return false;
     return !isProviderGone(providerUsage(snapshot, p), live, now);
   });
 }
@@ -154,6 +171,7 @@ function highestUsedWindow(windows: readonly UsageWindow[]): UsageWindow | null 
  */
 export function badgeWindows(usage: ProviderUsage | null): UsageWindow[] {
   if (!usage || usage.windows.length === 0) return [];
+  if (usage.provider === "antigravity") return antigravityBadgeWindows(usage.windows);
   const windows =
     usage.provider === "codex"
       ? usage.windows.filter((w) => w.label === null)
@@ -164,6 +182,20 @@ export function badgeWindows(usage: ProviderUsage | null): UsageWindow[] {
   const second = rest.find((w) => w.kind === "weekly") ?? highestUsedWindow(rest);
   if (!session) return second ? [second] : [];
   return second ? [session, second] : [session];
+}
+
+/**
+ * Antigravity의 창은 전부 모델 그룹(예: "Gemini Models") 소속이다. 가장 절박한
+ * 창이 속한 그룹 하나를 골라 그 그룹의 [5시간, 주간] 창을 보인다 — 그룹을 섞으면
+ * 두 숫자가 서로 다른 한도라 읽을 수 없다.
+ */
+function antigravityBadgeWindows(windows: readonly UsageWindow[]): UsageWindow[] {
+  const urgent = highestUsedWindow(windows);
+  if (!urgent) return [];
+  const group = windows.filter((w) => w.label === urgent.label);
+  const session = group.find((w) => w.kind === "session_model" || w.kind === "session");
+  const weekly = group.find((w) => w.kind === "weekly_model" || w.kind === "weekly");
+  return [session, weekly].filter((w): w is UsageWindow => !!w);
 }
 
 /** 윈도 종류 라벨 키. 모델별 창은 모델명(label)을 곁들인다. */
@@ -483,7 +515,24 @@ export function describeProviderLive(
       return describeCodexLiveStatus(snapshot.codexLive);
     case "opencode":
       return describeApiKeyLiveStatus(snapshot.opencodeLive, "OpenCode");
+    case "antigravity":
+      return describeAntigravityLiveStatus(snapshot.antigravityLive);
   }
+}
+
+/**
+ * Antigravity 조회 진단 → 표시 문구. 성공일 때만 한 줄을 내고, 실패 갈래는
+ * 알리지 않는다(값이 없으면 provider째 숨고, 직전 값은 신선도 표시가 낡음을 말한다).
+ */
+export function describeAntigravityLiveStatus(
+  status: AntigravityLiveStatus | null | undefined,
+): LiveStatusNote | null {
+  if (status?.outcome !== "ok") return null;
+  return {
+    level: "ok",
+    text: { key: "usage.antigravityLive.ok" },
+    short: { key: "usage.live.okDirectShort" },
+  };
 }
 
 // ── OpenRouter 키 사용액 ─────────────────────────────────────────────
@@ -790,5 +839,8 @@ export function mergeUsageSnapshot(
     opencodeLive: next.opencodeLive ?? prev?.opencodeLive,
     openrouter: next.openrouter !== undefined ? next.openrouter : (prev?.openrouter ?? null),
     openrouterLive: next.openrouterLive ?? prev?.openrouterLive,
+    // 백엔드가 마지막 성공 값을 메모리에 쥐고 있어 null은 "아직 한 번도 못 받음"이다.
+    antigravity: fresherProvider(prev?.antigravity ?? null, next.antigravity ?? null),
+    antigravityLive: next.antigravityLive ?? prev?.antigravityLive,
   };
 }

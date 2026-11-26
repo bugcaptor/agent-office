@@ -51,6 +51,7 @@ const PROVIDER_NAME: Record<UsageProvider, string> = {
   claude: "Claude Code",
   codex: "Codex CLI",
   opencode: "OpenCode Go",
+  antigravity: "Antigravity",
 };
 
 /** 표시용 1초 tick(로컬 시계). 모달이 열려 있을 때만 돈다. */

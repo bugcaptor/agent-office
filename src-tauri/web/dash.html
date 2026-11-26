@@ -225,7 +225,7 @@ const S = {
     tabs: { chars: "캐릭터", talks: "토의", usage: "사용량" },
     theme: { auto: "◐ 자동", light: "☀ 밝게", dark: "☾ 어둡게", hint: (now) => `화면 테마: ${now} · 눌러서 바꾸기(자동은 기기 설정을 따름)` },
     phase: { working: "작업 중", "needs-human": "답을 기다림", idle: "입력 대기", ended: "종료됨", starting: "시작 중", off: "꺼짐", running: "켜짐" },
-    clockedOut: "퇴근", back: "← 목록", log: "대화 로그", noLog: "이 터미널에는 읽을 대화 로그가 없습니다(Claude·Codex 전사가 없는 세션).", noItems: "아직 대화가 없습니다.",
+    clockedOut: "퇴근", back: "← 목록", log: "대화 로그", noLog: "이 터미널에는 읽을 대화 로그가 없습니다(Claude·Codex·Antigravity 전사가 없는 세션).", noItems: "아직 대화가 없습니다.",
     restart: "터미널 재시작", resume: "이어하기", terminate: "종료", interrupt: "작업 중단(Esc)", ctrlc: "Ctrl-C", launch: "CLI 실행", launchCli: "띄울 CLI",
     again: "한 번 더 눌러 확인", done: "보냈습니다", result: "결과", lines: "줄",
     sentTasks: "보낸 업무", taskState: { in_progress: "진행 중", review: "끝남 · 확인 대기" }, markDone: "완료", markedDone: "완료로 옮겼습니다",
@@ -269,7 +269,7 @@ const S = {
     tabs: { chars: "Characters", talks: "Discussions", usage: "Usage" },
     theme: { auto: "◐ Auto", light: "☀ Light", dark: "☾ Dark", hint: (now) => `Theme: ${now} · tap to change (Auto follows the device)` },
     phase: { working: "Working", "needs-human": "Waiting for answer", idle: "Waiting for input", ended: "Ended", starting: "Starting", off: "Off", running: "On" },
-    clockedOut: "Clocked out", back: "← List", log: "Conversation", noLog: "No conversation log for this terminal (no Claude/Codex transcript).", noItems: "No messages yet.",
+    clockedOut: "Clocked out", back: "← List", log: "Conversation", noLog: "No conversation log for this terminal (no Claude/Codex/Antigravity transcript).", noItems: "No messages yet.",
     restart: "Restart terminal", resume: "Resume", terminate: "Terminate", interrupt: "Interrupt (Esc)", ctrlc: "Ctrl-C", launch: "Run CLI", launchCli: "CLI to run",
     again: "Tap again to confirm", done: "Sent", result: "Result", lines: "lines",
     sentTasks: "Sent tasks", taskState: { in_progress: "In progress", review: "Finished · to review" }, markDone: "Done", markedDone: "Marked done",
@@ -515,6 +515,9 @@ function placeOf(c) {
   const branch = c.label && c.label.branch;
   return [leaf(cwdOf(c)), branch && "⎇ " + branch].filter(Boolean).join(" ");
 }
+// 사용량 provider(서버 스냅샷 키). antigravity는 값이 있을 때만 실려 온다 — 서버가 이상한 버킷을 버린다.
+const USAGE_KEYS = ["claude", "codex", "antigravity", "opencode"];
+const USAGE_NAMES = { claude: "Claude", codex: "Codex", antigravity: "Antigravity", opencode: "Opencode" };
 const CLI_NAMES = { claude: "Claude", codex: "Codex", pi: "Pi", kilo: "Kilo", opencode: "OpenCode", agy: "Antigravity" };
 /** 셸 프롬프트에서 띄울 수 있는 CLI(서버 `launch_cli`와 같은 목록). */
 const LAUNCH_CLIS = ["claude", "codex", "pi", "kilo", "opencode", "agy"];
@@ -995,7 +998,7 @@ function draftOf(c) {
 function renderTaskForm(c) {
   const d = draftOf(c);
   const cli = el("select", { onchange: (e) => { d.cli = e.target.value; } },
-    ...["claude", "codex"].map((v) => el("option", { value: v, text: CLI_NAMES[v], selected: d.cli === v })));
+    ...["claude", "codex", "agy"].map((v) => el("option", { value: v, text: CLI_NAMES[v], selected: d.cli === v })));
   // 직접 입력이 위에 있으니 업무 보내기는 접어 둔다(펼친 상태는 기억).
   return el("details", { class: "card taskform", id: "taskform", open: d.open, ontoggle: (e) => { d.open = e.currentTarget.open; } },
     el("summary", null, S.sendTask, el("span", { class: "sub", text: S.taskHelp })),
@@ -1311,10 +1314,10 @@ function renderTalk() {
 function renderUsage() {
   if (!usageData) return [el("div", { class: "empty", text: "…" })];
   const out = [];
-  for (const key of ["claude", "codex", "opencode"]) {
+  for (const key of USAGE_KEYS) {
     const p = usageData[key];
     if (!p || !p.windows || !p.windows.length) continue;
-    out.push(el("h2", { text: key[0].toUpperCase() + key.slice(1) + (p.planLabel ? ` · ${p.planLabel}` : "") }));
+    out.push(el("h2", { text: USAGE_NAMES[key] + (p.planLabel ? ` · ${p.planLabel}` : "") }));
     out.push(el("div", { class: "card" }, ...p.windows.map((w) => {
       const pct = Math.max(0, Math.min(100, Math.round(w.usedPercent)));
       return el("div", { style: "margin: 6px 0" },
@@ -1337,6 +1340,11 @@ async function refreshUsage() {
   return true;
 }
 function barWindows(p) {
+  if (p.provider === "antigravity") {
+    // 창이 모두 모델 그룹 소속이다. 가장 절박한 창의 그룹에서 [5시간, 주간]만 보인다.
+    const top = p.windows.reduce((a, w) => (w.usedPercent > a.usedPercent ? w : a));
+    return p.windows.filter((w) => w.label === top.label).slice(0, 2);
+  }
   const main = p.windows.filter((w) => w.kind === "session" || w.kind === "weekly" || w.kind === "monthly");
   return (main.length ? main : p.windows).slice(0, 3);
 }
@@ -1344,14 +1352,14 @@ function renderUsageBar() {
   const bar = document.getElementById("usagebar");
   if (!token || unauthorized || !usageData) { bar.replaceChildren(); return; }
   const groups = [];
-  for (const key of ["claude", "codex", "opencode"]) {
+  for (const key of USAGE_KEYS) {
     const p = usageData[key];
     if (!p || !p.windows || !p.windows.length) continue;
-    groups.push(el("span", { class: "ub-p" }, el("b", { text: key[0].toUpperCase() + key.slice(1) }),
+    groups.push(el("span", { class: "ub-p" }, el("b", { text: USAGE_NAMES[key] }),
       ...barWindows(p).map((w) => {
         const pct = Math.max(0, Math.min(100, Math.round(w.usedPercent)));
         return el("span", { class: "ub-w" + (pct >= 95 ? " full" : pct >= 75 ? " hot" : ""), title: [S.win[w.kind] || w.kind, w.resetsAtMs && `${S.resets} ${fmtTime(w.resetsAtMs)}`].filter(Boolean).join(" · ") },
-          S.winShort[w.kind] || S.win[w.kind] || w.kind, el("span", { class: "ub-m" }, el("i", { style: `width:${pct}%` })), pct + "%");
+          S.winShort[w.kind.replace("_model", "")] || S.win[w.kind] || w.kind, el("span", { class: "ub-m" }, el("i", { style: `width:${pct}%` })), pct + "%");
       })));
   }
   bar.replaceChildren(...groups);

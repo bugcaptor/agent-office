@@ -78,7 +78,7 @@
     "title": "对话视图",
     "hint": "CLI 仍在终端中运行。随时可以切回终端视图。",
     "showTerminal": "终端视图",
-    "noLog": "此标签页没有可读的对话(不是 Claude/Codex 会话)。请使用终端视图。",
+    "noLog": "此标签页没有可读的对话(不是 Claude/Codex/Antigravity 会话)。请使用终端视图。",
     "noItems": "还没有对话。",
     "inputPh": "发给代理的消息(Enter 发送,Shift+Enter 换行)",
     "send": "发送",

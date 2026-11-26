@@ -42,10 +42,10 @@ export const MODEL_PRESETS: Record<ModelCatalogProvider, string[]> = {
   anthropic: ["claude-haiku-4-5", "claude-sonnet-5", "claude-opus-5", "claude-fable-5"],
   codex: ["gpt-5.4-mini", "gpt-5.4", "gpt-5.6-luna", "gpt-5.6-terra", "gpt-5.6-sol"],
   agy: [
-    "gemini-3.6-flash-low",
-    "gemini-3.1-pro-low",
-    "gemini-3.7-flash-low",
-    "gemini-3.7-flash-medium",
+    "gemini-3.8-flash-low",
+    "gemini-3.8-flash-medium",
+    "gemini-4-neon-low",
+    "gemini-4-neon-medium",
   ],
   gemini: [
     "gemini-2.5-flash",

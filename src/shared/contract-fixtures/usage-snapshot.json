@@ -106,5 +106,34 @@
     "detail": "HTTP 502",
     "lastAttemptMs": 1784281400000,
     "lastSuccessMs": 1784281000000
+  },
+  "antigravity": {
+    "provider": "antigravity",
+    "fetchedAtMs": 1784281300000,
+    "planLabel": null,
+    "windows": [
+      {
+        "kind": "weekly_model",
+        "label": "Gemini Models",
+        "usedPercent": 1.05,
+        "resetsAtMs": 1784620227000,
+        "windowMinutes": 10080,
+        "isActive": null
+      },
+      {
+        "kind": "session_model",
+        "label": "Gemini Models",
+        "usedPercent": 1.2,
+        "resetsAtMs": 1784290000000,
+        "windowMinutes": 300,
+        "isActive": null
+      }
+    ]
+  },
+  "antigravityLive": {
+    "outcome": "ok",
+    "detail": null,
+    "lastAttemptMs": 1784281300000,
+    "lastSuccessMs": 1784281300000
   }
 }

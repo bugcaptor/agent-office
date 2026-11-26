@@ -51,6 +51,7 @@ function snapshot(): UsageSnapshot {
     opencodeLive: { outcome: "no_key", detail: null, lastAttemptMs: null, lastSuccessMs: null },
     openrouter: null,
     openrouterLive: { outcome: "no_key", detail: null, lastAttemptMs: null, lastSuccessMs: null },
+    antigravity: null, antigravityLive: { outcome: "never_attempted", detail: null, lastAttemptMs: null, lastSuccessMs: null },
   };
 }
 
@@ -92,6 +93,7 @@ describe("UsageFloat", () => {
           isFreeTier: false,
         },
         openrouterLive: { outcome: "ok", detail: null, lastAttemptMs: NOW, lastSuccessMs: NOW },
+        antigravity: null, antigravityLive: { outcome: "never_attempted", detail: null, lastAttemptMs: null, lastSuccessMs: null },
       },
       terminalViewMode: "filled",
       activeTerminalAgentId: "agent-1",

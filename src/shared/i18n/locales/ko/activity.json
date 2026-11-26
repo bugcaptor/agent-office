@@ -87,6 +87,9 @@
       "unexpectedShort": "실시간 조회 실패(응답 형태)",
       "detailUnknownCause": "원인 불명"
     },
+    "antigravityLive": {
+      "ok": "앱이 agy CLI에 사용량을 직접 물어보는 중 (최대 15분 간격)"
+    },
     "attempts": {
       "lastAttempt": "마지막 시도 {{ago}}",
       "lastSuccess": "마지막 성공 {{ago}}",
@@ -103,7 +106,8 @@
         "claude": "사용량 데이터가 없습니다. Claude Code에서 /usage를 한 번 열면 로컬 캐시가 생깁니다.",
         "codex": "사용량 데이터가 없습니다. codex login 후 앱이 직접 조회하거나, Codex CLI를 한 번 실행하면 로컬 기록이 생깁니다.",
         "openrouter": "아직 OpenRouter 사용액을 받아오지 못했습니다.",
-        "opencode": "아직 OpenCode Go 사용량을 받아오지 못했습니다."
+        "opencode": "아직 OpenCode Go 사용량을 받아오지 못했습니다.",
+        "antigravity": "아직 Antigravity 사용량을 받아오지 못했습니다."
       },
       "allHidden": "표시할 사용량이 없습니다. 어디에서도 하루 넘게 사용량을 가져오지 못했습니다."
     },

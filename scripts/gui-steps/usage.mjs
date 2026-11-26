@@ -1,4 +1,4 @@
-// Usage badges in the bottom bar (the 2 most recently used of CL·CX·OC·OR) and the detail dialog.
+// Usage badges in the bottom bar (the 2 most recently used of CL·CX·AG·OC·OR) and the detail dialog.
 //   npm run gui:shot -- --script scripts/gui-steps/usage.mjs [--size 1280x800]
 export default async ({ page, shot }) => {
   const widget = page.locator(".usage-widget");
