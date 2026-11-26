@@ -97,13 +97,23 @@ const GEMINI_RATES: Readonly<Record<string, ModelRate>> = {
   "gemini-2.0-flash-001": tokenRate(0.1, 0.4, 0.025),
 };
 
+const AGY_ORCHESTRATORS: Readonly<Record<string, string>> = {
+  "gemini-pro-orchestrator-neon": "gemini-4-neon",
+  "gemini-pro-orchestrator": "gemini-4-carbon",
+  "gemini-pro-orchestrator-argon": "gemini-4-argon",
+};
+
 function geminiRateFor(model: string, at: number): ModelRate | null {
   const base = model
     .replace(/^(?:projects\/[^/]+\/locations\/[^/]+\/)?publishers\/google\/models\//, "")
     .replace(/^(?:google\/|models\/)/, "")
     .replace(/-(?:low|medium|high|xhigh|tiered)$/, "");
+  // Antigravity의 Orchestrator는 같은 계열 Gemini 4 모델로 계획·실행한다(`agy models`:
+  // "Orchestrator (Neon)"·"(Carbon)"·"(Argon)"). 공개 요율이 따로 없어 그 모델 요율로 셈한다.
+  const orchestrated = AGY_ORCHESTRATORS[base] ?? base;
   // 12월부터 2.5 Pro API 요청은 3.8 Flash로 라우팅된다.
-  const billedModel = base === "gemini-2.5-pro" && at >= GEMINI_DECEMBER_CHANGE ? "gemini-3.8-flash" : base;
+  const billedModel =
+    orchestrated === "gemini-2.5-pro" && at >= GEMINI_DECEMBER_CHANGE ? "gemini-3.8-flash" : orchestrated;
   switch (billedModel) {
     case "gemini-4-carbon":
     case "gemini-4-argon":
