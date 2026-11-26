@@ -42,9 +42,6 @@ use super::{Provider, ProviderUsage, UsageWindow, UsageWindowKind};
 /// 0.7초(실측)보다 느릴 수 있어 넉넉히 잡되, 매달리지는 않게 한다.
 const RPC_TIMEOUT: Duration = Duration::from_secs(20);
 
-/// 진단 detail에 싣는 CLI 오류 문자열 상한(로그·툴팁이 터지지 않게).
-const DETAIL_MAX_CHARS: usize = 120;
-
 /// 실시간 조회의 마지막 시도 결과. TS `CodexLiveOutcome` 미러(serde
 /// snake_case). Claude의 `LiveFetchOutcome`와 **일부러 분리했다** — 이쪽 실패는
 /// HTTP 상태코드가 아니라 "CLI가 없다/죽었다/모르는 응답을 줬다"의 어휘다.
@@ -92,20 +89,11 @@ impl CodexLiveFailure {
     fn new(outcome: CodexLiveOutcome, detail: impl Into<String>) -> Self {
         Self {
             outcome,
-            detail: Some(truncate(detail.into())),
+            detail: Some(super::truncate_detail(detail.into())),
         }
     }
 }
 
-/// 진단 문자열을 표시 가능한 길이로 자른다(순수).
-fn truncate(mut s: String) -> String {
-    s = s.trim().replace(['\n', '\r'], " ");
-    if s.chars().count() <= DETAIL_MAX_CHARS {
-        return s;
-    }
-    let cut: String = s.chars().take(DETAIL_MAX_CHARS).collect();
-    format!("{cut}…")
-}
 
 // ── 자식 프로세스 ────────────────────────────────────────────────────────
 
@@ -548,12 +536,12 @@ mod tests {
 
     #[test]
     fn detail_is_trimmed_and_flattened() {
-        let long = "x".repeat(DETAIL_MAX_CHARS + 10);
+        let long = "x".repeat(crate::usage::DETAIL_MAX_CHARS + 10);
         let failure = CodexLiveFailure::new(CodexLiveOutcome::CliFailed, format!(" a\nb \n{long}"));
         let detail = failure.detail.unwrap();
         assert!(!detail.contains('\n'));
         assert!(detail.starts_with("a b "));
-        assert_eq!(detail.chars().count(), DETAIL_MAX_CHARS + 1, "말줄임 1자 포함");
+        assert_eq!(detail.chars().count(), crate::usage::DETAIL_MAX_CHARS + 1, "말줄임 1자 포함");
     }
 
     #[test]

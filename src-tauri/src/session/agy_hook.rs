@@ -2,11 +2,11 @@
 //
 // Antigravity CLI(agy) 훅 셸 스크립트 정적 배포.
 // 최초 설계대로 구현하되, 스파이크 실측으로
-// 확정된 사실 셋을 반영한다:
+// 확정된 사실을 반영한다:
 //
 //   1. `invocationNum`은 0부터 센다(턴 시작 = PreInvocation && invocationNum
 //      == 0). 이 필터링은 셸에서 JSON을 파싱하지 않고 **서버**
-//      (`observer::event::agy_invocation_num` / `ObserverRuntime::
+//      (`observer::event::agy_invocation_num_from_value` / `ObserverRuntime::
 //      ingest_agy_source`)가 한다 — 이 스크립트는 이벤트 이름 → source
 //      매핑만 한다.
 //   2. 훅 실패/부재에도 agy는 정상 종료한다(S2 실측) — 그래도 매 호출 첫

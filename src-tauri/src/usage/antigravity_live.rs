@@ -55,9 +55,6 @@ const RUN_TIMEOUT: Duration = Duration::from_secs(45);
 /// CLI에게 주는 print 모드 상한. 위 `RUN_TIMEOUT`보다 짧아야 한다.
 const PRINT_TIMEOUT_ARG: &str = "30s";
 
-/// 진단 detail에 싣는 CLI 오류 문자열 상한(로그·툴팁이 터지지 않게).
-const DETAIL_MAX_CHARS: usize = 120;
-
 /// 주간 창의 길이(분). 응답의 `window: "weekly"`를 분으로 정규화한다 —
 /// 다른 provider의 `window_minutes`와 같은 단위로 맞춰 둬야 UI가 창 종류를
 /// 하드코딩하지 않는다.
@@ -115,20 +112,11 @@ impl AntigravityLiveFailure {
     fn new(outcome: AntigravityLiveOutcome, detail: impl Into<String>) -> Self {
         Self {
             outcome,
-            detail: Some(truncate(detail.into())),
+            detail: Some(super::truncate_detail(detail.into())),
         }
     }
 }
 
-/// 진단 문자열을 표시 가능한 길이로 자른다(순수).
-fn truncate(mut s: String) -> String {
-    s = s.trim().replace(['\n', '\r'], " ");
-    if s.chars().count() <= DETAIL_MAX_CHARS {
-        return s;
-    }
-    let cut: String = s.chars().take(DETAIL_MAX_CHARS).collect();
-    format!("{cut}…")
-}
 
 // ── 자식 프로세스 ────────────────────────────────────────────────────────
 

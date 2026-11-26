@@ -29,6 +29,19 @@ pub use codex_live::{CodexLiveOutcome, CodexLiveStatus};
 pub use api_key_live::{ApiKeyLiveOutcome, ApiKeyLiveStatus};
 pub use openrouter::OpenRouterUsage;
 
+/// CLI로 조회하는 provider(codex·agy)의 진단 detail에 싣는 오류 문자열 상한(로그·툴팁이 터지지 않게).
+const DETAIL_MAX_CHARS: usize = 120;
+
+/// 진단 문자열을 한 줄로 펴고 `DETAIL_MAX_CHARS`에서 자른다(순수).
+fn truncate_detail(s: String) -> String {
+    let s = s.trim().replace(['\n', '\r'], " ");
+    if s.chars().count() <= DETAIL_MAX_CHARS {
+        return s;
+    }
+    let cut: String = s.chars().take(DETAIL_MAX_CHARS).collect();
+    format!("{cut}…")
+}
+
 /// Claude 실시간 조회의 마지막 시도 결과. TS `LiveFetchOutcome` 미러
 /// (serde snake_case). 왜 표시값이 낡았는지를 UI가 사용자에게 설명하기 위한
 /// 진단값이다 — 실패해도 스냅샷은 파일 캐시로 정상 반환되므로 이 값은

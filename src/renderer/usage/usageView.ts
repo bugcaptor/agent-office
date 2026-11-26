@@ -136,7 +136,7 @@ export function visibleUsageProviders(
     const usage = providerUsage(snapshot, p);
     if (VALUE_ONLY_PROVIDERS.has(p) && (!usage || usage.windows.length === 0)) return false;
     if (KEYED_PROVIDERS.has(p) && !live && !usage) return false;
-    return !isProviderGone(providerUsage(snapshot, p), live, now);
+    return !isProviderGone(usage, live, now);
   });
 }
 

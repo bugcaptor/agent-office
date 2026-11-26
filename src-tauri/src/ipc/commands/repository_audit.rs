@@ -392,7 +392,6 @@ mod tests {
     fn push_sends_commits_to_upstream_and_returns_fresh_status() {
         let base =
             std::env::temp_dir().join(format!("agent-office-audit-push-{}", uuid::Uuid::new_v4()));
-        let remote = base.join("remote.git");
         let work = base.join("work");
         fs::create_dir_all(&base).unwrap();
         let run = |cwd: &Path, args: &[&str]| {

@@ -407,16 +407,14 @@ pub fn kilo_turn_tokens(body: &[u8]) -> Option<SessionEventTokens> {
 // (`invocationNum`, `workspacePaths`, `transcriptPath`) — Claude/pi의
 // snake_case body와 다르니 헬퍼를 공유하지 않는다.
 
-// 리뷰 지적: `ingest_agy_source`가 이 헬퍼들을 한 body에 여러 번 부르면서
-// 매번 `serde_json::from_slice`를 새로 태우고 있었다. 각 헬퍼를 순수
-// `_from_value(&Value)` 코어 + `&[u8]` 파싱 래퍼로 쪼갠다 — 기존 `&[u8]`
-// 공개 API와 그걸 쓰는 테스트는 그대로 두고, 호출부(ingest_agy_source)만
-// body를 한 번 파싱해 `_from_value` 쪽을 직접 부르게 한다.
+// 호출부(`ingest_agy_source`)는 body를 한 번만 파싱해 `_from_value` 코어를
+// 부른다. `&[u8]` 래퍼는 테스트가 body 리터럴을 바로 넣어 보려고 둔다.
 
 /// agy 훅 body의 top-level `invocationNum`(정수, 0부터 시작 — 스파이크
 /// 실측). 턴 시작 판정(`PreInvocation && invocationNum == 0`)에 쓰인다.
 /// 부재/비정수는 None.
-pub fn agy_invocation_num(body: &[u8]) -> Option<i64> {
+#[cfg(test)]
+fn agy_invocation_num(body: &[u8]) -> Option<i64> {
     agy_invocation_num_from_value(&serde_json::from_slice(body).ok()?)
 }
 
@@ -427,7 +425,8 @@ pub(crate) fn agy_invocation_num_from_value(value: &serde_json::Value) -> Option
 /// agy 훅 body의 `workspacePaths[0]`. 배열이 비어 있을 수 있다 —
 /// 그때는 None이라 호출부가 cwd_override(agy() 셸 래퍼가 실은 `$PWD`,
 /// `X-Agent-Office-Cwd` 헤더로 옴)로 넘어간다.
-pub fn agy_workspace_cwd(body: &[u8]) -> Option<String> {
+#[cfg(test)]
+fn agy_workspace_cwd(body: &[u8]) -> Option<String> {
     agy_workspace_cwd_from_value(&serde_json::from_slice(body).ok()?)
 }
 
@@ -438,7 +437,8 @@ pub(crate) fn agy_workspace_cwd_from_value(value: &serde_json::Value) -> Option<
 
 /// agy 훅 body의 top-level `conversationId`(리줌 ID). 모든 이벤트마다
 /// 실려 온다. 공백/부재/비문자열은 None.
-pub fn agy_conversation_id(body: &[u8]) -> Option<String> {
+#[cfg(test)]
+fn agy_conversation_id(body: &[u8]) -> Option<String> {
     agy_conversation_id_from_value(&serde_json::from_slice(body).ok()?)
 }
 
@@ -449,10 +449,6 @@ pub(crate) fn agy_conversation_id_from_value(value: &serde_json::Value) -> Optio
 
 /// agy 훅 body의 top-level `transcriptPath`(실측: 실제로는
 /// `transcript_full.jsonl`을 가리킨다). 공백/부재/비문자열은 None.
-pub fn agy_transcript_path(body: &[u8]) -> Option<String> {
-    agy_transcript_path_from_value(&serde_json::from_slice(body).ok()?)
-}
-
 pub(crate) fn agy_transcript_path_from_value(value: &serde_json::Value) -> Option<String> {
     let path = value.get("transcriptPath")?.as_str()?;
     (!path.trim().is_empty()).then(|| path.to_string())
@@ -476,7 +472,8 @@ fn extract_user_request(content: &str) -> Option<String> {
 /// 원문이 실려 오지 않아 유일한 경로다. 파일 부재/포맷 이상/빈 텍스트는 모두
 /// None — 호출부가 프롬프트 없이 턴만 여는 것으로 강등한다(pi에서 이미
 /// 검증된 폴백).
-pub fn agy_prompt_text(body: &[u8]) -> Option<String> {
+#[cfg(test)]
+fn agy_prompt_text(body: &[u8]) -> Option<String> {
     agy_prompt_text_from_value(&serde_json::from_slice(body).ok()?)
 }
 
@@ -539,7 +536,8 @@ fn agy_tool_activity_detail(input: &serde_json::Value) -> Option<String> {
 /// `tool_activity_text`/pi의 `pi_tool_activity_text` 대응). agy 1.5.x는
 /// `toolCall: {name, args, id}`로 싣는다(실측). 예전 가정이던 top-level
 /// `name` + `toolInput`/`tool_input`도 받아 둔다. 이름 부재/공백/비문자열은 None.
-pub fn agy_tool_activity_text(body: &[u8]) -> Option<String> {
+#[cfg(test)]
+fn agy_tool_activity_text(body: &[u8]) -> Option<String> {
     agy_tool_activity_text_from_value(&serde_json::from_slice(body).ok()?)
 }
 
@@ -568,7 +566,8 @@ pub(crate) fn agy_tool_activity_text_from_value(value: &serde_json::Value) -> Op
 /// `terminationReason`이 대소문자 무시 `error`면 오류로 끝났음을 알리고, 그 외
 /// (1.5.x 실측 `NO_TOOL_CALL` 등, 파싱 실패 포함)는 고정 완료 문구를 쓴다.
 /// 항상 값을 돌려준다 — "메시지 없음"이 아니라 "말할 것이 고정 문구뿐"이라서.
-pub fn agy_stop_message(body: &[u8]) -> String {
+#[cfg(test)]
+fn agy_stop_message(body: &[u8]) -> String {
     match serde_json::from_slice::<serde_json::Value>(body) {
         Ok(value) => agy_stop_message_from_value(&value),
         Err(_) => agy_stop_message_from_value(&serde_json::Value::Null),
