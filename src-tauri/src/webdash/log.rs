@@ -40,6 +40,9 @@ pub struct ImageMeta {
     pub id: String,
     pub media_type: String,
     pub bytes: usize,
+    /// 그림이 온 파일 경로나 URL(전사가 알려 줄 때만). 로그에 그림과 함께 늘 보인다.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub source: Option<String>,
 }
 
 struct StoredImage {
@@ -65,6 +68,9 @@ pub struct LogItem {
     pub image: Option<ImageMeta>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     files: Vec<FileLink>,
+    /// 에이전트 말을 Markdown으로 그려 거른 HTML(웹 상태판만, `markdown::render`).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    html: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -90,6 +96,8 @@ struct AgentLog {
     last_access: Instant,
     /// 이미지를 보이는가(웹 상태판 설정). 끄면 이미지 항목을 아예 쌓지 않는다.
     show_images: bool,
+    /// 에이전트 말을 HTML로 그려 싣는가(웹 상태판). 앱 대화 보기는 렌더러가 그린다.
+    markdown: bool,
     images: VecDeque<StoredImage>,
 }
 
@@ -100,9 +108,10 @@ impl AgentLog {
                 if !self.show_images {
                     return;
                 }
-                let Some(meta) = self.store_image(&img.media_type, &img.data) else {
+                let Some(mut meta) = self.store_image(&img.media_type, &img.data) else {
                     return;
                 };
+                meta.source = img.source;
                 Some(meta)
             }
             (ItemKind::Image, None) => return,
@@ -115,8 +124,10 @@ impl AgentLog {
             }
             _ => Vec::new(),
         };
+        let html = (self.markdown && item.kind == ItemKind::Text && item.role == ItemRole::Assistant && !item.text.is_empty())
+            .then(|| super::markdown::render(&item.text));
         self.next_seq += 1;
-        self.items.push_back(LogItem { seq: self.next_seq, item, image, files });
+        self.items.push_back(LogItem { seq: self.next_seq, item, image, files, html });
         while self.items.len() > MAX_ITEMS {
             self.items.pop_front();
         }
@@ -135,11 +146,11 @@ impl AgentLog {
         let id = image_id(&bytes);
         if let Some(pos) = self.images.iter().position(|i| i.id == id) {
             let found = self.images.remove(pos).expect("position is in range");
-            let meta = ImageMeta { id, media_type: found.media_type.clone(), bytes: found.bytes.len() };
+            let meta = ImageMeta { id, media_type: found.media_type.clone(), bytes: found.bytes.len(), source: None };
             self.images.push_back(found);
             return Some(meta);
         }
-        let meta = ImageMeta { id: id.clone(), media_type: media_type.to_string(), bytes: bytes.len() };
+        let meta = ImageMeta { id: id.clone(), media_type: media_type.to_string(), bytes: bytes.len(), source: None };
         self.images.push_back(StoredImage { id, media_type: media_type.to_string(), bytes: Arc::new(bytes) });
         let mut total: usize = self.images.iter().map(|i| i.bytes.len()).sum();
         while self.images.len() > MAX_IMAGES || (total > MAX_IMAGE_STORE_BYTES && self.images.len() > 1) {
@@ -226,11 +237,13 @@ pub struct LogCache {
     sources: SourceFactory,
     agents: Mutex<HashMap<String, Arc<Mutex<AgentLog>>>>,
     show_images: AtomicBool,
+    markdown: bool,
 }
 
 impl LogCache {
-    pub fn new(sources: SourceFactory) -> Self {
-        Self { sources, agents: Mutex::new(HashMap::new()), show_images: AtomicBool::new(true) }
+    /// `markdown`: 에이전트 말을 HTML로 그려 싣는가(웹 상태판).
+    pub fn new(sources: SourceFactory, markdown: bool) -> Self {
+        Self { sources, agents: Mutex::new(HashMap::new()), show_images: AtomicBool::new(true), markdown }
     }
 
     /// 이미지 보이기 설정. 바뀌면 들고 있던 로그를 버린다 — 다음 요청이 새 epoch로 다시 채운다.
@@ -289,6 +302,7 @@ impl LogCache {
                         last_tick: None,
                         last_access: Instant::now(),
                         show_images: self.show_images.load(Ordering::SeqCst),
+                        markdown: self.markdown,
                         images: VecDeque::new(),
                     }))
                 })
@@ -347,7 +361,7 @@ mod tests {
         let cache = LogCache::new({
             let path = path.clone();
             Arc::new(move || vec![Box::new(ImageSource(path.clone())) as Box<dyn TranscriptSource>])
-        });
+        }, false);
         let page = cache.read("x", "/w", None, None);
         let images: Vec<&ImageMeta> = page.items.iter().filter_map(|i| i.image.as_ref()).collect();
         // 풀 수 없는 base64는 버리고, 글 항목은 그대로 남는다.
@@ -390,7 +404,7 @@ mod tests {
         let current = Arc::new(Mutex::new(path));
         let cache = LogCache::new(Arc::new(move || {
             vec![Box::new(FileSource(current.clone(), ItemRole::Assistant))]
-        }));
+        }), false);
         let page = cache.read("a", workspace.to_str().unwrap(), None, None);
         let seq = page.items[0].seq;
         let wire = serde_json::to_value(&page.items[0]).unwrap();
@@ -420,7 +434,7 @@ mod tests {
         let cache = LogCache::new({
             let current = current.clone();
             Arc::new(move || vec![Box::new(FileSource(current.clone(), ItemRole::User)) as Box<dyn TranscriptSource>])
-        });
+        }, false);
 
         let first = cache.read("x", "/w", None, None);
         assert!(first.attached);

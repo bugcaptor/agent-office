@@ -83,6 +83,7 @@
     "inputPh": "Message à l'agent (Entrée pour envoyer, Maj+Entrée pour une nouvelle ligne)",
     "send": "Envoyer",
     "inputQueuePh": "En cours — le message est mis en file et envoyé à la fin du tour (Entrée pour l'ajouter, Maj+Entrée pour une nouvelle ligne)",
+    "inputSteerPh": "En cours — envoyé tout de suite et pris en compte après le prochain appel d'outil (Entrée pour envoyer, Maj+Entrée pour une nouvelle ligne)",
     "queue": "Mettre en file",
     "queuedNotice": "Mis en file. Il sera envoyé à la fin du tour.",
     "queueTitle_one": "{{count}} message en file · un est envoyé à chaque fin de tour",

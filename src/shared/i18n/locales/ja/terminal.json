@@ -83,6 +83,7 @@
     "inputPh": "エージェントへのメッセージ(Enter で送信、Shift+Enter で改行)",
     "send": "送信",
     "inputQueuePh": "作業中 — 書くとキューに入れ、ターン終了時に送ります(Enter で追加、Shift+Enter で改行)",
+    "inputSteerPh": "作業中 — すぐに送り、次のツール呼び出しの後に反映されます(Enter で送信、Shift+Enter で改行)",
     "queue": "キューに追加",
     "queuedNotice": "キューに入れました。ターンが終わると送ります。",
     "queueTitle_one": "送信待ち {{count}} 件 · ターンが終わるたびに 1 件ずつ送ります",

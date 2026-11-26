@@ -23,6 +23,7 @@
 
 mod files;
 pub mod log;
+mod markdown;
 pub mod net;
 mod routes;
 mod tls;
@@ -176,9 +177,9 @@ impl WebDashState {
             .ok()
             .map(|t| t.trim().to_string())
             .filter(|t| !t.is_empty());
-        let logs = log::LogCache::new(sources.clone());
+        let logs = log::LogCache::new(sources.clone(), true);
         logs.set_show_images(config.images);
-        let app_logs = log::LogCache::new(sources);
+        let app_logs = log::LogCache::new(sources, false);
         Self {
             data_dir,
             config: Mutex::new(config),

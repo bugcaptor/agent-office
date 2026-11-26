@@ -80,6 +80,25 @@ button.b.confirm { background: var(--bad); color: #fff; border-color: transparen
 .log { margin-top: 10px; }
 .msg { margin: 8px 0; padding: 8px 10px; border-radius: 10px; }
 .msg-text { white-space: pre-wrap; overflow-wrap: anywhere; }
+.md { overflow-wrap: anywhere; }
+.md > :first-child { margin-top: 0; }
+.md > :last-child { margin-bottom: 0; }
+.md p, .md ul, .md ol, .md blockquote, .md table { margin: 6px 0; }
+.md h1, .md h2, .md h3, .md h4, .md h5, .md h6 { margin: 12px 0 6px; line-height: 1.3; }
+.md h1 { font-size: 1.25em; } .md h2 { font-size: 1.15em; } .md h3 { font-size: 1.05em; } .md h4, .md h5, .md h6 { font-size: 1em; }
+.md ul, .md ol { padding-left: 22px; }
+.md li + li { margin-top: 2px; }
+.md li > input[type="checkbox"] { width: auto; margin: 0 6px 0 0; vertical-align: middle; }
+.md a { color: var(--accent); }
+.md code { font: 0.88em ui-monospace, Menlo, monospace; background: var(--code); padding: 1px 4px; border-radius: 4px; }
+.md pre code { background: none; padding: 0; }
+.md blockquote { padding: 0 10px; border-left: 3px solid var(--line); color: var(--muted); }
+.md hr { border: 0; border-top: 1px solid var(--line); margin: 10px 0; }
+.md .tablewrap { overflow-x: auto; }
+.md table { border-collapse: collapse; font-size: 13px; }
+.md th, .md td { border: 1px solid var(--line); padding: 4px 8px; text-align: left; vertical-align: top; }
+.md th { background: var(--chip); }
+.md .text-block { margin: 6px 0; }
 .msg.user { background: var(--user); margin-left: 24px; }
 .msg.assistant { background: var(--panel); border: 1px solid var(--line); margin-right: 12px; }
 .msg.side { opacity: .75; font-size: 13px; }
@@ -122,6 +141,7 @@ h2 { font-size: 14px; color: var(--muted); margin: 18px 0 8px; font-weight: 600;
 .shot-open { display: block; max-width: 100%; padding: 0; border: 0; background: none; border-radius: 8px; cursor: zoom-in; }
 .shot { display: block; max-width: 100%; max-height: 320px; border-radius: 8px; border: 1px solid var(--line); background: var(--code); }
 .shot.side { max-height: 200px; opacity: .85; }
+.imgsrc { margin-top: 3px; font: 11px/1.35 ui-monospace, Menlo, monospace; color: var(--muted); overflow-wrap: anywhere; }
 .lb { position: fixed; inset: 0; z-index: 20; background: rgba(0, 0, 0, .88); display: grid; grid-template: minmax(0, 1fr) / minmax(0, 1fr); place-items: center; padding: max(8px, env(safe-area-inset-top)) 8px max(8px, env(safe-area-inset-bottom)); cursor: zoom-out; }
 .lb-content { display: flex; flex-direction: column; align-items: center; max-width: 100%; max-height: 100%; }
 .lb img { max-width: 100%; min-height: 0; object-fit: contain; }
@@ -209,7 +229,7 @@ const S = {
     followUp: "이어서 보내기", newSession: "새 세션으로 보내기", newWarn: "새 세션으로 보내면 지금 세션은 끊기고 고른 작업 폴더에서 새로 엽니다.",
     officeWorking: "작업 중입니다. 지금 쓰면 대기열에 쌓았다가 턴이 끝나면 이어서 보냅니다.", officeHuman: "답을 기다립니다. 위 카드나 앱에서 답하세요. 지금 쓰면 대기열에 쌓습니다.", officeShellBusy: "터미널에서 다른 명령이 실행 중입니다.",
     opening: "여는 중…", openFailed: "지난 열기 실패",
-    message: "직접 입력", messageHelp: "업무 보드에 남기지 않고 지금 세션의 CLI에 바로 넣습니다. 작업 중이면 대기열에 쌓았다가 턴이 끝날 때마다 하나씩 보냅니다.", messagePh: "에이전트에게 보낼 말",
+    message: "직접 입력", messageHelp: "업무 보드에 남기지 않고 지금 세션의 CLI에 바로 넣습니다. Claude가 작업 중이면 바로 넣어 다음 도구 호출 뒤에 반영되고, 답을 기다리거나 다른 CLI면 대기열에 쌓았다가 턴이 끝날 때마다 하나씩 보냅니다.", messagePh: "에이전트에게 보낼 말",
     queueBtn: "대기열에 넣기", queued: "대기열에 넣었습니다. 턴이 끝나면 보냅니다.", queueTitle: (n) => `보낼 대기열 ${n}건 · 턴이 끝날 때마다 하나씩 보냅니다`, queueCancel: "빼기", queueRemoved: "대기열에서 뺐습니다",
     taskHelp: "업무 보드에 남김",
     cost: (tokens, cost, turns) => `이 세션 추정 사용량 · 토큰 ${tokens} · ${cost} · ${turns}턴`, costHint: "공개 API 요율로 환산한 추정치입니다. 구독제 실제 청구액과 다릅니다. CH(…)는 캐시 포함 전체 토큰.",
@@ -252,7 +272,7 @@ const S = {
     followUp: "Send follow-up", newSession: "Send in a new session", newWarn: "Sending in a new session ends the current one and opens a new one in the chosen folder.",
     officeWorking: "Working. What you send now is queued and follows once the turn ends.", officeHuman: "Waiting for an answer. Reply above or in the app; what you send now is queued.", officeShellBusy: "Another command is running in the terminal.",
     opening: "Opening…", openFailed: "Last open failed",
-    message: "Message", messageHelp: "Goes straight to the CLI in the current session, without a task on the board. While it works, messages are queued and sent one per finished turn.", messagePh: "Message to the agent",
+    message: "Message", messageHelp: "Goes straight to the CLI in the current session, without a task on the board. While Claude works it goes in right away and is picked up after the next tool call; while waiting for an answer, or with other CLIs, messages are queued and sent one per finished turn.", messagePh: "Message to the agent",
     queueBtn: "Queue", queued: "Queued. It will be sent when the turn ends.", queueTitle: (n) => `${n} queued · one is sent each time a turn ends`, queueCancel: "Remove", queueRemoved: "Removed from the queue",
     taskHelp: "kept on the task board",
     cost: (tokens, cost, turns) => `Estimated session usage · ${tokens} tokens · ${cost} · ${turns} ${turns === 1 ? "turn" : "turns"}`, costHint: "Estimated at public API rates; not your subscription bill. CH(…) is the total including cache.",
@@ -833,7 +853,9 @@ function msgDraftOf(agentId) {
 function queueOf(c) { return (c.queue && c.queue.items) || []; }
 function willQueue(c) {
   const p = c.turn && c.turn.phase;
-  return p === "working" || p === "needs-human" || !!(c.asks && c.asks.length) || queueOf(c).length > 0;
+  // Claude가 작업 중이면(답을 기다리는 대화상자 없음) 쌓지 않고 바로 넣는다(`queue.steer`).
+  const steer = !!(c.queue && c.queue.steer);
+  return (p === "working" && !steer) || p === "needs-human" || !!(c.asks && c.asks.length) || queueOf(c).length > 0;
 }
 function renderMsgForm(c) {
   const d = msgDraftOf(c.agentId);
@@ -1142,19 +1164,41 @@ function imageActions(img, url, name) {
     downloadButton(S.downloadImage, url, name, S.imageGone));
 }
 const IMAGE_EXTENSIONS = { "image/png": "png", "image/jpeg": "jpg", "image/gif": "gif", "image/webp": "webp" };
+/**
+ * 서버가 Markdown으로 그려 거른 에이전트 말(`it.html`). 코드 블록은 다른 블록처럼 복사 버튼을 붙이고,
+ * 넓은 표는 가로로 밀어 본다.
+ */
+function markdownBody(html) {
+  const box = el("div", { class: "md" });
+  box.innerHTML = html;
+  for (const pre of box.querySelectorAll("pre")) {
+    const code = pre.textContent;
+    const block = el("div", { class: "text-block" });
+    pre.replaceWith(block);
+    block.append(el("pre", { text: code }), code && el("div", { class: "content-actions" }, copyButton(code)));
+  }
+  for (const table of box.querySelectorAll("table")) {
+    const wrap = el("div", { class: "tablewrap" });
+    table.replaceWith(wrap);
+    wrap.append(table);
+  }
+  return box;
+}
 function renderItem(it) {
   const side = it.sidechain ? " side" : "";
   const agent = encodeURIComponent(view.agent);
   if (it.kind === "image") {
     if (!it.image) return el("div", { class: "tool", text: S.imageGone });
+    // 그림이 온 경로·URL은 그림과 함께 늘 보인다(그림을 더 볼 수 없어도).
+    const source = () => it.image.source && el("div", { class: "imgsrc", text: it.image.source });
     const url = `/api/image/${agent}/${encodeURIComponent(it.image.id)}`;
     const src = `${url}?t=${token}`;
     const name = `image-${it.image.id}.${IMAGE_EXTENSIONS[it.image.mediaType] || "bin"}`;
     const img = el("img", { class: "shot" + side, loading: "lazy", alt: "", src });
     const opener = el("button", { type: "button", class: "shot-open", "aria-label": S.viewImage,
       onclick: () => openLightbox(src, url, name, opener) }, img);
-    const wrap = el("div", { class: "imgwrap " + it.role }, opener, imageActions(img, url, name));
-    img.onerror = () => wrap.replaceWith(el("div", { class: "tool", text: S.imageGone }));
+    const wrap = el("div", { class: "imgwrap " + it.role }, opener, source(), imageActions(img, url, name));
+    img.onerror = () => wrap.replaceWith(el("div", { class: "tool" }, S.imageGone, source()));
     return wrap;
   }
   if (it.kind === "text") {
@@ -1162,7 +1206,7 @@ function renderItem(it) {
     const actions = (it.files || []).map((file, index) =>
       downloadButton(`${S.download} · ${file.name}`, `/api/file/${agent}/${epoch}/${it.seq}/${index}`, file.name));
     if (it.text) actions.unshift(copyButton(it.text, S.copyMessage));
-    return el("div", { class: "msg " + it.role + side }, messageBody(it.text),
+    return el("div", { class: "msg " + it.role + side }, it.html ? markdownBody(it.html) : messageBody(it.text),
       actions.length > 0 && el("div", { class: "content-actions" }, actions));
   }
   if (it.kind === "tool_use") {

@@ -3,11 +3,13 @@
 // 대화 입력과 보낼 메시지 대기열. 터미널 탭 "대화 보기"와 웹 상태판이 함께 쓴다.
 //
 // CLI가 턴을 마치고 입력을 기다리면(턴 관측 Idle) 바로 같은 세션에 넣고, 작업 중·사람 대기면
-// 대기열에 쌓아 두었다가 턴이 끝날 때마다 하나씩 넣는다. 넣는 길은 업무 후속 지시 관문
+// 대기열에 쌓아 두었다가 턴이 끝날 때마다 하나씩 넣는다. 예외: Claude가 작업 중이고 답을 기다리는
+// 권한 요청·질문이 없으면 작업 중에도 바로 넣는다(Claude Code가 다음 도구 호출 뒤에 반영한다).
+// 다른 CLI는 작업 중 Enter를 다르게 다루고, 대화상자가 떠 있으면 글이 거기 들어가므로 기다린다. 넣는 길은 업무 후속 지시 관문
 // (`WorkSendRuntime::follow_up`)이라 사람이 쓰다 만 입력·바뀐 세션·셸로 돌아온 CLI에는 넣지 않는다.
 // 대기열은 세션에 묶인다 — 세션이 바뀌면(재시작·새 세션) 옛 대화를 향한 메시지는 버리고 알린다.
 // 앱을 끄면 대기열도 사라진다(메모리에만 둔다).
-use std::collections::{HashMap, VecDeque};
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -27,6 +29,8 @@ const SENT_FALLBACK_MS: u64 = 60_000;
 /// 넣기가 일시적으로 막혔을 때(사람 입력·다른 보내기) 다시 해 보기까지.
 const RETRY_MS: u64 = 3_000;
 const PUMP_INTERVAL: Duration = Duration::from_secs(1);
+/// 화면에 보일 "작업 중에도 바로 들어감" 표시용 포그라운드 CLI 조회를 다시 하기 전 간격.
+const CLI_HINT_TTL_MS: u64 = 2_000;
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -66,12 +70,18 @@ pub struct QueueView {
     pub items: Vec<QueuedMessage>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub error: Option<String>,
+    /// 작업 중이지만 지금 보내면 쌓지 않고 바로 넣는다(Claude, 기다리는 권한 요청·질문 없음).
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub steer: bool,
 }
 
 #[derive(Default)]
 pub struct ChatQueue {
     agents: Mutex<HashMap<String, AgentQueue>>,
     seq: AtomicU64,
+    /// 캐릭터 → (조회한 때, 포그라운드가 Claude인가). 화면 표시용 캐시다.
+    claude_fg: Mutex<HashMap<String, (u64, bool)>>,
+    probing: Mutex<HashSet<String>>,
 }
 
 /// 보내기 전 글 검사: 빈 글을 거부하고 `check_limits`를 본다.
@@ -104,13 +114,36 @@ fn ready(turn: Option<&TurnObservation>, sent_at: Option<u64>, now: u64) -> bool
     }
 }
 
+/// 작업 중에도 바로 넣어도 되는가. Claude Code만 작업 중 입력을 받아 다음 도구 호출 뒤에 반영하고,
+/// 권한 요청·질문 대화상자가 떠 있으면 친 글이 그 대화상자로 들어가므로 넣지 않는다.
+fn steerable(turn: Option<&TurnObservation>, claude: bool, asks_pending: bool) -> bool {
+    claude && !asks_pending && turn.is_some_and(|t| t.phase == TurnPhase::Working)
+}
+
+/// 터미널 포그라운드가 Claude인가(블로킹 — 프로세스 명령줄을 읽는다). Windows는 알 수 없어 false다.
+fn claude_in_foreground(manager: &crate::session::manager::SessionManager, agent_id: &str) -> bool {
+    manager.foreground_command(agent_id).as_deref().and_then(crate::webdash::cli_of_command) == Some("claude")
+}
+
 /// 넣기 실패가 잠깐 기다리면 풀리는 것인가(아니면 사람이 볼 때까지 붙들고 있는다).
 fn transient(error: &str) -> bool {
     matches!(error, "work-send-busy" | "work-send-human-input" | "busy")
 }
 
 impl ChatQueue {
-    pub fn view(&self, agent_id: &str, session_id: Option<&str>) -> QueueView {
+    /// 화면에 보일 대기열. 작업 중이면 바로 넣을 수 있는지(`steer`)도 싣는다.
+    pub fn view(&self, ctx: &ControlContext, agent_id: &str, session_id: Option<&str>) -> QueueView {
+        let mut view = self.items_view(agent_id, session_id);
+        view.steer = session_id.is_some_and(|sid| {
+            let turn = ctx.turns.get(sid);
+            // 작업 중일 때만 포그라운드를 본다(짧은 순서로 ps를 아낀다).
+            turn.as_ref().is_some_and(|t| t.phase == TurnPhase::Working)
+                && steerable(turn.as_ref(), self.claude_hint(ctx, agent_id), !ctx.observer.permissions().list(sid).is_empty())
+        });
+        view
+    }
+
+    fn items_view(&self, agent_id: &str, session_id: Option<&str>) -> QueueView {
         let agents = self.agents.lock().unwrap();
         let Some(q) = agents.get(agent_id) else {
             return QueueView::default();
@@ -120,7 +153,36 @@ impl ChatQueue {
         QueueView {
             items: if same { q.items.iter().cloned().collect() } else { Vec::new() },
             error: q.error.clone(),
+            steer: false,
         }
+    }
+
+    /// 캐시한 "포그라운드가 Claude인가". 오래됐으면 뒤에서 다시 본다(화면 조회를 막지 않는다).
+    fn claude_hint(&self, ctx: &ControlContext, agent_id: &str) -> bool {
+        let now = crate::types::now_ms();
+        let cached = self.claude_fg.lock().unwrap().get(agent_id).copied();
+        let stale = cached.is_none_or(|(at, _)| now.saturating_sub(at) >= CLI_HINT_TTL_MS);
+        if stale && self.probing.lock().unwrap().insert(agent_id.to_string()) {
+            let (me, manager, agent) = (ctx.chat_queue.clone(), ctx.manager.clone(), agent_id.to_string());
+            std::thread::spawn(move || {
+                let claude = claude_in_foreground(&manager, &agent);
+                me.claude_fg.lock().unwrap().insert(agent.clone(), (crate::types::now_ms(), claude));
+                me.probing.lock().unwrap().remove(&agent);
+            });
+        }
+        cached.is_some_and(|(_, claude)| claude)
+    }
+
+    /// 지금 작업 중에도 바로 넣어도 되는가(포그라운드를 새로 본다).
+    async fn steer_now(&self, ctx: &ControlContext, agent_id: &str, session_id: &str) -> bool {
+        let turn = ctx.turns.get(session_id);
+        if !steerable(turn.as_ref(), true, !ctx.observer.permissions().list(session_id).is_empty()) {
+            return false;
+        }
+        let (manager, agent) = (ctx.manager.clone(), agent_id.to_string());
+        let claude = tokio::task::spawn_blocking(move || claude_in_foreground(&manager, &agent)).await.unwrap_or(false);
+        self.claude_fg.lock().unwrap().insert(agent_id.to_string(), (crate::types::now_ms(), claude));
+        claude
     }
 
     /// 쌓아 둔 메시지 하나를 뺀다. 이미 넣었거나 없으면 false.
@@ -147,9 +209,14 @@ impl ChatQueue {
             .ok_or("not-running")?;
         let turn = ctx.turns.get(&session_id);
         let now = crate::types::now_ms();
+        let mut steer = false;
         let deliver_now = match turn.as_ref().map(|t| t.phase) {
             Some(TurnPhase::Idle) => true,
-            Some(TurnPhase::Working | TurnPhase::NeedsHuman) => false,
+            Some(TurnPhase::Working) => {
+                steer = self.steer_now(ctx, agent_id, &session_id).await;
+                steer
+            }
+            Some(TurnPhase::NeedsHuman) => false,
             Some(TurnPhase::Ended) => return Err("not-running".into()),
             // 막 띄운 CLI는 아직 턴 관측이 없다. 포그라운드가 CLI면 입력 대기로 본다.
             None => {
@@ -174,7 +241,7 @@ impl ChatQueue {
             if q.session_id != session_id {
                 *q = AgentQueue { session_id: session_id.clone(), ..Default::default() };
             }
-            let idle_known = turn.is_none() || ready(turn.as_ref(), q.sent_at, now);
+            let idle_known = steer || turn.is_none() || ready(turn.as_ref(), q.sent_at, now);
             if !(deliver_now && idle_known && q.items.is_empty() && !q.delivering) {
                 if q.items.len() >= MAX_QUEUED {
                     return Err("queue-full".into());
@@ -200,6 +267,22 @@ impl ChatQueue {
     /// 쌓인 메시지를 넣을 차례인 캐릭터마다 하나씩 넣는다.
     pub async fn pump_once(&self, ctx: &ControlContext) {
         let now = crate::types::now_ms();
+        // 작업 중인 Claude에는 턴 끝을 기다리지 않고 넣는다. 포그라운드 조회는 잠금 밖에서 한다.
+        let working: Vec<(String, String)> = {
+            let agents = self.agents.lock().unwrap();
+            agents
+                .iter()
+                .filter(|(_, q)| !q.items.is_empty() && !q.delivering && now >= q.retry_at)
+                .filter(|(_, q)| ctx.turns.get(&q.session_id).is_some_and(|t| t.phase == TurnPhase::Working))
+                .map(|(agent, q)| (agent.clone(), q.session_id.clone()))
+                .collect()
+        };
+        let mut steer = HashSet::new();
+        for (agent, sid) in working {
+            if self.steer_now(ctx, &agent, &sid).await {
+                steer.insert(agent);
+            }
+        }
         let mut due: Vec<(String, String, QueuedMessage)> = Vec::new();
         {
             let mut agents = self.agents.lock().unwrap();
@@ -228,7 +311,7 @@ impl ChatQueue {
                     q.error = Some("queue-dropped-session".into());
                     continue;
                 }
-                if !ready(turn.as_ref(), q.sent_at, now) {
+                if !ready(turn.as_ref(), q.sent_at, now) && !steer.contains(agent_id) {
                     continue;
                 }
                 let Some(msg) = q.items.pop_front() else { continue };
@@ -307,7 +390,7 @@ pub fn live_status(ctx: &ControlContext, agent_id: &str) -> LiveStatus {
         since: turn.as_ref().map(|t| t.since),
         output_at: ctx.manager.last_output_ms(agent_id),
         now: crate::types::now_ms(),
-        queue: ctx.chat_queue.view(agent_id, session_id.as_deref()),
+        queue: ctx.chat_queue.view(ctx, agent_id, session_id.as_deref()),
     }
 }
 
@@ -333,6 +416,16 @@ mod tests {
     }
 
     #[test]
+    fn steers_only_a_working_claude_without_pending_asks() {
+        assert!(steerable(Some(&turn(TurnPhase::Working, 10)), true, false));
+        assert!(!steerable(Some(&turn(TurnPhase::Working, 10)), false, false));
+        assert!(!steerable(Some(&turn(TurnPhase::Working, 10)), true, true));
+        assert!(!steerable(Some(&turn(TurnPhase::NeedsHuman, 10)), true, false));
+        assert!(!steerable(Some(&turn(TurnPhase::Idle, 10)), true, false));
+        assert!(!steerable(None, true, false));
+    }
+
+    #[test]
     fn view_hides_messages_for_another_session_and_cancel_removes_one() {
         let queue = ChatQueue::default();
         {
@@ -343,11 +436,11 @@ mod tests {
                 q.items.push_back(QueuedMessage { id: id.into(), text: id.into(), at: 1 });
             }
         }
-        assert_eq!(queue.view("a1", Some("s1")).items.len(), 2);
-        assert!(queue.view("a1", Some("s2")).items.is_empty());
+        assert_eq!(queue.items_view("a1", Some("s1")).items.len(), 2);
+        assert!(queue.items_view("a1", Some("s2")).items.is_empty());
         assert!(queue.cancel("a1", "q1"));
         assert!(!queue.cancel("a1", "q1"));
-        assert_eq!(queue.view("a1", Some("s1")).items[0].id, "q2");
+        assert_eq!(queue.items_view("a1", Some("s1")).items[0].id, "q2");
     }
 
     #[test]

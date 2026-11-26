@@ -83,6 +83,7 @@
     "inputPh": "Message to the agent (Enter to send, Shift+Enter for a new line)",
     "send": "Send",
     "inputQueuePh": "Working — your message is queued and sent when the turn ends (Enter to queue, Shift+Enter for a new line)",
+    "inputSteerPh": "Working — sent right away and picked up after the next tool call (Enter to send, Shift+Enter for a new line)",
     "queue": "Queue",
     "queuedNotice": "Queued. It will be sent when the turn ends.",
     "queueTitle_one": "{{count}} queued · one is sent each time a turn ends",

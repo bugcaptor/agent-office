@@ -83,6 +83,7 @@
     "inputPh": "发给代理的消息(Enter 发送,Shift+Enter 换行)",
     "send": "发送",
     "inputQueuePh": "正在工作 — 输入的消息会进入队列,回合结束时发送(Enter 加入,Shift+Enter 换行)",
+    "inputSteerPh": "正在工作 — 立即发送,下一次工具调用后生效(Enter 发送,Shift+Enter 换行)",
     "queue": "加入队列",
     "queuedNotice": "已加入队列,回合结束时发送。",
     "queueTitle_one": "待发送 {{count}} 条 · 每个回合结束时发送一条",

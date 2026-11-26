@@ -385,7 +385,7 @@ function chatLog(agentId: string): ChatLogItem[] {
     const it = (o: Partial<ChatLogItem>): ChatLogItem => ({ seq: ++seq, role: "assistant", kind: "text", text: "", isError: false, sidechain: false, ...o });
     items = [
       it({ role: "user", text: "Look at this screen and fix the layout" }),
-      it({ role: "user", kind: "image", image: { id: "shot", mediaType: "image/png", bytes: 1000 } }),
+      it({ role: "user", kind: "image", image: { id: "shot", mediaType: "image/png", bytes: 1000, source: "/tmp/shot.png" } }),
       it({ text: "I'll check **the layout** first.\n\n- read the CSS\n- compare with `dash.html`\n\n```css\n.panel { display: grid; }\n```" }),
       it({ kind: "tool_use", toolName: "Read", text: "src/renderer/terminal/terminal.css" }),
       it({ role: "user", kind: "tool_result", text: "1\t/* terminal */\n2\t.agent-tab-strip {" }),

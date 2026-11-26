@@ -131,7 +131,9 @@ export function ChatView({ agentId, active, onShowTerminal }: { agentId: string;
   const queued = status?.queue.items ?? [];
   const queueError = status?.queue.error;
   // 작업 중이거나 앞서 쌓인 것이 있으면 보내기는 대기열에 쌓는다.
-  const willQueue = !!status && (status.phase === "working" || status.phase === "needs-human" || queued.length > 0);
+  // 단, Claude가 작업 중이고 답을 기다리는 대화상자가 없으면 바로 넣는다(다음 도구 호출 뒤에 반영).
+  const steer = !!status?.queue.steer;
+  const willQueue = !!status && ((status.phase === "working" && !steer) || status.phase === "needs-human" || queued.length > 0);
   const newestFirst = useMemo(() => [...blocks].reverse(), [blocks]);
   const liveKind = live ? live.kind : "";
 
@@ -196,7 +198,7 @@ export function ChatView({ agentId, active, onShowTerminal }: { agentId: string;
         <textarea
           ref={inputRef}
           value={draft}
-          placeholder={willQueue ? t("chatView.inputQueuePh") : t("chatView.inputPh")}
+          placeholder={willQueue ? t("chatView.inputQueuePh") : steer ? t("chatView.inputSteerPh") : t("chatView.inputPh")}
           rows={2}
           onChange={(e) => setDraft(e.target.value)}
           onKeyDown={(e) => {
@@ -383,13 +385,17 @@ function ChatImage({ item, agentId, onZoom, onNotice }: Omit<ItemActions, "epoch
     );
     return () => { alive = false; };
   }, [agentId, id, key]);
-  if (!id || src === null) return <div className="chat-tool plain">{t("chatView.imageGone")}</div>;
+  // 그림이 온 경로·URL은 그림과 함께 늘 보인다(그림을 더 볼 수 없어도).
+  const source = item.image?.source;
+  const sourceLine = source && <div className="chat-image-source" title={source}>{source}</div>;
+  if (!id || src === null) return <div className="chat-tool plain">{t("chatView.imageGone")}{sourceLine}</div>;
   if (src === undefined) return <div className="chat-image loading" />;
   return (
     <div className={`chat-image ${item.role}`}>
       <button type="button" className="chat-image-open" onClick={(event) => onZoom({ id, src, opener: event.currentTarget })} aria-label={t("chatView.zoom")}>
         <img ref={imageRef} src={src} alt="" onError={() => setSrc(null)} />
       </button>
+      {sourceLine}
       <ImageActions imageRef={imageRef} agentId={agentId} imageId={id} onNotice={onNotice} />
     </div>
   );

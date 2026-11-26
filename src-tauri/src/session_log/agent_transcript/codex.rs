@@ -45,6 +45,8 @@ pub struct CodexSource {
     /// 마지막 디렉터리 훑기(시각, 그때의 cwd, 결과). 훑기 사이에는 같은 cwd에
     /// 대해서만 이 결과를 재사용한다.
     last_scan: Option<(SystemTime, String, Option<PathBuf>)>,
+    /// `view_image` 호출 id → 연 파일(그림 결과의 출처).
+    paths: super::ImagePaths,
 }
 
 impl CodexSource {
@@ -53,6 +55,7 @@ impl CodexSource {
             sessions_root,
             probed: HashMap::new(),
             last_scan: None,
+            paths: Default::default(),
         }
     }
 
@@ -160,11 +163,11 @@ impl TranscriptSource for CodexSource {
         let Ok(v) = serde_json::from_str::<Value>(raw) else {
             return Vec::new();
         };
-        parse_entry(&v)
+        parse_entry(&v, &self.paths)
     }
 }
 
-fn parse_entry(v: &Value) -> Vec<TranscriptItem> {
+fn parse_entry(v: &Value, paths: &super::ImagePaths) -> Vec<TranscriptItem> {
     let Some(payload) = v.get("payload") else {
         return Vec::new();
     };
@@ -204,6 +207,14 @@ fn parse_entry(v: &Value) -> Vec<TranscriptItem> {
             // spawn 인자에는 암호화 블롭이 실려 오므로 걸러서 넣는다.
             let input = if sub == "function_call" {
                 let raw = text("arguments");
+                if name == "view_image" {
+                    let path = serde_json::from_str::<Value>(&raw)
+                        .ok()
+                        .and_then(|a| a.get("path").and_then(Value::as_str).map(str::to_string));
+                    if let Some(path) = path {
+                        paths.remember(&text("call_id"), &path);
+                    }
+                }
                 serde_json::from_str::<Value>(&raw)
                     .map(|v| compact_json_brief(&v))
                     .unwrap_or(raw)
@@ -220,8 +231,9 @@ fn parse_entry(v: &Value) -> Vec<TranscriptItem> {
             if !body.trim().is_empty() {
                 out.push(TranscriptItem::tool_result(body, false));
             }
-            // 도구가 본 이미지(view_image, 스크린샷)는 결과 뒤에 붙인다.
+            // 도구가 본 이미지(view_image, 스크린샷)는 결과 뒤에 붙인다. 출처는 `view_image`가 연 파일.
             out.extend(images.into_iter().map(|img| TranscriptItem::image(ItemRole::User, img)));
+            super::attach_sources(&mut out, paths.get(&text("call_id")));
             out
         }
         // 사람이 붙여 넣은 이미지. 글은 event_msg 쪽에서 이미 받으므로 이미지만 꺼낸다.
@@ -259,17 +271,41 @@ fn flatten_output(output: Option<&Value>) -> String {
     }
 }
 
-/// `[{type:"input_image", image_url:"data:image/png;base64,…"}]` 배열의 이미지들.
+/// `[{type:"input_image", image_url:"data:image/png;base64,…"}]` 배열의 이미지들. 붙인 파일은
+/// 바로 앞 `<image name=[Image #1] path="…">` 글이 경로를 알려 준다.
 fn input_images(items: Option<&Value>) -> Vec<ItemImage> {
     let Some(Value::Array(items)) = items else {
         return Vec::new();
     };
-    items
-        .iter()
-        .filter(|i| i.get("type").and_then(Value::as_str) == Some("input_image"))
-        .filter_map(|i| i.get("image_url").and_then(Value::as_str))
-        .filter_map(ItemImage::from_data_url)
-        .collect()
+    let mut pending: Option<String> = None;
+    let mut out = Vec::new();
+    for item in items {
+        match item.get("type").and_then(Value::as_str) {
+            Some("input_text") => {
+                let text = item.get("text").and_then(Value::as_str).unwrap_or("");
+                if let Some(path) = image_tag_path(text) {
+                    pending = Some(path);
+                }
+            }
+            Some("input_image") => {
+                let image = item.get("image_url").and_then(Value::as_str).and_then(ItemImage::from_data_url);
+                if let Some(mut image) = image {
+                    image.source = pending.take();
+                    out.push(image);
+                }
+            }
+            _ => {}
+        }
+    }
+    out
+}
+
+/// `<image name=[Image #1] path="art.png">`의 path.
+fn image_tag_path(text: &str) -> Option<String> {
+    let rest = text.trim_start().strip_prefix("<image ")?;
+    let rest = &rest[rest.find("path=\"")? + 6..];
+    let path = &rest[..rest.find('"')?];
+    (!path.trim().is_empty()).then(|| path.to_string())
 }
 
 /// 홈의 기본 위치에서 Codex 소스를 만든다. 세션 디렉터리가 없으면 None.
@@ -287,11 +323,26 @@ mod tests {
 
     /// 세션 로그가 실제로 받는 줄 — 파서 분리 후에도 그대로여야 한다.
     fn render(raw: &str) -> Vec<String> {
-        super::super::format_items(&parse_entry(&serde_json::from_str(raw).unwrap()))
+        super::super::format_items(&parse_entry(&serde_json::from_str(raw).unwrap(), &Default::default()))
     }
 
     fn parse(raw: &str) -> Vec<TranscriptItem> {
-        parse_entry(&serde_json::from_str(raw).unwrap())
+        parse_entry(&serde_json::from_str(raw).unwrap(), &Default::default())
+    }
+
+    #[test]
+    fn image_sources_come_from_image_tags_and_view_image_calls() {
+        let paths = super::super::ImagePaths::default();
+        let parse = |raw: &str| parse_entry(&serde_json::from_str(raw).unwrap(), &paths);
+        let user = parse(r#"{"type":"response_item","payload":{"type":"message","role":"user","content":[
+            {"type":"input_text","text":"<image name=[Image #1] path=\"../art-a.png\">"},{"type":"input_image","image_url":"data:image/png;base64,iVBORw0KGgo="},
+            {"type":"input_text","text":"</image>"},{"type":"input_image","image_url":"data:image/png;base64,iVBORw0KGgo="}]}}"#);
+        assert_eq!(user[0].image.as_ref().unwrap().source.as_deref(), Some("../art-a.png"));
+        assert_eq!(user[1].image.as_ref().unwrap().source, None);
+        parse(r#"{"type":"response_item","payload":{"type":"function_call","name":"view_image","call_id":"c1","arguments":"{\"path\":\"/tmp/v.png\"}"}}"#);
+        let out = parse(r#"{"type":"response_item","payload":{"type":"function_call_output","call_id":"c1","output":[
+            {"type":"input_image","image_url":"data:image/png;base64,iVBORw0KGgo="}]}}"#);
+        assert_eq!(out.last().unwrap().image.as_ref().unwrap().source.as_deref(), Some("/tmp/v.png"));
     }
 
     #[test]

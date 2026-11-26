@@ -233,7 +233,7 @@ async fn state(State(ctx): Ctx) -> Json<Value> {
             let probe = probes.get(&a.id).copied().unwrap_or_default();
             let waiting = waiting_of(&ctx, &a.id);
             let asks = session.map(|(sid, _)| ctx.ctl.observer.permissions().list(sid)).unwrap_or_default();
-            let queue = ctx.ctl.chat_queue.view(&a.id, session.map(|(sid, _)| sid.as_str()));
+            let queue = ctx.ctl.chat_queue.view(&ctx.ctl, &a.id, session.map(|(sid, _)| sid.as_str()));
             json!({
                 "agentId": a.id,
                 "name": a.name,
@@ -260,7 +260,7 @@ async fn state(State(ctx): Ctx) -> Json<Value> {
             "session": session.map(|(sid, st)| json!({ "sessionId": sid, "state": session_state_str(*st) })),
             "turn": session.and_then(|(sid, _)| ctx.ctl.turns.get(sid)),
             "asks": session.map(|(sid, _)| ctx.ctl.observer.permissions().list(sid)).unwrap_or_default(),
-            "queue": ctx.ctl.chat_queue.view(OFFICE_AGENT_ID, session.map(|(sid, _)| sid.as_str())),
+            "queue": ctx.ctl.chat_queue.view(&ctx.ctl, OFFICE_AGENT_ID, session.map(|(sid, _)| sid.as_str())),
             "cli": probe.cli,
             "atPrompt": probe.at_prompt,
             "cwd": session.and_then(|_| ctx.ctl.gate.sink().cwd_of(OFFICE_AGENT_ID)),

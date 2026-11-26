@@ -83,6 +83,7 @@
     "inputPh": "傳給代理的訊息(Enter 傳送,Shift+Enter 換行)",
     "send": "傳送",
     "inputQueuePh": "正在工作 — 輸入的訊息會進入佇列,回合結束時傳送(Enter 加入,Shift+Enter 換行)",
+    "inputSteerPh": "正在工作 — 立即傳送,下一次工具呼叫後生效(Enter 傳送,Shift+Enter 換行)",
     "queue": "加入佇列",
     "queuedNotice": "已加入佇列,回合結束時傳送。",
     "queueTitle_one": "待傳送 {{count}} 則 · 每個回合結束時傳送一則",

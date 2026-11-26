@@ -86,6 +86,8 @@ pub struct ItemImage {
     pub media_type: String,
     /// base64 본문(디코딩은 쓰는 쪽이 한다 — 세션 로그는 쓰지 않으므로 비용을 치르지 않는다).
     pub data: String,
+    /// 그림이 온 파일 경로나 URL(도구가 읽은 파일, 붙여 넣은 파일). 전사가 알려 줄 때만 있다.
+    pub source: Option<String>,
 }
 
 impl ItemImage {
@@ -94,7 +96,7 @@ impl ItemImage {
         let media_type = media_type.trim().to_ascii_lowercase();
         let media_type = if media_type == "image/jpg" { "image/jpeg".to_string() } else { media_type };
         (IMAGE_MEDIA_TYPES.contains(&media_type.as_str()) && !data.trim().is_empty())
-            .then(|| Self { media_type, data: data.trim().to_string() })
+            .then(|| Self { media_type, data: data.trim().to_string(), source: None })
     }
 
     /// `data:image/png;base64,....` 꼴(Codex `input_image`).
@@ -103,6 +105,42 @@ impl ItemImage {
         let (meta, data) = rest.split_once(',')?;
         let media_type = meta.strip_suffix(";base64")?;
         Self::new(media_type, data)
+    }
+}
+
+/// 도구 호출 id → 그 호출이 연 그림 경로. 결과(그림)는 호출과 다른 줄에 실리므로 소스가 들고 있다
+/// (Claude `Read`의 `file_path`, Codex `view_image`의 `path`). 최근 것만 남긴다.
+#[derive(Default)]
+pub struct ImagePaths(std::sync::Mutex<std::collections::VecDeque<(String, String)>>);
+
+impl ImagePaths {
+    const KEEP: usize = 64;
+
+    pub fn remember(&self, call_id: &str, path: &str) {
+        if call_id.is_empty() || path.trim().is_empty() {
+            return;
+        }
+        let mut paths = self.0.lock().unwrap();
+        paths.retain(|(id, _)| id != call_id);
+        paths.push_back((call_id.to_string(), path.trim().to_string()));
+        while paths.len() > Self::KEEP {
+            paths.pop_front();
+        }
+    }
+
+    pub fn get(&self, call_id: &str) -> Option<String> {
+        self.0.lock().unwrap().iter().find(|(id, _)| id == call_id).map(|(_, p)| p.clone())
+    }
+}
+
+/// 그림 항목들에 차례로 출처를 붙인다(이미 있는 것은 건너뛴다). 남는 출처는 버린다.
+pub(crate) fn attach_sources(items: &mut [TranscriptItem], sources: impl IntoIterator<Item = String>) {
+    let mut sources = sources.into_iter();
+    for image in items.iter_mut().filter_map(|i| i.image.as_mut()).filter(|i| i.source.is_none()) {
+        match sources.next() {
+            Some(source) => image.source = Some(source),
+            None => break,
+        }
     }
 }
 

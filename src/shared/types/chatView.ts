@@ -11,6 +11,8 @@ export interface ChatImageMeta {
   id: string;
   mediaType: string;
   bytes: number;
+  /** 그림이 온 파일 경로나 URL(전사가 알려 줄 때만). 그림 아래에 늘 보인다. */
+  source?: string;
 }
 
 export interface ChatLogItem {
@@ -74,5 +76,6 @@ export interface ChatLiveStatus {
   outputAt?: number;
   /** 서버 시각. */
   now: number;
-  queue: { items: QueuedMessage[]; error?: string };
+  /** `steer`: 작업 중이지만 지금 보내면 쌓지 않고 바로 넣는다(Claude, 기다리는 권한 요청·질문 없음). */
+  queue: { items: QueuedMessage[]; error?: string; steer?: boolean };
 }

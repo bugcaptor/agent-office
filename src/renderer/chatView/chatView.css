@@ -94,6 +94,7 @@
   cursor: zoom-in;
 }
 .chat-image img { display: block; max-width: 100%; max-height: 360px; object-fit: contain; }
+.chat-image-source { margin-top: 3px; font-family: ui-monospace, Menlo, monospace; font-size: 11px; opacity: 0.75; overflow-wrap: anywhere; user-select: text; }
 .chat-image.loading { width: 160px; height: 100px; border: 2px solid var(--border-dark); background: var(--bg-panel-hi); }
 
 .chat-view-zoom {

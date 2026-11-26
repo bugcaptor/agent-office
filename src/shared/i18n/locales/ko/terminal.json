@@ -83,6 +83,7 @@
     "inputPh": "에이전트에게 보낼 말 (Enter 보내기, Shift+Enter 줄바꿈)",
     "send": "보내기",
     "inputQueuePh": "작업 중 — 쓰면 대기열에 넣고 턴이 끝나면 보냅니다 (Enter 넣기, Shift+Enter 줄바꿈)",
+    "inputSteerPh": "작업 중 — 보내면 바로 넣고 다음 도구 호출 뒤에 반영됩니다 (Enter 보내기, Shift+Enter 줄바꿈)",
     "queue": "대기열에 넣기",
     "queuedNotice": "대기열에 넣었습니다. 턴이 끝나면 보냅니다.",
     "queueTitle_one": "보낼 대기열 {{count}}건 · 턴이 끝날 때마다 하나씩 보냅니다",

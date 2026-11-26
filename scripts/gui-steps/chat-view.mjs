@@ -13,6 +13,7 @@ export default async ({ page, shot, harness }) => {
   await page.waitForSelector(".chat-view .chat-ask");
   await page.waitForSelector(".chat-view .chat-image img");
   await shot("chat-view");
+  assert.equal(await page.locator(".chat-image-source").first().textContent(), "/tmp/shot.png");
   // 최신이 맨 위다. 도구 결과는 그 호출 블록 안에서 아래에 붙는다.
   assert.match(await page.locator(".chat-block").first().textContent(), /Found the cause/);
   assert.match(await page.locator(".chat-block").last().textContent(), /Look at this screen/);

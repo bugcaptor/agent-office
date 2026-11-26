@@ -50,14 +50,17 @@ const items = [
   { seq: 7, role: "assistant", kind: "tool_use", toolName: "Bash", text: "git log --oneline -3" },
   { seq: 8, role: "user", kind: "tool_result", text: "claude.rs:120: queued_command" },
   { seq: 9, role: "user", kind: "tool_result", text: "fatal: not a git repository", isError: true },
-  { seq: 10, role: "assistant", kind: "text", text: "원인을 찾았습니다." },
+  // 에이전트 말은 서버가 Markdown을 HTML로 그려 `html`에 싣는다(`webdash/markdown.rs`). 여기서는 그 결과를 흉내 낸다.
+  { seq: 10, role: "assistant", kind: "text", text: "## 원인\n\n**사람 입력**이 `queued_command`로 들어와 빠졌습니다.\n\n- 전사 읽기\n- 화면 그리기\n\n| 파일 | 고칠 곳 |\n|---|---|\n| claude.rs | 120행 |",
+    html: "<h2>원인</h2>\n<p><strong>사람 입력</strong>이 <code>queued_command</code>로 들어와 빠졌습니다.</p>\n<ul>\n<li>전사 읽기</li>\n<li>화면 그리기</li>\n</ul>\n<table><thead><tr><th>파일</th><th>고칠 곳</th></tr></thead><tbody>\n<tr><td>claude.rs</td><td>120행</td></tr>\n</tbody></table>\n" },
   { seq: 11, role: "assistant", kind: "tool_use", toolName: "Read", text: "/tmp/shot.png" },
   { seq: 12, role: "user", kind: "tool_result", text: "(이미지)" },
-  { seq: 13, role: "user", kind: "image", text: "", image: { id: "img1", mediaType: "image/png", bytes: 1000 } },
+  { seq: 13, role: "user", kind: "image", text: "", image: { id: "img1", mediaType: "image/png", bytes: 1000, source: "/tmp/shot.png" } },
   { seq: 14, role: "user", kind: "text", text: "이 화면 좀 봐 줘" },
   { seq: 15, role: "user", kind: "image", text: "", image: { id: "img2", mediaType: "image/png", bytes: 1000 } },
   { seq: 16, role: "user", kind: "image", text: "", image: { id: "gone", mediaType: "image/png", bytes: 1000 } },
-  { seq: 17, role: "assistant", kind: "text", text: message, files: [{ name: fileName }] },
+  { seq: 17, role: "assistant", kind: "text", text: message, files: [{ name: fileName }],
+    html: `<p>아래 명령을 실행하세요.</p>\n<pre><code>${code.replace(/&/g, "&amp;").replace(/</g, "&lt;")}</code></pre>\n<p>결과</p>\n` },
 ];
 const png = await readFile(resolve("scripts/icon-source-small.png"));
 const tasks = {

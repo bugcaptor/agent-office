@@ -52,6 +52,8 @@ pub struct ClaudeSource {
     lookup: Arc<dyn AgentSessionLookup>,
     /// sessionId → 확인된 전사 경로. 디렉터리 훑기를 세션마다 한 번으로 묶는다.
     resolved: HashMap<String, PathBuf>,
+    /// `Read` 호출 id → 연 파일(그림 결과의 출처).
+    paths: super::ImagePaths,
 }
 
 impl ClaudeSource {
@@ -60,6 +62,7 @@ impl ClaudeSource {
             projects_root,
             lookup,
             resolved: HashMap::new(),
+            paths: Default::default(),
         }
     }
 
@@ -114,13 +117,13 @@ impl TranscriptSource for ClaudeSource {
         let Ok(v) = serde_json::from_str::<Value>(raw) else {
             return Vec::new();
         };
-        parse_entry(&v)
+        parse_entry(&v, &self.paths)
     }
 }
 
 /// JSONL 한 항목 → 채팅 항목들. 대화(사용자/에이전트/도구)만 남기고 나머지
 /// 메타 항목(mode, ai-title, attachment, file-history-snapshot …)은 버린다.
-fn parse_entry(v: &Value) -> Vec<TranscriptItem> {
+fn parse_entry(v: &Value, paths: &super::ImagePaths) -> Vec<TranscriptItem> {
     let kind = v.get("type").and_then(Value::as_str).unwrap_or("");
     if kind == "attachment" {
         return parse_queued_prompt(v);
@@ -155,8 +158,10 @@ fn parse_entry(v: &Value) -> Vec<TranscriptItem> {
         }
         Some(Value::Array(blocks)) => {
             for b in blocks {
-                out.extend(parse_block(b, role, side));
+                out.extend(parse_block(b, role, side, paths));
             }
+            // 붙여 넣은 파일은 같은 메시지의 `[Image: source: …]` 글이 경로를 알려 준다.
+            super::attach_sources(&mut out, source_notes(blocks));
         }
         _ => {}
     }
@@ -193,7 +198,19 @@ fn parse_queued_prompt(v: &Value) -> Vec<TranscriptItem> {
     vec![TranscriptItem::speech(ItemRole::User, text).with_sidechain(side)]
 }
 
-fn parse_block(b: &Value, role: ItemRole, side: bool) -> Vec<TranscriptItem> {
+/// `[Image: source: /경로]` 글에서 경로들(나온 차례대로).
+fn source_notes(blocks: &[Value]) -> Vec<String> {
+    blocks
+        .iter()
+        .filter(|b| b.get("type").and_then(Value::as_str) == Some("text"))
+        .filter_map(|b| b.get("text").and_then(Value::as_str))
+        .flat_map(|t| t.match_indices("[Image: source: ").map(move |(i, m)| &t[i + m.len()..]))
+        .filter_map(|rest| rest.split_once(']').map(|(path, _)| path.trim().to_string()))
+        .filter(|p| !p.is_empty())
+        .collect()
+}
+
+fn parse_block(b: &Value, role: ItemRole, side: bool, paths: &super::ImagePaths) -> Vec<TranscriptItem> {
     match b.get("type").and_then(Value::as_str).unwrap_or("") {
         "text" => {
             let text = b.get("text").and_then(Value::as_str).unwrap_or("");
@@ -204,6 +221,14 @@ fn parse_block(b: &Value, role: ItemRole, side: bool) -> Vec<TranscriptItem> {
         }
         "tool_use" => {
             let name = b.get("name").and_then(Value::as_str).unwrap_or("도구");
+            if name == "Read" {
+                if let (Some(id), Some(path)) = (
+                    b.get("id").and_then(Value::as_str),
+                    b.get("input").and_then(|i| i.get("file_path")).and_then(Value::as_str),
+                ) {
+                    paths.remember(id, path);
+                }
+            }
             let brief = tool_brief(b.get("input"));
             vec![TranscriptItem::tool_use(Some(name.to_string()), brief).with_sidechain(side)]
         }
@@ -222,6 +247,12 @@ fn parse_block(b: &Value, role: ItemRole, side: bool) -> Vec<TranscriptItem> {
                 out.extend(items.iter().filter_map(image_block).map(|img| {
                     TranscriptItem::image(ItemRole::User, img).with_sidechain(side)
                 }));
+                // 출처: 결과 안의 `[Image: source: …]` 글(스크린샷 도구), 없으면 `Read`가 연 파일.
+                let mut sources = source_notes(items);
+                if sources.is_empty() {
+                    sources.extend(b.get("tool_use_id").and_then(Value::as_str).and_then(|id| paths.get(id)));
+                }
+                super::attach_sources(&mut out, sources);
             }
             out
         }
@@ -338,11 +369,11 @@ mod tests {
     /// 세션 로그가 실제로 받는 줄. **파서 분리 후에도 이 문자열이 그대로여야
     /// 한다** — 아래 케이스들이 그 계약의 핀이다.
     fn render(raw: &str) -> Vec<String> {
-        super::super::format_items(&parse_entry(&serde_json::from_str(raw).unwrap()))
+        super::super::format_items(&parse_entry(&serde_json::from_str(raw).unwrap(), &Default::default()))
     }
 
     fn parse(raw: &str) -> Vec<TranscriptItem> {
-        parse_entry(&serde_json::from_str(raw).unwrap())
+        parse_entry(&serde_json::from_str(raw).unwrap(), &Default::default())
     }
 
     #[test]
@@ -390,6 +421,22 @@ mod tests {
                 {"type":"tool_result","tool_use_id":"t1","is_error":true,"content":"boom"}]}}"#,
         );
         assert_eq!(err, vec!["⇤ 결과(오류): boom"]);
+    }
+
+    #[test]
+    fn image_sources_come_from_read_calls_and_source_notes() {
+        let paths = super::super::ImagePaths::default();
+        let parse = |raw: &str| parse_entry(&serde_json::from_str(raw).unwrap(), &paths);
+        let png = r#"{"type":"image","source":{"type":"base64","media_type":"image/png","data":"iVBORw0KGgo="}}"#;
+        parse(r#"{"type":"assistant","message":{"content":[{"type":"tool_use","id":"t1","name":"Read","input":{"file_path":"/tmp/shot.png"}}]}}"#);
+        let read = parse(&format!(r#"{{"type":"user","message":{{"content":[{{"type":"tool_result","tool_use_id":"t1","content":[{png}]}}]}}}}"#));
+        assert_eq!(read.last().unwrap().image.as_ref().unwrap().source.as_deref(), Some("/tmp/shot.png"));
+        let shot = parse(&format!(
+            r#"{{"type":"user","message":{{"content":[{{"type":"tool_result","tool_use_id":"t9","content":[{{"type":"text","text":"Took a screenshot."}},{png},{{"type":"text","text":"[Image: source: /x/a.png]"}}]}}]}}}}"#
+        ));
+        assert_eq!(shot.last().unwrap().image.as_ref().unwrap().source.as_deref(), Some("/x/a.png"));
+        let pasted = parse(&format!(r#"{{"type":"user","message":{{"content":[{png},{{"type":"text","text":"이거 봐"}}]}}}}"#));
+        assert_eq!(pasted[0].image.as_ref().unwrap().source, None);
     }
 
     #[test]
