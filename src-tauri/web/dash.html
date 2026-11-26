@@ -235,7 +235,8 @@ const S = {
     followUp: "이어서 보내기", newSession: "새 세션으로 보내기", newWarn: "새 세션으로 보내면 지금 세션은 끊기고 고른 작업 폴더에서 새로 엽니다.",
     officeWorking: "작업 중입니다. 지금 쓰면 대기열에 쌓았다가 턴이 끝나면 이어서 보냅니다.", officeHuman: "답을 기다립니다. 위 카드나 앱에서 답하세요. 지금 쓰면 대기열에 쌓습니다.", officeShellBusy: "터미널에서 다른 명령이 실행 중입니다.",
     opening: "여는 중…", openFailed: "지난 열기 실패",
-    message: "직접 입력", messageHelp: "업무 보드에 남기지 않고 지금 세션의 CLI에 바로 넣습니다. Claude가 작업 중이면 바로 넣어 다음 도구 호출 뒤에 반영되고, 답을 기다리거나 다른 CLI면 대기열에 쌓았다가 턴이 끝날 때마다 하나씩 보냅니다.", messagePh: "에이전트에게 보낼 말",
+    message: "직접 입력", messageHelp: "업무 보드에 남기지 않고 지금 세션의 CLI에 바로 넣습니다. Claude가 작업 중이면 바로 넣어 다음 도구 호출 뒤에 반영되고, 답을 기다리거나 다른 CLI면 대기열에 쌓았다가 턴이 끝날 때마다 하나씩 보냅니다. 터미널이 셸 프롬프트에 있으면 업무 보내기처럼 위에서 고른 CLI를 띄워 첫 프롬프트로 넣습니다.", messagePh: "에이전트에게 보낼 말",
+    launchSend: (cli) => `${cli} 띄워 보내기`, launchedSend: "CLI를 띄워 보냈습니다", launchSending: "CLI를 띄우는 중…",
     queueBtn: "대기열에 넣기", queued: "대기열에 넣었습니다. 턴이 끝나면 보냅니다.", queueTitle: (n) => `보낼 대기열 ${n}건 · 턴이 끝날 때마다 하나씩 보냅니다`, queueCancel: "빼기", queueRemoved: "대기열에서 뺐습니다",
     taskHelp: "업무 보드에 남김",
     cost: (tokens, cost, turns) => `이 세션 추정 사용량 · 토큰 ${tokens} · ${cost} · ${turns}턴`, costHint: "공개 API 요율로 환산한 추정치입니다. 구독제 실제 청구액과 다릅니다. CH(…)는 캐시 포함 전체 토큰.",
@@ -278,7 +279,8 @@ const S = {
     followUp: "Send follow-up", newSession: "Send in a new session", newWarn: "Sending in a new session ends the current one and opens a new one in the chosen folder.",
     officeWorking: "Working. What you send now is queued and follows once the turn ends.", officeHuman: "Waiting for an answer. Reply above or in the app; what you send now is queued.", officeShellBusy: "Another command is running in the terminal.",
     opening: "Opening…", openFailed: "Last open failed",
-    message: "Message", messageHelp: "Goes straight to the CLI in the current session, without a task on the board. While Claude works it goes in right away and is picked up after the next tool call; while waiting for an answer, or with other CLIs, messages are queued and sent one per finished turn.", messagePh: "Message to the agent",
+    message: "Message", messageHelp: "Goes straight to the CLI in the current session, without a task on the board. While Claude works it goes in right away and is picked up after the next tool call; while waiting for an answer, or with other CLIs, messages are queued and sent one per finished turn. At a shell prompt it starts the CLI picked above and sends this as the first prompt, like sending a task.", messagePh: "Message to the agent",
+    launchSend: (cli) => `Start ${cli} and send`, launchedSend: "Started the CLI and sent it", launchSending: "Starting the CLI…",
     queueBtn: "Queue", queued: "Queued. It will be sent when the turn ends.", queueTitle: (n) => `${n} queued · one is sent each time a turn ends`, queueCancel: "Remove", queueRemoved: "Removed from the queue",
     taskHelp: "kept on the task board",
     cost: (tokens, cost, turns) => `Estimated session usage · ${tokens} tokens · ${cost} · ${turns} ${turns === 1 ? "turn" : "turns"}`, costHint: "Estimated at public API rates; not your subscription bill. CH(…) is the total including cache.",
@@ -573,9 +575,11 @@ function renderOfficeCard() {
       chips(c)),
     wait && el("div", { class: "wait", text: wait }));
 }
-/** 작업 중인 캐릭터를 먼저, 나머지는 마지막 턴 관측(`turn.at`)이 최근인 순으로. 관측이 없으면 뒤로 가고 원래 순서를 지킨다. */
+/** 답을 기다리는 캐릭터, 작업 중인 캐릭터 순으로 먼저, 나머지는 마지막 턴 관측(`turn.at`)이 최근인 순으로.
+ * 관측이 없으면 뒤로 가고 원래 순서를 지킨다. */
+const SORT_RANK = { human: 0, working: 1 };
 function sortedChars() {
-  const rank = (c) => (phaseOf(c)[0] === "working" ? 0 : 1);
+  const rank = (c) => SORT_RANK[phaseOf(c)[0]] ?? 2;
   const at = (c) => (c.turn && c.turn.at) || 0;
   return [...chars].sort((a, b) => rank(a) - rank(b) || at(b) - at(a));
 }
@@ -747,7 +751,7 @@ function renderLaunch(c, running) {
   const def = LAUNCH_CLIS.includes(c.defaultCli) ? c.defaultCli : "claude";
   const pick = launchPick.get(c.agentId) || def;
   const off = !running || busyShell(c);
-  const sel = el("select", { class: "launch-cli", "aria-label": S.launchCli, disabled: off, onchange: (e) => { launchPick.set(c.agentId, e.target.value); } },
+  const sel = el("select", { class: "launch-cli", "aria-label": S.launchCli, disabled: off, onchange: (e) => { launchPick.set(c.agentId, e.target.value); refreshMsg(); } },
     ...LAUNCH_CLIS.map((v) => el("option", { value: v, text: CLI_NAMES[v], selected: pick === v })));
   return el("span", { class: "launch" }, sel,
     el("button", { class: "b", disabled: off, text: S.launch, onclick: () => act(`/agents/${id}/launch`, { cli: launchPick.get(c.agentId) || def }) }));
@@ -878,21 +882,33 @@ function renderMsgForm(c) {
     renderQueue(c),
     el("div", { class: "note", text: S.messageHelp }));
 }
+/** 셸 프롬프트만 있는 터미널에 보낼 때 띄울 CLI(머리 카드에서 고른 것). 아니면 null — 돌고 있는 CLI에 넣는다. */
+function launchCliFor(c) {
+  if (c.office || !c.session || c.session.state !== "running" || c.cli || c.atPrompt !== true) return null;
+  const def = LAUNCH_CLIS.includes(c.defaultCli) && c.defaultCli !== "opencode" ? c.defaultCli : "claude";
+  const pick = launchPick.get(c.agentId);
+  // OpenCode는 첫 프롬프트를 넣는 길(업무 보내기)이 없어 기본 CLI로 띄운다.
+  return pick && pick !== "opencode" ? pick : def;
+}
 function renderMsgActions(c) {
   const d = msgDraftOf(c.agentId);
   const running = !!(c.session && c.session.state === "running");
-  const queue = willQueue(c);
-  return el("div", { id: "msgact", class: "btns", "data-key": JSON.stringify([running, queue, d.sending]) },
-    el("button", { class: "b primary", disabled: !running || d.sending, text: queue ? S.queueBtn : S.send, onclick: () => sendMessage(c.agentId) }));
+  const launch = launchCliFor(c);
+  const queue = !launch && willQueue(c);
+  const text = launch ? (d.sending ? S.launchSending : S.launchSend(CLI_NAMES[launch] || launch)) : queue ? S.queueBtn : S.send;
+  return el("div", { id: "msgact", class: "btns", "data-key": JSON.stringify([running, queue, launch, d.sending]) },
+    el("button", { class: "b primary", disabled: !running || d.sending, text, onclick: () => sendMessage(c.agentId) }));
 }
 async function sendMessage(agentId) {
   const d = msgDraftOf(agentId);
   if (d.sending) return;
   if (!d.text.trim()) { toast(errText("empty")); return; }
+  const c = currentChar();
+  const cli = c && c.agentId === agentId ? launchCliFor(c) : null;
   d.sending = true; refreshMsg();
   try {
-    const r = await api(`/agents/${encodeURIComponent(agentId)}/message`, { method: "POST", body: { text: d.text } });
-    toast(r && r.outcome === "queued" ? S.queued : S.done);
+    const r = await api(`/agents/${encodeURIComponent(agentId)}/message`, { method: "POST", body: { text: d.text, ...(cli ? { cli } : {}) } });
+    toast(r && r.outcome === "queued" ? S.queued : r && r.outcome === "launched" ? S.launchedSend : S.done);
     d.text = "";
     const box = document.getElementById("msgtext");
     if (box) box.value = "";

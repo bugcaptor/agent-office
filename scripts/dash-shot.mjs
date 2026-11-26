@@ -35,7 +35,7 @@ const characters = [
     asks: [{ id: "ask-2", toolName: "Bash", canAlways: true, sidechain: false, at: now,
       toolInput: { command: "npm run build && rm -rf dist/tmp", description: "빌드하고 임시 폴더 정리" } }],
   },
-  // 목록 정렬: 작업 중이면 맨 위, 나머지는 최근 턴 관측 순, 관측이 없으면 맨 뒤.
+  // 목록 정렬: 답을 기다림 → 작업 중 → 나머지는 최근 턴 관측 순, 관측이 없으면 맨 뒤.
   { agentId: "c", name: "체리", role: "문서", cwd: "/Users/me/docs", clockedOut: true, session: null, turn: null, waiting: [], asks: [] },
   { agentId: "d", name: "도토리", role: "테스트", cwd: "/Users/me/work/backend-service", clockedOut: false,
     session: { sessionId: "s4", state: "running" }, turn: { phase: "idle", at: now - 60000 }, waiting: [], asks: [], cli: "claude", atPrompt: false },
@@ -122,6 +122,7 @@ const server = createServer(async (req, res) => {
       rev++;
       return send({ outcome: "queued" });
     }
+    if (url.pathname === "/api/agents/b/message") return send({ outcome: "launched" });
     if (url.pathname === "/api/agents/a/queue-cancel") { a.queue.items = a.queue.items.filter((m) => m.id !== posts.at(-1).body.id); rev++; }
     if (url.pathname === "/api/office-agent") {
       officeAgent = { ...officeAgent, session: { sessionId: "o1", state: "running" }, turn: { phase: "idle", at: now }, cli: "claude", atPrompt: false, cwd: posts.at(-1).body.cwd };
@@ -145,7 +146,7 @@ await mkdir(outDir, { recursive: true });
 await p.goto(base);
 await p.waitForSelector(".card");
 await p.screenshot({ path: `${outDir}/list.png` });
-assert.deepEqual(await p.locator(".card.clickable .name").allTextContents(), ["일반 에이전트", "이끼", "에이다", "보리", "도토리", "체리"]);
+assert.deepEqual(await p.locator(".card.clickable .name").allTextContents(), ["일반 에이전트", "에이다", "보리", "이끼", "도토리", "체리"]);
 await p.locator(".card.clickable").filter({ hasText: "에이다" }).click();
 await p.waitForSelector("#log .msg");
 await p.waitForSelector("#sent .card");
@@ -232,6 +233,13 @@ await p.getByRole("button", { name: "CLI 실행" }).click();
 await p.waitForTimeout(200);
 assert.deepEqual(posts.at(-1), { path: "/api/agents/b/launch", body: { cli: "opencode" } });
 await p.locator("#head").screenshot({ path: `${outDir}/agent-launch.png` });
+// 셸 프롬프트 터미널의 직접 입력은 업무 보내기처럼 CLI를 띄워 첫 프롬프트로 넣는다(OpenCode는 기본 CLI로).
+await p.fill("#msgtext", "README 요약해 줘");
+await p.getByRole("button", { name: "Claude 띄워 보내기" }).click();
+await p.locator("#toast.show").filter({ hasText: "CLI를 띄워 보냈습니다" }).waitFor();
+assert.deepEqual(posts.at(-1), { path: "/api/agents/b/message", body: { text: "README 요약해 줘", cli: "claude" } });
+await p.selectOption("#head select.launch-cli", "codex");
+await p.getByRole("button", { name: "Codex 띄워 보내기" }).waitFor();
 await p.fill("#asks input", "임시 폴더는 지우지 마");
 await p.getByRole("button", { name: "거부" }).click();
 await p.waitForFunction(() => !document.querySelector("#asks .card"));

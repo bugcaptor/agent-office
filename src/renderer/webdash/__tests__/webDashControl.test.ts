@@ -34,3 +34,13 @@ describe("웹 상태판: 업무 완료", () => {
     expect(await handleWebDashControl({ requestId: "r", op: "work-done", itemId: "nope" })).toEqual({ error: "task-not-found" });
   });
 });
+describe("웹 상태판: 업무 만들기", () => {
+  it("만든 업무로 앱의 업무 팝업을 띄우지 않고 고르던 것을 지킨다", async () => {
+    const r = await handleWebDashControl({ requestId: "r", op: "work-create", title: "Web task", body: "", assigneeAgentId: "a", send: false });
+    expect(r.data).toEqual({ itemId: expect.any(String) });
+    expect(useWorkItemStore.getState().selectedId).toBeNull();
+    const open = useWorkItemStore.getState().add({ title: "Open", body: "", status: "todo" })!;
+    await handleWebDashControl({ requestId: "r2", op: "work-create", title: "Another", body: "", send: false });
+    expect(useWorkItemStore.getState().selectedId).toBe(open);
+  });
+});

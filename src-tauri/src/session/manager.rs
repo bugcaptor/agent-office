@@ -1080,15 +1080,24 @@ impl SessionManager {
     /// 없으면(Windows·브로커·`set +m`으로 셸과 같은 그룹) None. 웹 상태판이
     /// "Claude 실행 중" 표시에 쓴다.
     pub fn foreground_command(&self, agent_id: &str) -> Option<String> {
+        crate::session::shell_activity::foreground_command(self.foreground_pgid(agent_id)?)
+    }
+
+    /// 포그라운드 그룹 리더의 직계 자식 명령줄. 리더가 서브셸이면 CLI는 여기 있다.
+    pub fn foreground_child_commands(&self, agent_id: &str) -> Vec<String> {
+        self.foreground_pgid(agent_id)
+            .map(crate::session::shell_activity::foreground_child_commands)
+            .unwrap_or_default()
+    }
+
+    /// 셸이 아닌 포그라운드 프로세스 그룹. 셸 프롬프트이거나 조회할 수 없으면 None.
+    fn foreground_pgid(&self, agent_id: &str) -> Option<i32> {
         #[cfg(unix)]
         {
             let session = self.find(agent_id)?;
             let shell_pgid = session.handoff.lock().as_ref()?.pgid?;
             let fg = session.control.foreground_sample()?.fg_pgid?;
-            if fg == shell_pgid {
-                return None;
-            }
-            crate::session::shell_activity::foreground_command(fg)
+            (fg != shell_pgid).then_some(fg)
         }
         #[cfg(not(unix))]
         {

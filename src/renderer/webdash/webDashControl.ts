@@ -48,6 +48,8 @@ export async function handleWebDashControl(request: WebDashControlRequest): Prom
       if (!work.loaded) return { error: "work-not-loaded" };
       const assignee = request.assigneeAgentId ?? undefined;
       if (assignee && !app.agents[assignee]) return { error: "unknown-agent" };
+      // `add`는 새 업무를 골라 앱에 업무 팝업을 띄운다. 웹에서 만든 업무는 앱 화면을 바꾸지 않게 고르던 것을 되돌린다.
+      const selected = work.selectedId;
       const id = work.add({
         title: request.title ?? "",
         body: request.body ?? "",
@@ -56,6 +58,7 @@ export async function handleWebDashControl(request: WebDashControlRequest): Prom
         agent: request.cli ? { cli: request.cli } : undefined,
       });
       if (!id) return { error: "empty" };
+      if (useWorkItemStore.getState().selectedId === id) useWorkItemStore.getState().select(selected);
       await useWorkItemStore.getState().flush();
       if (request.send && assignee) {
         const blocked = workSendDisabledReason(app.agents[assignee]);

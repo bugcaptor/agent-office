@@ -122,7 +122,7 @@ fn steerable(turn: Option<&TurnObservation>, claude: bool, asks_pending: bool) -
 
 /// 터미널 포그라운드가 Claude인가(블로킹 — 프로세스 명령줄을 읽는다). Windows는 알 수 없어 false다.
 fn claude_in_foreground(manager: &crate::session::manager::SessionManager, agent_id: &str) -> bool {
-    manager.foreground_command(agent_id).as_deref().and_then(crate::webdash::cli_of_command) == Some("claude")
+    crate::webdash::foreground_cli(manager, agent_id, manager.foreground_command(agent_id).as_deref()) == Some("claude")
 }
 
 /// 넣기 실패가 잠깐 기다리면 풀리는 것인가(아니면 사람이 볼 때까지 붙들고 있는다).
@@ -222,13 +222,13 @@ impl ChatQueue {
             None => {
                 let manager = ctx.manager.clone();
                 let agent = agent_id.to_string();
-                let cli = tokio::task::spawn_blocking(move || manager.foreground_command(&agent))
-                    .await
-                    .ok()
-                    .flatten()
-                    .as_deref()
-                    .and_then(crate::webdash::cli_of_command)
-                    .is_some();
+                let cli = tokio::task::spawn_blocking(move || {
+                    crate::webdash::foreground_cli(&manager, &agent, manager.foreground_command(&agent).as_deref())
+                })
+                .await
+                .ok()
+                .flatten()
+                .is_some();
                 if !cli {
                     return Err("chat-view-no-cli".into());
                 }

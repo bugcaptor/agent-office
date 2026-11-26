@@ -29,7 +29,7 @@ mod markdown;
 pub mod net;
 mod routes;
 mod tls;
-pub(crate) use routes::cli_of_command;
+pub(crate) use routes::foreground_cli;
 
 use std::collections::HashMap;
 use std::net::{IpAddr, Ipv4Addr};

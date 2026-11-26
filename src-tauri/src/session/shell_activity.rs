@@ -188,6 +188,41 @@ pub(crate) fn foreground_command(pgid: i32) -> Option<String> {
     parse_ps_command(&run_capture("ps", &["-o", "command=", "-p", &pid])?)
 }
 
+/// 포그라운드 그룹 리더의 직계 자식 명령줄(pid 순). 업무 보내기는 CLI를 서브셸 `( … )`
+/// 안에서 띄우므로 리더가 셸 사본(`/bin/zsh -l -i`)이고 CLI는 그 자식이다.
+pub(crate) fn foreground_child_commands(pgid: i32) -> Vec<String> {
+    let Some(pids) = run_capture("pgrep", &["-g", &pgid.to_string()]) else {
+        return Vec::new();
+    };
+    let pids: Vec<&str> = pids
+        .lines()
+        .map(str::trim)
+        .filter(|l| !l.is_empty() && l.chars().all(|c| c.is_ascii_digit()))
+        .collect();
+    if pids.is_empty() {
+        return Vec::new();
+    }
+    run_capture("ps", &["-o", "pid=,ppid=,command=", "-p", &pids.join(",")])
+        .map(|out| parse_child_commands(&out, pgid))
+        .unwrap_or_default()
+}
+
+/// `ps -o pid=,ppid=,command=` 출력 → 부모가 `parent`인 프로세스의 명령줄(pid 순).
+pub fn parse_child_commands(stdout: &str, parent: i32) -> Vec<String> {
+    let mut rows: Vec<(i32, String)> = stdout
+        .lines()
+        .filter_map(|line| {
+            let mut parts = line.split_whitespace();
+            let pid: i32 = parts.next()?.parse().ok()?;
+            let ppid: i32 = parts.next()?.parse().ok()?;
+            let command: String = parts.collect::<Vec<_>>().join(" ");
+            (ppid == parent && !command.is_empty()).then(|| (pid, command.chars().take(MAX_COMMAND_CHARS).collect()))
+        })
+        .collect();
+    rows.sort_by_key(|(pid, _)| *pid);
+    rows.into_iter().map(|(_, c)| c).collect()
+}
+
 /// 포그라운드 그룹의 프로세스 수. 조회 실패 시 최소 1(명령이 도는 건 확실하다).
 fn foreground_job_count(pgid: i32) -> u32 {
     let pgid = pgid.to_string();
@@ -391,6 +426,13 @@ mod tests {
         assert_eq!(parse_ps_command("\n\n  cargo build \n").as_deref(), Some("cargo build"));
         assert_eq!(parse_ps_command(""), None);
         assert_eq!(parse_ps_command("   \n"), None);
+    }
+
+    #[test]
+    fn parse_child_commands_keeps_only_direct_children_in_pid_order() {
+        let out = "  43892 43794 /bin/zsh -l -i\n  43964 43894 npm exec chrome-devtools-mcp\n  43900 43892 caffeinate -i\n  43894 43892 claude --settings x\n";
+        assert_eq!(parse_child_commands(out, 43892), vec!["claude --settings x".to_string(), "caffeinate -i".to_string()]);
+        assert!(parse_child_commands("garbage\n", 1).is_empty());
     }
 
     #[test]

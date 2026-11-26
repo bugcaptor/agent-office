@@ -205,6 +205,17 @@ pub(crate) fn cli_of_command(command: &str) -> Option<&'static str> {
     None
 }
 
+/// 터미널 포그라운드의 에이전트 CLI(블로킹). 그룹 리더가 CLI가 아니면 리더의 직계 자식을 본다 —
+/// 업무 보내기는 CLI를 서브셸 `( … )`에서 띄워 리더가 셸 사본(`/bin/zsh -l -i`)이다.
+pub(crate) fn foreground_cli(
+    manager: &crate::session::manager::SessionManager,
+    agent_id: &str,
+    leader: Option<&str>,
+) -> Option<&'static str> {
+    cli_of_command(leader?)
+        .or_else(|| manager.foreground_child_commands(agent_id).iter().find_map(|c| cli_of_command(c)))
+}
+
 /// 캐릭터들의 터미널 포그라운드를 본다(블로킹 — ps·pgrep을 띄운다).
 fn probe_shells(ctx: &Dash, agents: &[String]) -> HashMap<String, ShellProbe> {
     let mut out = HashMap::new();
@@ -213,7 +224,7 @@ fn probe_shells(ctx: &Dash, agents: &[String]) -> HashMap<String, ShellProbe> {
         let probe = cached.unwrap_or_else(|| {
             let command = ctx.ctl.manager.foreground_command(agent);
             let probe = ShellProbe {
-                cli: command.as_deref().and_then(cli_of_command),
+                cli: foreground_cli(&ctx.ctl.manager, agent, command.as_deref()),
                 at_prompt: if command.is_some() { Some(false) } else { ctx.ctl.manager.is_shell_prompt(agent) },
             };
             ctx.probes.lock().unwrap().insert(agent.clone(), (Instant::now(), probe));
@@ -528,7 +539,20 @@ async fn agent_command(
     };
     let body = body.map(|Json(b)| b).unwrap_or_default();
     match op.as_str() {
-        "message" => return message(&ctx, &agent, body.text.as_deref().unwrap_or("")).await,
+        "message" => {
+            let text = body.text.as_deref().unwrap_or("");
+            // 셸 프롬프트만 있는 터미널(새 세션 등)이면 업무 보내기처럼 CLI를 띄워 첫 프롬프트로 넣는다.
+            if let Some(result) = launch_with_prompt(&ctx, &profile, body.cli.as_deref(), text).await {
+                return match result {
+                    Ok(()) => {
+                        activity(&ctx, "message", Some(&agent), Some(&first_line(text)));
+                        ok(json!({ "outcome": "launched" }))
+                    }
+                    Err(e) => fail(e),
+                };
+            }
+            return message(&ctx, &agent, text).await;
+        }
         "queue-cancel" => return queue_cancel(&ctx, &agent, body.id.as_deref().unwrap_or("")),
         _ => {}
     }
@@ -646,6 +670,35 @@ async fn launch(ctx: &Dash, profile: &AgentProfile, cli: Option<&str>) -> Result
         SubmitOutcome::SessionChanged => Err("session-changed".into()),
         SubmitOutcome::NotRunning => Err("not-running".into()),
     }
+}
+
+/// 터미널이 셸 프롬프트에 있으면(CLI가 없음) 업무 보내기와 같은 길로 CLI를 띄우고 글을 첫 프롬프트로 넣는다.
+/// 업무 보드에는 남기지 않는다. 셸 프롬프트가 아니면 None — 호출자가 돌고 있는 CLI에 넣는다.
+async fn launch_with_prompt(ctx: &Dash, profile: &AgentProfile, cli: Option<&str>, text: &str) -> Option<Result<(), String>> {
+    let target = ctx.ctl.work_send.inspect(&ctx.ctl.gate, &profile.id).ok()?;
+    let session_id = target.session_id.filter(|_| !target.restart_required)?;
+    if let Err(e) = crate::chat_queue::check_text(text) {
+        return Some(Err(e));
+    }
+    let picked = cli.and_then(launch_cli).and_then(|c| match c {
+        LaunchCli::Work(c) => Some(c),
+        LaunchCli::Opencode => None,
+    });
+    let default = profile.default_agent.clone();
+    let agent = match picked {
+        Some(cli) => default.filter(|a| a.cli == cli).unwrap_or(WorkAgent { cli, model: None, effort: None }),
+        None => default.unwrap_or(WorkAgent { cli: WorkCli::Claude, model: None, effort: None }),
+    };
+    let request = crate::types::WorkSendRequest {
+        agent_id: profile.id.clone(),
+        session_id,
+        human_input_revision: target.human_input_revision,
+        fresh_session: false,
+        agent,
+        title: String::new(),
+        body: text.to_string(),
+    };
+    Some(ctx.ctl.work_send.send(&ctx.ctl.gate, ctx.ctl.app_data_dir.clone(), request).await.map(|_| ()))
 }
 
 // ── 일반 에이전트 ─────────────────────────────────────────────────────
