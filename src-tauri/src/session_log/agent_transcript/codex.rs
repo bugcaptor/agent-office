@@ -3,10 +3,13 @@
 // Codex 전사 소스. `<CODEX_HOME|~/.codex>/sessions/<YYYY>/<MM>/<DD>/rollout-*.jsonl`.
 //
 // Claude와 달리 Codex 세션 ID를 훅으로 받는 경로가 없다. 대신 rollout 파일
-// 첫 줄(`session_meta`)에 `cwd`와 `thread_source`가 들어 있어 그것으로 고른다:
+// 첫 줄(`session_meta`)에 `cwd`와 스레드 신원이 들어 있어 그것으로 고른다:
 //
 //   - `cwd`가 이 세션의 작업 폴더와 같고,
-//   - `thread_source`가 `subagent`가 아니고(서브에이전트 스레드는 부모에 딸린 별도 파일),
+//   - 부모 스레드(`parent_thread_id`)가 없고(서브에이전트·guardian_review 등
+//     서브스레드는 부모에 딸린 별도 파일 — `observer/codex_usage.rs`의
+//     `read_head_meta`와 같은 기준. 옛 rollout을 위해 `thread_source ==
+//     "subagent"`도 함께 거른다),
 //   - 최근에 쓰인(=살아 있는) 파일 중 가장 새 것.
 //
 // 한계: 같은 폴더에서 agent-office 밖의 터미널로 codex를 돌리면 그 대화가 이
@@ -85,7 +88,13 @@ impl CodexSource {
                 return None;
             }
             let payload = v.get("payload")?;
-            if payload.get("thread_source").and_then(Value::as_str) == Some("subagent") {
+            let has_parent = payload
+                .get("parent_thread_id")
+                .and_then(Value::as_str)
+                .is_some_and(|id| !id.trim().is_empty());
+            if has_parent
+                || payload.get("thread_source").and_then(Value::as_str) == Some("subagent")
+            {
                 return None;
             }
             payload
@@ -475,6 +484,13 @@ mod tests {
         std::fs::write(
             dir.join("rollout-subagent.jsonl"),
             format!("{}\n", meta("/w/proj", "subagent")),
+        )
+        .unwrap();
+        // 실측 형식: thread_source가 "subagent"가 아니어도 부모를 들면 서브스레드다.
+        std::fs::write(
+            dir.join("rollout-guardian.jsonl"),
+            r#"{"type":"session_meta","payload":{"cwd":"/w/proj","thread_source":"guardian_review","parent_thread_id":"t-main"}}
+"#,
         )
         .unwrap();
 

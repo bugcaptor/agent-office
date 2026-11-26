@@ -1,0 +1,45 @@
+[
+  {
+    "id": "w-full",
+    "title": "주간 점검",
+    "body": "모든 필드를 채운 업무",
+    "assigneeAgentId": "a1",
+    "agent": { "cli": "codex", "model": "gpt-5", "effort": "high" },
+    "status": "in_progress",
+    "order": 1.5,
+    "sessionIds": ["s1", "s2"],
+    "lastError": "work-send-cli-exited:1",
+    "dependsOn": ["w-min"],
+    "plan": true,
+    "maxFollowUps": 3,
+    "permissionWaitMinutes": 30,
+    "autoRun": {
+      "state": "running",
+      "judgeSessionId": "00000000-0000-4000-8000-000000000001",
+      "judgeStarted": true,
+      "currentId": "w-min",
+      "followUps": 1,
+      "costUsd": 0.25,
+      "log": [],
+      "startedAt": 1720000000000
+    },
+    "schedule": {
+      "rule": { "kind": "weekly", "days": [1], "time": "05:00" },
+      "enabled": true,
+      "nextAt": 1720600000000
+    },
+    "scheduledFrom": "w-template",
+    "createdAt": 1720000000000,
+    "updatedAt": 1720000000500
+  },
+  {
+    "id": "w-min",
+    "title": "",
+    "body": "선택 필드가 모두 빠진 업무",
+    "status": "todo",
+    "order": 0.5,
+    "sessionIds": [],
+    "createdAt": 1720000000000,
+    "updatedAt": 1720000000000
+  }
+]

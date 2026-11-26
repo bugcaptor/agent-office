@@ -85,7 +85,7 @@ pub struct ControlContext {
     /// 세션별 턴 상태(`TrackingEvents`가 갱신).
     pub turns: Arc<turns::TurnTracker>,
     /// 업무 목록 읽기(자동 진행 상태 포함).
-    pub work_panels: crate::persistence::work_panels_store::WorkPanelsStore,
+    pub work_panels: Arc<crate::persistence::work_panels_store::WorkPanelsStore>,
     /// 후속 프롬프트 넣기(`ask`). 앱의 보내기와 같은 관문·바쁨 표시를 쓴다.
     pub work_send: Arc<crate::work_send::WorkSendRuntime>,
     /// 대화 보기·웹 상태판의 입력과 보낼 메시지 대기열.
@@ -375,7 +375,7 @@ mod tests {
                 Arc::new(move |s: &AppSettings| changed.lock().unwrap().push(s.clone()))
             },
             turns: Arc::new(turns::TurnTracker::default()),
-            work_panels: crate::persistence::work_panels_store::WorkPanelsStore::new(dir.clone()),
+            work_panels: Arc::new(crate::persistence::work_panels_store::WorkPanelsStore::new(dir.clone())),
             work_send: Arc::new(crate::work_send::WorkSendRuntime::default()),
             chat_queue: Arc::default(),
             autorun: {

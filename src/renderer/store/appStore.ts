@@ -118,6 +118,17 @@ const DEFAULT_APP_SETTINGS: AppSettings = {
   notifyJumpShortcut: "",
 };
 
+/** 한 에이전트의 턴 상태를 바꾼 `timeTracking` 맵. `reduceTurn`이 같은 객체를 돌려주면
+ *  (working 중 tool 하트비트 등) 기존 맵을 그대로 돌려줘, 맵 통째로 구독하는 화면이
+ *  도구 이벤트마다 다시 돌지 않게 한다. */
+function withTurn(
+  map: Record<string, AgentTurnState>,
+  agentId: string,
+  next: AgentTurnState,
+): Record<string, AgentTurnState> {
+  return map[agentId] === next ? map : { ...map, [agentId]: next };
+}
+
 /**
  * 턴이 방금 종료됐으면(turns 증가) 그 턴의 시계열 기록을 로컬 로그에 append한다.
  * 순수 reducer를 건드리지 않고 prev/next 델타로 기록을 복원한다:
@@ -801,7 +812,7 @@ export const useAppStore = create<AppState>()(
           const prevTurn = s.timeTracking[e.agentId] ?? initialTurnState();
           const nextTurn = reduceTurn(prevTurn, { kind: "settle", at: e.at });
           logSettledTurn(e.agentId, prevTurn, nextTurn, e.at);
-          const timeTracking = { ...s.timeTracking, [e.agentId]: nextTurn };
+          const timeTracking = withTurn(s.timeTracking, e.agentId, nextTurn);
           const label = s.taskLabels[e.agentId];
           if (!label) return { timeTracking };
           return {
@@ -823,7 +834,7 @@ export const useAppStore = create<AppState>()(
         const prevTurn = s.timeTracking[e.agentId] ?? initialTurnState();
         const nextTurn = reduceTurn(prevTurn, { kind: turnKind, at: e.at });
         logSettledTurn(e.agentId, prevTurn, nextTurn, e.at);
-        const timeTracking = { ...s.timeTracking, [e.agentId]: nextTurn };
+        const timeTracking = withTurn(s.timeTracking, e.agentId, nextTurn);
 
         // ---- prompt: 라벨 소스 갱신(새 턴 시작 → 턴 중 실황 필드 리셋) ----
         if (e.kind === "prompt") {
@@ -912,7 +923,7 @@ export const useAppStore = create<AppState>()(
         const prev = s.timeTracking[e.agentId] ?? initialTurnState();
         const next = reduceTurn(prev, { kind, at: e.at });
         logSettledTurn(e.agentId, prev, next, e.at);
-        const timeTracking = { ...s.timeTracking, [e.agentId]: next };
+        const timeTracking = withTurn(s.timeTracking, e.agentId, next);
         // 완료(stop) → 라벨의 턴 중 실황을 지운다(idle에서 마지막 도구 잔존 방지).
         if (e.source === "stop") {
           const label = s.taskLabels[e.agentId];
@@ -941,7 +952,7 @@ export const useAppStore = create<AppState>()(
         const prev = s.timeTracking[agentId] ?? initialTurnState();
         const next = reduceTurn(prev, { kind: "settle", at });
         logSettledTurn(agentId, prev, next, at);
-        return { timeTracking: { ...s.timeTracking, [agentId]: next } };
+        return { timeTracking: withTurn(s.timeTracking, agentId, next) };
       }),
 
     noteUsageSession: (agentId, sessionId) =>

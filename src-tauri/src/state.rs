@@ -164,7 +164,9 @@ pub struct AppState {
     /// 캐릭터 일기(#60) 작업 로그 스냅샷(`worklogs/<agentId>.json`) — 일기화 전까지
     /// 렌더러 버퍼를 디스크에 보존해 앱 재시작 후 복원한다. 렌더러가 쓰기를 주도한다.
     pub work_send_runtime: Arc<crate::work_send::WorkSendRuntime>,
-    pub work_panels_store: crate::persistence::work_panels_store::WorkPanelsStore,
+    /// 업무 목록·세션 요약. 제어 서버(`ControlContext::work_panels`)와 같은 인스턴스를 나눠 써서
+    /// 프로세스 안 잠금이 하나다.
+    pub work_panels_store: Arc<crate::persistence::work_panels_store::WorkPanelsStore>,
     /// 토의 역할 목록(`roles.json`).
     pub role_store: crate::persistence::role_store::RoleStore,
     /// 팀 토의(`discussions.json`). 토의 하나씩 upsert·삭제한다.

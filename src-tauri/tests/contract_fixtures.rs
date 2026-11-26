@@ -30,7 +30,7 @@ use agent_office_lib::types::{
     DiscussionSessionRequest, DiscussionSessionResult, DiscussionUtteranceSource, MemoSheet, MemoSheetMeta,
     DiscussionLimitReason, DiscussionPauseReason, DiscussionPhase, DiscussionRun, DiscussionStance, DiscussionState, DiscussionUtteranceKind, DiscussionsFile, NotificationEvent, NotificationSource, OutputChunk, PersistedState, RolesFile, SessionEventTokens,
     SessionExitInfo, SessionState, SessionStateEvent, TaskChatRequest, TaskChatResult, TurnUsageEvent,
-    WorkCli, WorkStatus,
+    WorkCli, WorkItem, WorkStatus,
 };
 use agent_office_lib::usage::{
     ClaudeLiveStatus, CodexLiveOutcome, CodexLiveStatus, FetchTransport, LiveFetchOutcome,
@@ -549,6 +549,20 @@ fn discussions_file_roundtrips() {
     for d in &parsed.discussions {
         assert_eq!(agent_office_lib::persistence::discussion_store::discussion_problem(d), None);
     }
+}
+
+/// `work-items.json`은 렌더러가 쓰지만 저장은 Rust `WorkItem`을 한 번 거친다
+/// (`save_work_items`). 그래서 Rust 미러에 빠진 필드는 에러 없이 다음 저장 때
+/// 디스크에서 사라진다. 모든 필드를 채운 업무가 그대로 왕복하는지 본다 — TS 쪽은
+/// `workItemsFixture.test.ts`가 이 픽스처가 `WorkItem`의 키를 모두 담는지 본다.
+#[test]
+fn work_items_file_roundtrips() {
+    assert_roundtrip::<Vec<WorkItem>>(fixture!("work-items-file.json"));
+    let parsed: Vec<WorkItem> = serde_json::from_str(fixture!("work-items-file.json")).unwrap();
+    let [full, min] = &parsed[..] else { panic!("two work items") };
+    assert_eq!((&full.status, &min.status), (&WorkStatus::InProgress, &WorkStatus::Todo));
+    assert_eq!(full.agent.as_ref().map(|a| &a.cli), Some(&WorkCli::Codex));
+    assert!(full.plan && !min.plan && min.depends_on.is_empty() && min.auto_run.is_none());
 }
 
 #[test]

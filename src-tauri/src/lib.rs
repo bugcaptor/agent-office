@@ -711,6 +711,8 @@ pub fn run() {
             let control_server = Arc::new(crate::control::ControlServerState::default());
             control_server.set_app_data_dir(data_dir.clone());
             let work_send_runtime = Arc::new(crate::work_send::WorkSendRuntime::default());
+            // 앱 커맨드(`AppState`)와 제어 서버가 같은 업무 저장소를 쓴다(잠금 하나).
+            let work_panels_store = Arc::new(crate::persistence::work_panels_store::WorkPanelsStore::new(data_dir.clone()));
             let control_ctx = Arc::new(crate::control::ControlContext {
                 manager: manager.clone(),
                 observer: observer.clone(),
@@ -746,7 +748,7 @@ pub fn run() {
                     })
                 },
                 turns: turn_tracker,
-                work_panels: crate::persistence::work_panels_store::WorkPanelsStore::new(data_dir.clone()),
+                work_panels: work_panels_store.clone(),
                 work_send: work_send_runtime.clone(),
                 chat_queue: Arc::default(),
                 autorun: {
@@ -814,7 +816,7 @@ pub fn run() {
                 diary_store,
                 work_log_store,
                 work_send_runtime,
-                work_panels_store: crate::persistence::work_panels_store::WorkPanelsStore::new(data_dir.clone()),
+                work_panels_store,
                 role_store: crate::persistence::role_store::RoleStore::new(data_dir.clone()),
                 discussion_store: crate::persistence::discussion_store::DiscussionStore::new(data_dir.clone()),
                 awards_store,

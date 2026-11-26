@@ -181,6 +181,17 @@ describe("applyActivityEvent(tool) → taskLabels 실황", () => {
     expect(useAppStore.getState().taskLabels["a1"].latestToolAt).toBe(5000);
   });
 
+  it("working 중 바뀐 게 없는 tool 이벤트는 timeTracking·taskLabels 맵 참조를 그대로 둔다", () => {
+    const s = useAppStore.getState();
+    s.applyActivityEvent(promptEvent());
+    s.applyActivityEvent(toolEvent({ text: "Bash: build", at: 5000 }));
+    const before = useAppStore.getState();
+    s.applyActivityEvent(toolEvent({ text: "Bash: build", at: 9000 }));
+    const after = useAppStore.getState();
+    expect(after.timeTracking).toBe(before.timeTracking);
+    expect(after.taskLabels).toBe(before.taskLabels);
+  });
+
   it("라벨이 없으면(프롬프트 없이 tool) 라벨을 만들지 않는다", () => {
     useAppStore.getState().applyActivityEvent(toolEvent({ text: "Bash: x" }));
     expect(useAppStore.getState().taskLabels).toEqual({});

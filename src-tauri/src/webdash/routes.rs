@@ -35,8 +35,10 @@ const DONE_TASKS: usize = 20;
 /// 토의 속기록은 최근 발언만 보인다.
 const TRANSCRIPT_ITEMS: usize = 200;
 /// 터미널 포그라운드 조회(ps·pgrep)를 다시 하기 전 간격. 여러 기기가 몇 초마다 물어도
-/// 캐릭터마다 이 간격에 한 번만 프로세스를 띄운다.
-const PROBE_TTL: Duration = Duration::from_secs(2);
+/// 캐릭터마다 이 간격에 한 번만 프로세스를 띄운다. 상태판 주기(2.5초, `dash.html`의
+/// `setInterval(tick, …)`)보다 길어야 브라우저 하나만 열어도 캐시가 맞는다. 웹에서 명령을
+/// 보내면(`activity`) 캐시를 비워 바로 다시 본다.
+const PROBE_TTL: Duration = Duration::from_secs(3);
 
 pub(super) struct Dash {
     pub ctl: Arc<ControlContext>,
@@ -492,6 +494,8 @@ async fn discussion(State(ctx): Ctx, Path(id): Path<String>) -> Json<Value> {
 // ── 쓰기(간접 명령) ───────────────────────────────────────────────────
 
 fn activity(ctx: &Dash, op: &str, agent: Option<&str>, detail: Option<&str>) {
+    // 명령이 터미널 상태(CLI 실행·종료)를 바꿨을 수 있다 — 다음 `/state`가 다시 보게 한다.
+    ctx.probes.lock().unwrap().clear();
     let name = agent.and_then(|id| profile(ctx, id)).map(|p| p.name);
     ctx.dash.activity(json!({ "op": op, "agentId": agent, "name": name, "detail": detail }));
 }

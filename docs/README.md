@@ -19,7 +19,7 @@
 | 계약 구현(Tauri invoke) | `src/renderer/ipc/tauriApi.ts` |
 | Rust 커맨드 | `src-tauri/src/ipc/commands/*.rs`, 등록은 `src-tauri/src/lib.rs`의 `generate_handler!` |
 | Rust 미러 타입 | `src-tauri/src/types.rs` |
-| TS·Rust 직렬화 대조 | `src/shared/contract-fixtures/` ↔ `src-tauri/tests/contract_fixtures.rs` |
+| TS·Rust 직렬화 대조 | `src/shared/contract-fixtures/` ↔ `src-tauri/tests/contract_fixtures.rs`. 업무 목록 `work-items-file.json`은 TS `WorkItem` 키를 모두 담는지 `src/shared/__tests__/workItemsFixture.test.ts`가 함께 본다(Rust 미러에 빠진 필드는 저장 왕복에서 사라지므로) |
 
 ### Rust (`src-tauri/src/`)
 
