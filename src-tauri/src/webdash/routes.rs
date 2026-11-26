@@ -55,16 +55,8 @@ struct ShellProbe {
 
 type Ctx = State<Arc<Dash>>;
 
-pub(super) async fn serve(
-    ip: Ipv4Addr,
-    port: u16,
-    ctl: Arc<ControlContext>,
-    dash: Arc<WebDashState>,
-) -> std::io::Result<oneshot::Sender<()>> {
+pub(super) async fn serve(ip: Ipv4Addr, port: u16, app: Router) -> std::io::Result<oneshot::Sender<()>> {
     let listener = tokio::net::TcpListener::bind((ip, port)).await?;
-    // 컴퓨터 이름은 처음 한 번 프로세스를 띄워 읽는다. 첫 요청이 기다리지 않게 미리 읽어 둔다.
-    tokio::task::spawn_blocking(super::computer_name);
-    let app = router(Arc::new(Dash { ctl, dash, probes: Mutex::new(HashMap::new()) }));
     let (tx, rx) = oneshot::channel::<()>();
     tokio::spawn(async move {
         let _ = axum::serve(listener, app.into_make_service_with_connect_info::<SocketAddr>())
@@ -74,6 +66,13 @@ pub(super) async fn serve(
             .await;
     });
     Ok(tx)
+}
+
+/// 상태판 앱(라우터). 평문 리스너(`serve`)와 TLS 리스너(`tls::serve`)가 함께 쓴다.
+pub(super) fn app(ctl: Arc<ControlContext>, dash: Arc<WebDashState>) -> Router {
+    // 컴퓨터 이름은 처음 한 번 프로세스를 띄워 읽는다. 첫 요청이 기다리지 않게 미리 읽어 둔다.
+    tokio::task::spawn_blocking(super::computer_name);
+    router(Arc::new(Dash { ctl, dash, probes: Mutex::new(HashMap::new()) }))
 }
 
 fn router(ctx: Arc<Dash>) -> Router {

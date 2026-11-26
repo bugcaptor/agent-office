@@ -647,6 +647,7 @@ fn web_dash_status_serializes_to_fixture() {
         urls: vec!["http://100.101.2.3:7788/#t=0123abcd".into(), "http://127.0.0.1:7788/#t=0123abcd".into()],
         error: Some("web-dash-no-network".into()),
         clients: 2,
+        https_error: Some("web-dash-https-not-enabled".into()),
     };
     assert_value_eq(fixture, serde_json::to_value(&status).unwrap());
     // 설정은 렌더러 -> 백엔드로도 오간다(web_dash_configure).

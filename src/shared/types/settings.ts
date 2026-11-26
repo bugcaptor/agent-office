@@ -223,6 +223,8 @@ export interface WebDashStatus {
   error?: string;
   /** 최근 30초 안에 요청한 브라우저 수. */
   clients: number;
+  /** tailnet 주소를 HTTPS로 열지 못하고 HTTP로 연 이유 코드. */
+  httpsError?: string;
 }
 
 /** 웹에서 들어온 명령(`web-dash-activity` 이벤트). 앱 화면 알림용. */

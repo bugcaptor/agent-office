@@ -5,7 +5,7 @@
 import type { ChatLiveStatus, ChatLogItem, ChatLogPage, PendingAsk } from "@shared/types";
 
 /** 화면이 들고 있는 최대 항목 수(오래된 것부터 버린다). */
-export const CHAT_VIEW_KEEP = 600;
+export const CHAT_VIEW_KEEP = 2000;
 
 /**
  * 새로 받은 쪽을 들고 있던 로그에 붙인다. epoch가 같으면 이어 붙이고, 다르면(처음·새 세션·

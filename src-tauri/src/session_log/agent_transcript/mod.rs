@@ -35,19 +35,20 @@ pub(crate) const MAX_VALUE_LINES: usize = 24;
 
 /// 웹 채팅 프레임의 문자 상한. 로그와 달리 "펼치면 전문이 보인다"가 목적이라
 /// 훨씬 넉넉하다 — 클라이언트가 접기/펼치기로 화면 점유를 관리한다.
-/// 상한 산정: 폰이 들고 있는 항목 수(웹 `MAX_ITEMS` 400) × 이 한도가 최악의
-/// 메모리이므로, 16k자면 UTF-16 기준 대략 12MB대 — 400개가 전부 상한을 채우는
-/// 일은 실제로 없고(도구 결과 대부분은 수백 자) 현실적 상한으로 충분하다.
+/// 상한 산정: 폰이 들고 있는 항목 수(웹 `LOG_KEEP` 2000) × 이 한도가 최악의
+/// 메모리지만, 항목 대부분은 수백 자라 실제로는 수 MB에 그친다.
 pub const MAX_WEB_VALUE_CHARS: usize = 16_000;
 /// 웹 채팅 프레임의 줄 수 상한.
 pub const MAX_WEB_VALUE_LINES: usize = 240;
 
-/// 백필(웹 채팅 진입)에서 파일 끝에서부터 거슬러 읽는 최대 바이트.
-pub const BACKFILL_MAX_BYTES: u64 = 256 * 1024;
-/// 백필로 돌려주는 최대 항목 수(가장 최근 것부터 남긴다).
-pub const BACKFILL_MAX_ITEMS: usize = 100;
+/// 백필(웹 채팅·대화 보기 진입)에서 파일 끝에서부터 거슬러 읽는 최대 바이트.
+/// 긴 세션 전사도 대개 수 MB라 이 안에 세션 전체가 들어온다.
+pub const BACKFILL_MAX_BYTES: u64 = 8 * 1024 * 1024;
+/// 백필로 돌려주는 최대 항목 수(가장 최근 것부터 남긴다). 수집기 버퍼(`webdash::log`의
+/// `MAX_ITEMS`)와 같다.
+pub const BACKFILL_MAX_ITEMS: usize = 2000;
 /// 백필 창 안에 사람이 친 프롬프트가 없을 때 거슬러 읽는 최대 바이트.
-pub const BACKFILL_SEARCH_MAX_BYTES: u64 = 8 * 1024 * 1024;
+pub const BACKFILL_SEARCH_MAX_BYTES: u64 = 32 * 1024 * 1024;
 
 // ── 구조화된 채팅 항목 ────────────────────────────────────────────────
 //

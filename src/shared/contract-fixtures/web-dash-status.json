@@ -3,5 +3,6 @@
   "running": true,
   "urls": ["http://100.101.2.3:7788/#t=0123abcd", "http://127.0.0.1:7788/#t=0123abcd"],
   "error": "web-dash-no-network",
-  "clients": 2
+  "clients": 2,
+  "httpsError": "web-dash-https-not-enabled"
 }

@@ -10,7 +10,7 @@
 // 항목에서 자꾸 풀려서 버렸다. 맨 위에 있으면 새 항목이 그대로 보이고, 아래로 내려 읽는 중이면
 // 브라우저 스크롤 앵커링이 읽던 자리를 지킨다. 최신 블록 위에는 지금 상태를 보인다 —
 // 생각 중(움직임)과 출력이 끊긴 멈춤·입력 대기(정지)를 가른다.
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { AskAction, ChatLiveStatus, ChatLogItem, ChatLogPage, PendingAsk } from "@shared/types";
 import { tauriApi } from "../ipc/tauriApi";
@@ -311,16 +311,18 @@ interface ItemActions {
   onNotice: ShowNotice;
 }
 
-function Block({ block, ...actions }: ItemActions & { block: ChatBlock }) {
+// 항목이 2000개까지 쌓이므로 블록·항목은 memo로 감싼다. 상태 줄이 매초 바뀌어도, 새 항목이 붙어도
+// 이미 그린 항목은 다시 그리지 않는다(`mergeChatPage`가 들고 있던 항목 객체를 그대로 둔다).
+const Block = memo(function Block({ block, ...actions }: ItemActions & { block: ChatBlock }) {
   return (
     <div className={`chat-block${block.side ? " side" : ""}`}>
       <Item item={block.head} {...actions} />
       {block.children.map((c) => <Item key={c.seq} item={c} {...actions} nested />)}
     </div>
   );
-}
+});
 
-function Item({ item, agentId, epoch, onZoom, onNotice, nested = false }: ItemActions & { item: ChatLogItem; nested?: boolean }) {
+const Item = memo(function Item({ item, agentId, epoch, onZoom, onNotice, nested = false }: ItemActions & { item: ChatLogItem; nested?: boolean }) {
   const { t } = useTranslation("terminal");
   if (item.kind === "image") return <ChatImage item={item} agentId={agentId} onZoom={onZoom} onNotice={onNotice} />;
   if (item.kind === "text") {
@@ -364,7 +366,7 @@ function Item({ item, agentId, epoch, onZoom, onNotice, nested = false }: ItemAc
       <CopyableText text={item.text} onNotice={onNotice} />
     </details>
   );
-}
+});
 
 function ChatImage({ item, agentId, onZoom, onNotice }: Omit<ItemActions, "epoch"> & { item: ChatLogItem }) {
   const { t } = useTranslation("terminal");

@@ -208,7 +208,10 @@
     "errors": {
       "web-dash-no-network": "在所选网络上找不到地址,因此只在本机(127.0.0.1)开放。请确认 Tailscale 已开启或已连接局域网。出现地址后会自动连接。",
       "web-dash-bind-failed": "无法打开端口。如果被其他程序占用,请更换端口。",
-      "web-dash-port-invalid": "端口必须在 1024 到 65535 之间。"
+      "web-dash-port-invalid": "端口必须在 1024 到 65535 之间。",
+      "web-dash-tailscale-missing": "找不到 tailscale 命令,因此 tailnet 地址以 HTTP 开放。要使用 HTTPS,请安装 Tailscale CLI。",
+      "web-dash-https-not-enabled": "此 tailnet 未开启 HTTPS 证书,因此以 HTTP 开放。在 Tailscale 管理控制台(DNS)中开启 MagicDNS 和 HTTPS Certificates 后,10 分钟内会切换为 HTTPS。",
+      "web-dash-https-failed": "未能获取 Tailscale 证书,因此 tailnet 地址以 HTTP 开放。10 分钟后重试。"
     }
   }
 }

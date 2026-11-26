@@ -1279,7 +1279,7 @@ function renderUsageBar() {
 }
 
 // ── 갱신 ──
-const LOG_KEEP = 400;
+const LOG_KEEP = 2000;
 async function refreshChars() {
   const d = await api("/state");
   setHost(d.host, d.app);

@@ -105,6 +105,11 @@ export function WebDashSection() {
             {status.running ? t("webDash.running", { count: status.clients }) : t("webDash.stopped")}
           </div>
           {problem && <div style={{ fontSize: 12, color: "var(--accent-warn)" }}>{t(`webDash.errors.${problem.split(":")[0]}`, { defaultValue: problem })}</div>}
+          {status.httpsError && (
+            <div style={{ fontSize: 12, opacity: 0.85 }}>
+              {t(`webDash.errors.${status.httpsError.split(":")[0]}`, { defaultValue: status.httpsError })}
+            </div>
+          )}
           {status.urls.length > 0 && (
             <div className="web-dash-urls">
               <div style={{ fontSize: 12, opacity: 0.85 }}>{t("webDash.urlsIntro")}</div>

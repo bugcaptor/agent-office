@@ -208,7 +208,10 @@
     "errors": {
       "web-dash-no-network": "在所選網路上找不到位址,因此只在本機(127.0.0.1)開放。請確認 Tailscale 已開啟或已連上區域網路。出現位址後會自動連線。",
       "web-dash-bind-failed": "無法開啟連接埠。若被其他程式占用,請更換連接埠。",
-      "web-dash-port-invalid": "連接埠必須介於 1024 到 65535 之間。"
+      "web-dash-port-invalid": "連接埠必須介於 1024 到 65535 之間。",
+      "web-dash-tailscale-missing": "找不到 tailscale 指令,因此 tailnet 位址以 HTTP 開放。若要使用 HTTPS,請安裝 Tailscale CLI。",
+      "web-dash-https-not-enabled": "此 tailnet 未開啟 HTTPS 憑證,因此以 HTTP 開放。在 Tailscale 管理主控台(DNS)開啟 MagicDNS 與 HTTPS Certificates 後,10 分鐘內會切換為 HTTPS。",
+      "web-dash-https-failed": "無法取得 Tailscale 憑證,因此 tailnet 位址以 HTTP 開放。10 分鐘後重試。"
     }
   }
 }

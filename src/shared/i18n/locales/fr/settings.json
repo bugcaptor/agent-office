@@ -208,7 +208,10 @@
     "errors": {
       "web-dash-no-network": "Aucune adresse trouvée sur le réseau choisi : ouvert sur cet ordinateur (127.0.0.1) seulement. Vérifiez que Tailscale est actif ou que vous êtes sur un LAN. Il s'attache automatiquement dès qu'une adresse apparaît.",
       "web-dash-bind-failed": "Impossible d'ouvrir le port. S'il est utilisé par un autre programme, choisissez-en un autre.",
-      "web-dash-port-invalid": "Le port doit être compris entre 1024 et 65535."
+      "web-dash-port-invalid": "Le port doit être compris entre 1024 et 65535.",
+      "web-dash-tailscale-missing": "Commande tailscale introuvable : l'adresse tailnet est servie en HTTP. Installez la CLI Tailscale pour passer en HTTPS.",
+      "web-dash-https-not-enabled": "Les certificats HTTPS sont désactivés pour ce tailnet : service en HTTP. Activez MagicDNS et HTTPS Certificates dans la console Tailscale (DNS) ; le passage en HTTPS se fait sous 10 minutes.",
+      "web-dash-https-failed": "Impossible d'obtenir un certificat Tailscale : l'adresse tailnet est servie en HTTP. Nouvel essai dans 10 minutes."
     }
   }
 }

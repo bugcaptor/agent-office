@@ -48,8 +48,8 @@ struct StoredImage {
     bytes: Arc<Vec<u8>>,
 }
 
-/// 캐릭터당 들고 있는 최대 항목 수.
-const MAX_ITEMS: usize = 300;
+/// 캐릭터당 들고 있는 최대 항목 수. 백필 상한과 같아, 진입할 때 읽은 과거를 버리지 않는다.
+const MAX_ITEMS: usize = BACKFILL_MAX_ITEMS;
 /// 같은 캐릭터 전사를 다시 읽기 전 최소 간격.
 const MIN_TICK: Duration = Duration::from_millis(1000);
 /// 이만큼 아무도 안 본 수집기는 버린다.

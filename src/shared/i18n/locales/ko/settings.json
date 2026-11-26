@@ -208,7 +208,10 @@
     "errors": {
       "web-dash-no-network": "고른 네트워크의 주소를 찾지 못해 이 컴퓨터(127.0.0.1)에서만 열려 있습니다. Tailscale이 켜져 있는지, LAN에 연결돼 있는지 확인하세요. 주소가 생기면 자동으로 붙습니다.",
       "web-dash-bind-failed": "포트를 열지 못했습니다. 다른 프로그램이 쓰고 있다면 포트를 바꾸세요.",
-      "web-dash-port-invalid": "포트는 1024~65535 사이여야 합니다."
+      "web-dash-port-invalid": "포트는 1024~65535 사이여야 합니다.",
+      "web-dash-tailscale-missing": "tailscale 명령을 찾지 못해 tailnet 주소를 HTTP로 열었습니다. HTTPS로 열려면 Tailscale CLI를 설치하세요.",
+      "web-dash-https-not-enabled": "tailnet에 HTTPS 인증서가 꺼져 있어 HTTP로 열었습니다. Tailscale 관리 화면(DNS)에서 MagicDNS와 HTTPS Certificates를 켜면 10분 안에 HTTPS로 바뀝니다.",
+      "web-dash-https-failed": "Tailscale 인증서를 받지 못해 tailnet 주소를 HTTP로 열었습니다. 10분 뒤 다시 해 봅니다."
     }
   }
 }

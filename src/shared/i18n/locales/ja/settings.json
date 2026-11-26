@@ -208,7 +208,10 @@
     "errors": {
       "web-dash-no-network": "選んだネットワークのアドレスが見つからないため、このコンピューター(127.0.0.1)でのみ開いています。Tailscale が有効か、LAN に接続しているか確認してください。アドレスが現れると自動で接続します。",
       "web-dash-bind-failed": "ポートを開けませんでした。他のプログラムが使用中ならポートを変更してください。",
-      "web-dash-port-invalid": "ポートは 1024〜65535 の範囲で指定してください。"
+      "web-dash-port-invalid": "ポートは 1024〜65535 の範囲で指定してください。",
+      "web-dash-tailscale-missing": "tailscale コマンドが見つからないため、tailnet アドレスを HTTP で開いています。HTTPS にするには Tailscale CLI をインストールしてください。",
+      "web-dash-https-not-enabled": "tailnet の HTTPS 証明書がオフのため HTTP で開いています。Tailscale 管理画面(DNS)で MagicDNS と HTTPS Certificates をオンにすると、10 分以内に HTTPS に切り替わります。",
+      "web-dash-https-failed": "Tailscale 証明書を取得できなかったため、tailnet アドレスを HTTP で開いています。10 分後に再試行します。"
     }
   }
 }

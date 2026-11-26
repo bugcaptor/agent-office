@@ -13,7 +13,7 @@
 // CLI가 턴을 마치고 입력을 기다릴 때만 같은 세션에 다음 지시를 잇는다. 머리에는 컴퓨터 이름을 보인다.
 //
 // 보안: 설정에서 켜야 뜬다(기본 꺼짐). 고른 네트워크(tailnet/LAN)의 주소와
-// 루프백에만 귀를 열고, 모든 API는 앱이 발급한 토큰(`web-dash-token`, 0600)을
+// 루프백에만 귀를 열고, tailnet 주소는 Tailscale 인증서로 HTTPS를 쓴다(`tls.rs`, 못 받으면 HTTP). 모든 API는 앱이 발급한 토큰(`web-dash-token`, 0600)을
 // 요구한다. 접속 주소에 토큰을 실어 건네고, 페이지는 받은 토큰을 브라우저에
 // 저장한 뒤 주소에서 지운다. 토큰을 새로 만들면 기존 기기는 모두 끊긴다.
 //
@@ -25,6 +25,7 @@ mod files;
 pub mod log;
 pub mod net;
 mod routes;
+mod tls;
 pub(crate) use routes::cli_of_command;
 
 use std::collections::HashMap;
@@ -49,6 +50,12 @@ pub const DEFAULT_PORT: u16 = 7788;
 const CLIENT_TTL: Duration = Duration::from_secs(30);
 /// 인터페이스 주소가 바뀌었는지(Tailscale 켜짐·DHCP) 다시 보는 간격.
 const WATCH_INTERVAL: Duration = Duration::from_secs(15);
+/// tailnet 인증서를 다시 받는 간격. Tailscale은 만료가 가까울 때만 새로 발급한다.
+const TLS_REFRESH: Duration = Duration::from_secs(12 * 3600);
+/// 인증서를 못 받았을 때 다시 해 보기 전 간격.
+const TLS_RETRY: Duration = Duration::from_secs(600);
+/// 방금 닫은 리스너가 포트를 놓기를 기다리며 다시 열어 보는 횟수.
+const BIND_ATTEMPTS: u32 = 10;
 
 fn default_port() -> u16 {
     DEFAULT_PORT
@@ -91,6 +98,9 @@ pub struct WebDashStatus {
     pub error: Option<String>,
     /// 최근 30초 안에 요청한 브라우저 주소 수.
     pub clients: usize,
+    /// tailnet 주소를 HTTPS로 열지 못하고 HTTP로 연 이유 코드.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub https_error: Option<String>,
 }
 
 /// 렌더러에 알리는 일. 테스트는 기록만 한다.
@@ -118,7 +128,16 @@ impl WebDashEvents for TauriDashEvents {
 struct Installed {
     addrs: Vec<Ipv4Addr>,
     port: u16,
+    /// tailnet 주소를 HTTPS로 열었다면 그 인증서 이름.
+    tls_domain: Option<String>,
     shutdowns: Vec<oneshot::Sender<()>>,
+}
+
+/// 쓰고 있는 tailnet 인증서.
+struct TlsLive {
+    domain: String,
+    cert: Arc<tls::SwapCert>,
+    checked: Instant,
 }
 
 pub struct WebDashState {
@@ -127,6 +146,9 @@ pub struct WebDashState {
     token: RwLock<Option<String>>,
     installed: Mutex<Option<Installed>>,
     error: Mutex<Option<String>>,
+    tls: Mutex<Option<TlsLive>>,
+    /// 마지막으로 인증서를 못 받은 이유와 그때.
+    tls_error: Mutex<Option<(String, Instant)>>,
     start_gate: tokio::sync::Mutex<()>,
     clients: Mutex<HashMap<IpAddr, Instant>>,
     last_status: Mutex<Option<WebDashStatus>>,
@@ -163,6 +185,8 @@ impl WebDashState {
             token: RwLock::new(token),
             installed: Mutex::new(None),
             error: Mutex::new(None),
+            tls: Mutex::new(None),
+            tls_error: Mutex::new(None),
             start_gate: tokio::sync::Mutex::new(()),
             clients: Mutex::new(HashMap::new()),
             last_status: Mutex::new(None),
@@ -233,19 +257,32 @@ impl WebDashState {
 
     pub fn status(&self) -> WebDashStatus {
         let config = self.config();
-        let (running, mut addrs, port) = match self.installed.lock().unwrap().as_ref() {
-            Some(i) => (true, i.addrs.clone(), i.port),
-            None => (false, Vec::new(), config.port),
+        let (running, mut addrs, port, tls_domain) = match self.installed.lock().unwrap().as_ref() {
+            Some(i) => (true, i.addrs.clone(), i.port, i.tls_domain.clone()),
+            None => (false, Vec::new(), config.port, None),
         };
-        // 루프백은 이 머신에서만 쓰므로 맨 뒤로.
-        addrs.sort_by_key(|ip| ip.is_loopback());
+        // HTTPS 주소를 맨 앞에, 루프백은 이 머신에서만 쓰므로 맨 뒤로.
+        let https = |ip: &Ipv4Addr| tls_domain.is_some() && net::is_tailnet(*ip);
+        addrs.sort_by_key(|ip| (!https(ip), ip.is_loopback()));
         let token = self.token().unwrap_or_default();
+        let urls = addrs
+            .iter()
+            .map(|ip| match tls_domain.as_deref().filter(|_| https(ip)) {
+                Some(domain) => format!("https://{domain}:{port}/#t={token}"),
+                None => format!("http://{ip}:{port}/#t={token}"),
+            })
+            .collect();
+        let plain_tailnet = tls_domain.is_none() && addrs.iter().any(|ip| net::is_tailnet(*ip));
+        let https_error = plain_tailnet
+            .then(|| self.tls_error.lock().unwrap().as_ref().map(|(e, _)| e.clone()))
+            .flatten();
         WebDashStatus {
             config,
             running,
-            urls: addrs.iter().map(|ip| format!("http://{ip}:{port}/#t={token}")).collect(),
+            urls,
             error: self.error.lock().unwrap().clone(),
             clients: self.client_count(),
+            https_error,
         }
     }
 
@@ -294,12 +331,14 @@ impl WebDashState {
             return;
         }
         let wanted = net::bind_addrs(config.bind, &net::local_ip_addrs());
+        let tls = if wanted.iter().any(|ip| net::is_tailnet(*ip)) { self.ensure_tls().await } else { None };
+        let tls_domain = tls.as_ref().map(|(d, _)| d.clone());
         let same = self
             .installed
             .lock()
             .unwrap()
             .as_ref()
-            .is_some_and(|i| i.port == config.port && i.addrs == wanted);
+            .is_some_and(|i| i.port == config.port && i.addrs == wanted && i.tls_domain == tls_domain);
         if same {
             self.publish_status();
             return;
@@ -308,8 +347,10 @@ impl WebDashState {
         let mut bound = Vec::new();
         let mut shutdowns = Vec::new();
         let mut failed = None;
+        let app = routes::app(ctx.clone(), me.clone());
         for ip in &wanted {
-            match routes::serve(*ip, config.port, ctx.clone(), me.clone()).await {
+            let tls = tls.clone().filter(|_| net::is_tailnet(*ip));
+            match bind_with_retry(*ip, config.port, app.clone(), tls).await {
                 Ok(shutdown) => {
                     bound.push(*ip);
                     shutdowns.push(shutdown);
@@ -323,12 +364,58 @@ impl WebDashState {
         let network_missing = bound.iter().all(|ip| ip.is_loopback());
         *self.error.lock().unwrap() = failed.or_else(|| network_missing.then(|| "web-dash-no-network".to_string()));
         if !bound.is_empty() {
-            *self.installed.lock().unwrap() = Some(Installed { addrs: bound, port: config.port, shutdowns });
+            // 실제로 HTTPS로 연 tailnet 주소가 있을 때만 이름을 적는다.
+            let tls_domain = tls_domain.filter(|_| bound.iter().any(|ip| net::is_tailnet(*ip)));
+            *self.installed.lock().unwrap() = Some(Installed { addrs: bound, port: config.port, tls_domain, shutdowns });
         }
         self.publish_status();
     }
 
+    /// tailnet 인증서를 준비한다. 받아 둔 것이 오래됐으면 다시 받아 바꿔 끼운다(리스너는 그대로).
+    /// 못 받으면 `TLS_RETRY`가 지나기 전에는 다시 해 보지 않는다.
+    async fn ensure_tls(&self) -> Option<(String, Arc<tls::SwapCert>)> {
+        let current = |live: &Option<TlsLive>| live.as_ref().map(|l| (l.domain.clone(), l.cert.clone()));
+        {
+            let live = self.tls.lock().unwrap();
+            let fresh = live.as_ref().is_some_and(|l| l.checked.elapsed() < TLS_REFRESH);
+            let failed_recently = self.tls_error.lock().unwrap().as_ref().is_some_and(|(_, at)| at.elapsed() < TLS_RETRY);
+            if fresh || failed_recently {
+                return current(&live);
+            }
+        }
+        let dir = self.data_dir.clone();
+        let fetched = tokio::task::spawn_blocking(move || tls::fetch(&dir))
+            .await
+            .unwrap_or_else(|e| Err(e.to_string()));
+        let mut live = self.tls.lock().unwrap();
+        match fetched {
+            Ok(f) => {
+                *self.tls_error.lock().unwrap() = None;
+                match live.as_mut() {
+                    Some(l) if l.domain == f.domain => {
+                        l.cert.set(f.key);
+                        l.checked = Instant::now();
+                    }
+                    _ => {
+                        *live = Some(TlsLive { domain: f.domain, cert: Arc::new(tls::SwapCert::new(f.key)), checked: Instant::now() });
+                    }
+                }
+            }
+            Err(e) => {
+                // 갖고 있던 인증서는 계속 쓴다(만료까지 몇 주 남아 있다).
+                eprintln!("web-dash: tailnet cert failed: {e}");
+                let code = match e.as_str() {
+                    "tailscale-missing" | "https-not-enabled" => format!("web-dash-{e}"),
+                    _ => format!("web-dash-https-failed: {e}"),
+                };
+                *self.tls_error.lock().unwrap() = Some((code, Instant::now()));
+            }
+        }
+        current(&live)
+    }
+
     pub fn stop(&self) {
+        // 내린 리스너가 포트를 놓기 전에 다시 열 수 있으므로 여는 쪽(`bind_with_retry`)이 잠깐 기다려 준다.
         if let Some(installed) = self.installed.lock().unwrap().take() {
             for s in installed.shutdowns {
                 let _ = s.send(());
@@ -348,6 +435,29 @@ impl WebDashState {
                 }
             }
         });
+    }
+}
+
+/// 리스너를 연다. 방금 내린 같은 주소의 리스너가 포트를 놓을 때까지 잠깐 다시 해 본다.
+async fn bind_with_retry(
+    ip: Ipv4Addr,
+    port: u16,
+    app: axum::Router,
+    tls: Option<(String, Arc<tls::SwapCert>)>,
+) -> std::io::Result<oneshot::Sender<()>> {
+    let mut attempt = 0;
+    loop {
+        let result = match tls.clone() {
+            Some((domain, cert)) => tls::serve(ip, port, app.clone(), domain, cert).await,
+            None => routes::serve(ip, port, app.clone()).await,
+        };
+        match result {
+            Err(e) if e.kind() == std::io::ErrorKind::AddrInUse && attempt + 1 < BIND_ATTEMPTS => {
+                attempt += 1;
+                tokio::time::sleep(Duration::from_millis(100)).await;
+            }
+            other => return other,
+        }
     }
 }
 
