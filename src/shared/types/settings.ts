@@ -225,6 +225,8 @@ export interface WebDashStatus {
   clients: number;
   /** tailnet 주소를 HTTPS로 열지 못하고 HTTP로 연 이유 코드. */
   httpsError?: string;
+  /** LAN 주소를 자체 서명 HTTPS로 열었다면 그 CA 인증서의 SHA-256 지문. */
+  lanFingerprint?: string;
 }
 
 /** 웹에서 들어온 명령(`web-dash-activity` 이벤트). 앱 화면 알림용. */

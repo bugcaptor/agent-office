@@ -98,6 +98,7 @@ fn router(ctx: Arc<Dash>) -> Router {
         .layer(axum::middleware::from_fn_with_state(ctx.clone(), auth));
     Router::new()
         .route("/", get(page))
+        .route("/ca.crt", get(lan_ca))
         .nest("/api", api)
         .with_state(ctx)
 }
@@ -126,6 +127,18 @@ async fn auth(State(ctx): Ctx, req: Request, next: Next) -> Response {
     }
     let mut res = next.run(req).await;
     res.headers_mut().insert(header::CACHE_CONTROL, HeaderValue::from_static("no-store"));
+    res
+}
+
+/// LAN 자체 서명 HTTPS의 CA 인증서. 기기에 설치하면 경고 없이 열린다(공개 정보라 토큰을 묻지 않는다).
+async fn lan_ca(State(ctx): Ctx) -> Response {
+    let Some(pem) = ctx.dash.lan_ca_pem() else {
+        return StatusCode::NOT_FOUND.into_response();
+    };
+    let mut res = Response::new(Body::from(pem));
+    let h = res.headers_mut();
+    h.insert(header::CONTENT_TYPE, HeaderValue::from_static("application/x-x509-ca-cert"));
+    h.insert(header::CONTENT_DISPOSITION, HeaderValue::from_static("attachment; filename=\"agent-office-lan-ca.crt\""));
     res
 }
 

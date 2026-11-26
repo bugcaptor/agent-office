@@ -168,7 +168,8 @@ pub fn fetch(data_dir: &Path) -> Result<Fetched, String> {
 
 // ── 리스너 ──────────────────────────────────────────────────────────
 
-/// `ip:port`에서 TLS(와 평문 → HTTPS 넘김)를 받는다. 돌려준 송신기로 멈춘다.
+/// `ip:port`에서 TLS(와 평문 → `https://<host>:<port>` 넘김)를 받는다. 돌려준 송신기로 멈춘다.
+/// `host`는 tailnet이면 인증서 이름, LAN이면 그 IP다.
 pub async fn serve(
     ip: Ipv4Addr,
     port: u16,

@@ -212,6 +212,7 @@
       "web-dash-tailscale-missing": "Commande tailscale introuvable : l'adresse tailnet est servie en HTTP. Installez la CLI Tailscale pour passer en HTTPS.",
       "web-dash-https-not-enabled": "Les certificats HTTPS sont désactivés pour ce tailnet : service en HTTP. Activez MagicDNS et HTTPS Certificates dans la console Tailscale (DNS) ; le passage en HTTPS se fait sous 10 minutes.",
       "web-dash-https-failed": "Impossible d'obtenir un certificat Tailscale : l'adresse tailnet est servie en HTTP. Nouvel essai dans 10 minutes."
-    }
+    },
+    "lanTls": "Les adresses LAN utilisent HTTPS avec un certificat créé par cet ordinateur. Le navigateur avertit la première fois : vérifiez que l'empreinte SHA-256 de l'AC correspond à celle ci-dessous, puis continuez. Pour éviter l'avertissement, ouvrez /ca.crt après l'adresse LAN sur l'appareil et installez le certificat d'AC (sur iOS, activez-le ensuite dans Réglages › Général › Informations › Réglages des certificats)."
   }
 }

@@ -212,6 +212,7 @@
       "web-dash-tailscale-missing": "tailscale 명령을 찾지 못해 tailnet 주소를 HTTP로 열었습니다. HTTPS로 열려면 Tailscale CLI를 설치하세요.",
       "web-dash-https-not-enabled": "tailnet에 HTTPS 인증서가 꺼져 있어 HTTP로 열었습니다. Tailscale 관리 화면(DNS)에서 MagicDNS와 HTTPS Certificates를 켜면 10분 안에 HTTPS로 바뀝니다.",
       "web-dash-https-failed": "Tailscale 인증서를 받지 못해 tailnet 주소를 HTTP로 열었습니다. 10분 뒤 다시 해 봅니다."
-    }
+    },
+    "lanTls": "LAN 주소는 이 컴퓨터가 만든 인증서로 HTTPS로 열립니다. 처음 열면 브라우저가 경고하니, 인증서 정보의 SHA-256 지문이 아래 CA 지문과 같은지 확인하고 진행하세요. 경고 없이 쓰려면 그 기기에서 LAN 주소 뒤에 /ca.crt를 열어 CA 인증서를 설치하세요(iOS는 설치 뒤 설정 › 일반 › 정보 › 인증서 신뢰 설정에서 켭니다)."
   }
 }

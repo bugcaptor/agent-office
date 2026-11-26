@@ -13,7 +13,8 @@
 // CLI가 턴을 마치고 입력을 기다릴 때만 같은 세션에 다음 지시를 잇는다. 머리에는 컴퓨터 이름을 보인다.
 //
 // 보안: 설정에서 켜야 뜬다(기본 꺼짐). 고른 네트워크(tailnet/LAN)의 주소와
-// 루프백에만 귀를 열고, tailnet 주소는 Tailscale 인증서로 HTTPS를 쓴다(`tls.rs`, 못 받으면 HTTP). 모든 API는 앱이 발급한 토큰(`web-dash-token`, 0600)을
+// 루프백에만 귀를 열고, tailnet 주소는 Tailscale 인증서로(`tls.rs`, 못 받으면 HTTP), LAN 주소는
+// 앱이 만든 CA의 자체 서명 인증서로(`lan_tls.rs`) HTTPS를 쓴다. 루프백만 HTTP다. 모든 API는 앱이 발급한 토큰(`web-dash-token`, 0600)을
 // 요구한다. 접속 주소에 토큰을 실어 건네고, 페이지는 받은 토큰을 브라우저에
 // 저장한 뒤 주소에서 지운다. 토큰을 새로 만들면 기존 기기는 모두 끊긴다.
 //
@@ -22,6 +23,7 @@
 // 앱 화면에는 명령마다 `web-dash-activity`로 짧은 알림을 띄운다.
 
 mod files;
+mod lan_tls;
 pub mod log;
 mod markdown;
 pub mod net;
@@ -102,6 +104,9 @@ pub struct WebDashStatus {
     /// tailnet 주소를 HTTPS로 열지 못하고 HTTP로 연 이유 코드.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub https_error: Option<String>,
+    /// LAN 주소를 자체 서명 HTTPS로 열었다면 그 CA 인증서의 SHA-256 지문.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub lan_fingerprint: Option<String>,
 }
 
 /// 렌더러에 알리는 일. 테스트는 기록만 한다.
@@ -131,7 +136,18 @@ struct Installed {
     port: u16,
     /// tailnet 주소를 HTTPS로 열었다면 그 인증서 이름.
     tls_domain: Option<String>,
+    /// LAN 주소를 자체 서명 HTTPS로 열었는가.
+    lan_tls: bool,
     shutdowns: Vec<oneshot::Sender<()>>,
+}
+
+/// 쓰고 있는 LAN 자체 서명 인증서.
+struct LanLive {
+    cert: Arc<tls::SwapCert>,
+    ips: Vec<Ipv4Addr>,
+    ca_pem: String,
+    fingerprint: String,
+    checked: Instant,
 }
 
 /// 쓰고 있는 tailnet 인증서.
@@ -150,6 +166,7 @@ pub struct WebDashState {
     tls: Mutex<Option<TlsLive>>,
     /// 마지막으로 인증서를 못 받은 이유와 그때.
     tls_error: Mutex<Option<(String, Instant)>>,
+    lan: Mutex<Option<LanLive>>,
     start_gate: tokio::sync::Mutex<()>,
     clients: Mutex<HashMap<IpAddr, Instant>>,
     last_status: Mutex<Option<WebDashStatus>>,
@@ -188,6 +205,7 @@ impl WebDashState {
             error: Mutex::new(None),
             tls: Mutex::new(None),
             tls_error: Mutex::new(None),
+            lan: Mutex::new(None),
             start_gate: tokio::sync::Mutex::new(()),
             clients: Mutex::new(HashMap::new()),
             last_status: Mutex::new(None),
@@ -258,21 +276,22 @@ impl WebDashState {
 
     pub fn status(&self) -> WebDashStatus {
         let config = self.config();
-        let (running, mut addrs, port, tls_domain) = match self.installed.lock().unwrap().as_ref() {
-            Some(i) => (true, i.addrs.clone(), i.port, i.tls_domain.clone()),
-            None => (false, Vec::new(), config.port, None),
+        let (running, mut addrs, port, tls_domain, lan_tls) = match self.installed.lock().unwrap().as_ref() {
+            Some(i) => (true, i.addrs.clone(), i.port, i.tls_domain.clone(), i.lan_tls),
+            None => (false, Vec::new(), config.port, None, false),
         };
-        // HTTPS 주소를 맨 앞에, 루프백은 이 머신에서만 쓰므로 맨 뒤로.
-        let https = |ip: &Ipv4Addr| tls_domain.is_some() && net::is_tailnet(*ip);
-        addrs.sort_by_key(|ip| (!https(ip), ip.is_loopback()));
+        // tailnet, LAN, 루프백 차례(루프백은 이 머신에서만 쓰므로 맨 뒤).
+        addrs.sort_by_key(|ip| (!net::is_tailnet(*ip), ip.is_loopback()));
         let token = self.token().unwrap_or_default();
         let urls = addrs
             .iter()
-            .map(|ip| match tls_domain.as_deref().filter(|_| https(ip)) {
+            .map(|ip| match tls_domain.as_deref().filter(|_| net::is_tailnet(*ip)) {
                 Some(domain) => format!("https://{domain}:{port}/#t={token}"),
+                None if lan_tls && net::is_lan(*ip) => format!("https://{ip}:{port}/#t={token}"),
                 None => format!("http://{ip}:{port}/#t={token}"),
             })
             .collect();
+        let lan_fingerprint = lan_tls.then(|| self.lan.lock().unwrap().as_ref().map(|l| l.fingerprint.clone())).flatten();
         let plain_tailnet = tls_domain.is_none() && addrs.iter().any(|ip| net::is_tailnet(*ip));
         let https_error = plain_tailnet
             .then(|| self.tls_error.lock().unwrap().as_ref().map(|(e, _)| e.clone()))
@@ -284,6 +303,7 @@ impl WebDashState {
             error: self.error.lock().unwrap().clone(),
             clients: self.client_count(),
             https_error,
+            lan_fingerprint,
         }
     }
 
@@ -334,12 +354,11 @@ impl WebDashState {
         let wanted = net::bind_addrs(config.bind, &net::local_ip_addrs());
         let tls = if wanted.iter().any(|ip| net::is_tailnet(*ip)) { self.ensure_tls().await } else { None };
         let tls_domain = tls.as_ref().map(|(d, _)| d.clone());
-        let same = self
-            .installed
-            .lock()
-            .unwrap()
-            .as_ref()
-            .is_some_and(|i| i.port == config.port && i.addrs == wanted && i.tls_domain == tls_domain);
+        let lan_ips: Vec<Ipv4Addr> = wanted.iter().copied().filter(|ip| net::is_lan(*ip)).collect();
+        let lan = if lan_ips.is_empty() { None } else { self.ensure_lan_tls(lan_ips).await };
+        let same = self.installed.lock().unwrap().as_ref().is_some_and(|i| {
+            i.port == config.port && i.addrs == wanted && i.tls_domain == tls_domain && i.lan_tls == lan.is_some()
+        });
         if same {
             self.publish_status();
             return;
@@ -350,7 +369,13 @@ impl WebDashState {
         let mut failed = None;
         let app = routes::app(ctx.clone(), me.clone());
         for ip in &wanted {
-            let tls = tls.clone().filter(|_| net::is_tailnet(*ip));
+            let tls = if net::is_tailnet(*ip) {
+                tls.clone()
+            } else if net::is_lan(*ip) {
+                lan.clone().map(|cert| (ip.to_string(), cert))
+            } else {
+                None
+            };
             match bind_with_retry(*ip, config.port, app.clone(), tls).await {
                 Ok(shutdown) => {
                     bound.push(*ip);
@@ -367,9 +392,53 @@ impl WebDashState {
         if !bound.is_empty() {
             // 실제로 HTTPS로 연 tailnet 주소가 있을 때만 이름을 적는다.
             let tls_domain = tls_domain.filter(|_| bound.iter().any(|ip| net::is_tailnet(*ip)));
-            *self.installed.lock().unwrap() = Some(Installed { addrs: bound, port: config.port, tls_domain, shutdowns });
+            let lan_tls = lan.is_some() && bound.iter().any(|ip| net::is_lan(*ip));
+            *self.installed.lock().unwrap() = Some(Installed { addrs: bound, port: config.port, tls_domain, lan_tls, shutdowns });
         }
         self.publish_status();
+    }
+
+    /// LAN 자체 서명 인증서를 준비한다. IP가 바뀌었거나 오래됐으면 다시 준비해 바꿔 끼운다(리스너는 그대로).
+    /// 못 만들면 LAN은 HTTP로 연다.
+    async fn ensure_lan_tls(&self, ips: Vec<Ipv4Addr>) -> Option<Arc<tls::SwapCert>> {
+        {
+            let live = self.lan.lock().unwrap();
+            if let Some(l) = live.as_ref().filter(|l| l.ips == ips && l.checked.elapsed() < TLS_REFRESH) {
+                return Some(l.cert.clone());
+            }
+        }
+        let (dir, wanted) = (self.data_dir.clone(), ips.clone());
+        let prepared = tokio::task::spawn_blocking(move || lan_tls::prepare(&dir, &wanted))
+            .await
+            .unwrap_or_else(|e| Err(e.to_string()));
+        let mut live = self.lan.lock().unwrap();
+        match prepared {
+            Ok(p) => match live.as_mut() {
+                Some(l) => {
+                    l.cert.set(p.key);
+                    (l.ips, l.ca_pem, l.fingerprint, l.checked) = (ips, p.ca_pem, p.fingerprint, Instant::now());
+                }
+                None => {
+                    *live = Some(LanLive {
+                        cert: Arc::new(tls::SwapCert::new(p.key)),
+                        ips,
+                        ca_pem: p.ca_pem,
+                        fingerprint: p.fingerprint,
+                        checked: Instant::now(),
+                    });
+                }
+            },
+            Err(e) => {
+                eprintln!("web-dash: LAN cert failed: {e}");
+                *live = None;
+            }
+        }
+        live.as_ref().map(|l| l.cert.clone())
+    }
+
+    /// LAN CA 인증서(PEM). 기기에 설치하면 경고 없이 열린다. 공개 정보라 토큰 없이 내준다.
+    pub fn lan_ca_pem(&self) -> Option<String> {
+        self.lan.lock().unwrap().as_ref().map(|l| l.ca_pem.clone())
     }
 
     /// tailnet 인증서를 준비한다. 받아 둔 것이 오래됐으면 다시 받아 바꿔 끼운다(리스너는 그대로).

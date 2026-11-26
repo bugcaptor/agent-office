@@ -212,6 +212,7 @@
       "web-dash-tailscale-missing": "找不到 tailscale 指令,因此 tailnet 位址以 HTTP 開放。若要使用 HTTPS,請安裝 Tailscale CLI。",
       "web-dash-https-not-enabled": "此 tailnet 未開啟 HTTPS 憑證,因此以 HTTP 開放。在 Tailscale 管理主控台(DNS)開啟 MagicDNS 與 HTTPS Certificates 後,10 分鐘內會切換為 HTTPS。",
       "web-dash-https-failed": "無法取得 Tailscale 憑證,因此 tailnet 位址以 HTTP 開放。10 分鐘後重試。"
-    }
+    },
+    "lanTls": "區域網路位址使用本機產生的憑證以 HTTPS 開放。首次開啟瀏覽器會警告,請確認憑證資訊中 CA 的 SHA-256 指紋與下方相同後再繼續。若不想看到警告,請在該裝置開啟區域網路位址後加 /ca.crt 並安裝 CA 憑證(iOS 安裝後需在 設定 › 一般 › 關於本機 › 憑證信任設定 中開啟)。"
   }
 }

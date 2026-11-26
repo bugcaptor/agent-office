@@ -212,6 +212,7 @@
       "web-dash-tailscale-missing": "找不到 tailscale 命令,因此 tailnet 地址以 HTTP 开放。要使用 HTTPS,请安装 Tailscale CLI。",
       "web-dash-https-not-enabled": "此 tailnet 未开启 HTTPS 证书,因此以 HTTP 开放。在 Tailscale 管理控制台(DNS)中开启 MagicDNS 和 HTTPS Certificates 后,10 分钟内会切换为 HTTPS。",
       "web-dash-https-failed": "未能获取 Tailscale 证书,因此 tailnet 地址以 HTTP 开放。10 分钟后重试。"
-    }
+    },
+    "lanTls": "局域网地址使用本机生成的证书以 HTTPS 开放。首次打开浏览器会警告,请确认证书信息中 CA 的 SHA-256 指纹与下方一致后继续。若不想看到警告,请在该设备上打开局域网地址后加 /ca.crt 并安装 CA 证书(iOS 安装后需在 设置 › 通用 › 关于本机 › 证书信任设置 中开启)。"
   }
 }
