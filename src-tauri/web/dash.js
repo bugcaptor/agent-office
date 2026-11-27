@@ -272,7 +272,9 @@ function phaseOf(c) {
   if (!c.session) return ["off", S.phase.off];
   if (c.session.state === "starting") return ["idle", S.phase.starting];
   if (c.session.state !== "running") return ["off", S.phase.ended];
-  if ((c.asks && c.asks.length) || (c.waiting && c.waiting.some((w) => w.source === "hook"))) return ["human", S.phase["needs-human"]];
+  // 답을 기다리는지는 지금 걸린 권한 요청과 턴 상태로만 본다. 앱 알림 목록은 '안 읽음'이라
+  // 터미널을 열기 전까지 남아, 그걸 보면 작업이 재개된 뒤에도 답을 기다리는 것으로 보인다.
+  if (c.asks && c.asks.length) return ["human", S.phase["needs-human"]];
   const p = c.turn && c.turn.phase;
   if (p === "working") return ["working", S.phase.working];
   if (p === "needs-human") return ["human", S.phase["needs-human"]];
@@ -288,8 +290,6 @@ function waitingMessage(c) {
   if (!c) return null;
   const asks = c.asks || [];
   if (asks.length) return asks.length > 1 ? `${askTitle(asks[0])} · ${S.askCount(asks.length)}` : askTitle(asks[0]);
-  const hook = (c.waiting || []).filter((w) => w.source === "hook").pop();
-  if (hook && hook.message) return hook.message;
   if (c.turn && c.turn.phase === "needs-human" && c.turn.message) return c.turn.message;
   return null;
 }
@@ -388,7 +388,7 @@ function render() {
 }
 function officeChar() {
   const o = officeData || {};
-  return { agentId: OFFICE, office: true, name: S.office, role: S.officeSub, session: o.session, turn: o.turn, waiting: [], asks: o.asks || [], queue: o.queue, cli: o.cli, atPrompt: o.atPrompt, cwd: o.cwd, opening: o.opening, error: o.error, label: o.label };
+  return { agentId: OFFICE, office: true, name: S.office, role: S.officeSub, session: o.session, turn: o.turn, asks: o.asks || [], queue: o.queue, cli: o.cli, atPrompt: o.atPrompt, cwd: o.cwd, opening: o.opening, error: o.error, label: o.label };
 }
 function charOf(agentId) {
   if (agentId === OFFICE) return officeData ? officeChar() : null;

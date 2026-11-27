@@ -118,12 +118,17 @@ async fn handle_permission(
     };
     let _withdraw = Withdraw(relay, id);
     match tokio::time::timeout(PERMISSION_MAX_WAIT, rx).await {
-        Ok(Ok(decision)) => (
-            axum::http::StatusCode::OK,
-            [(axum::http::header::CONTENT_TYPE, "application/json")],
-            decision,
-        )
-            .into_response(),
+        Ok(Ok(decision)) => {
+            // 웹에서 허용·거부했으면 Claude는 바로 이어 간다. 다음 도구가 끝날 때(PostToolUse)까지
+            // 기다리면 그동안 '답을 기다림'으로 남으므로 지금 작업 중으로 돌린다.
+            runtime.hub.ingest_activity(&query.session, crate::types::ActivityKind::Resume);
+            (
+                axum::http::StatusCode::OK,
+                [(axum::http::header::CONTENT_TYPE, "application/json")],
+                decision,
+            )
+                .into_response()
+        }
         _ => empty(),
     }
 }
@@ -353,7 +358,7 @@ mod tests {
     #[tokio::test]
     async fn permission_route_waits_for_a_web_answer_and_returns_the_decision() {
         use crate::observer::permission::AskDecision;
-        let (runtime, _events) = fixture();
+        let (runtime, events) = fixture();
         let state = ObserverServerState::default();
         let port = state.ensure(runtime.clone()).await.unwrap();
         let url = format!("http://127.0.0.1:{port}/permission?session=s1&provider=claude&event=PermissionRequest");
@@ -379,6 +384,9 @@ mod tests {
         relay.answer(&id, AskDecision::Allow { answers: None, always: false }).unwrap();
         let out: serde_json::Value = serde_json::from_str(&waiting.await.unwrap()).unwrap();
         assert_eq!(out["hookSpecificOutput"]["decision"]["behavior"], "allow");
+        // 웹에서 답하면 다음 도구가 끝나기 전에도 작업 중으로 돌아간다.
+        let resumed = |events: &RecordingEvents| events.activities().iter().filter(|e| e.kind == ActivityKind::Resume).count();
+        assert_eq!(resumed(&events), 1);
 
         // 터미널에서 먼저 답하면 다음 훅(PostToolUse)이 대기를 풀고 빈 답이 돌아간다.
         let waiting = tokio::spawn({
@@ -396,6 +404,8 @@ mod tests {
             .unwrap();
         assert_eq!(waiting.await.unwrap(), "");
         assert!(relay.list("s1").is_empty());
+        // 터미널에서 답한 경우는 PostToolUse의 도구 신호가 작업 중을 알린다. 웹 답 신호는 더 없다.
+        assert_eq!(resumed(&events), 1);
         state.shutdown();
     }
 

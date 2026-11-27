@@ -24,7 +24,7 @@ const characters = [
   {
     agentId: "a", name: "에이다", role: "개발", cwd: "/Volumes/ssd4tb/dev/very/long/path/to/agent-office", portrait: 1,
     clockedOut: false, defaultCli: "claude", session: { sessionId: "s1", state: "running" },
-    turn: { phase: "working", at: now, since: now - 75000 }, waiting: [], cli: "claude", atPrompt: false, queue: { items: [] },
+    turn: { phase: "working", at: now, since: now - 75000 }, cli: "claude", atPrompt: false, queue: { items: [] },
     asks: [{ id: "ask-1", toolName: "AskUserQuestion", canAlways: false, sidechain: false, at: now, toolInput: { questions: [
       { question: "어떤 방식으로 이미지를 보여 줄까요?", header: "표시", multiSelect: false, options: [
         { label: "썸네일", description: "로그 안에 작게 보이고 누르면 확대" }, { label: "링크만", description: "누르면 새 창" }] },
@@ -37,16 +37,16 @@ const characters = [
   {
     agentId: "b", name: "보리", role: "리뷰", cwd: "/Users/me/work/backend-service",
     clockedOut: false, session: { sessionId: "s2", state: "running" }, turn: { phase: "idle", at: now - 1000 },
-    waiting: [], cli: null, atPrompt: true, label: { cwd: "/Users/me/work/backend-service" },
+    cli: null, atPrompt: true, label: { cwd: "/Users/me/work/backend-service" },
     asks: [{ id: "ask-2", toolName: "Bash", canAlways: true, sidechain: false, at: now,
       toolInput: { command: "npm run build && rm -rf dist/tmp", description: "빌드하고 임시 폴더 정리" } }],
   },
   // 목록 정렬: 답을 기다림 → 작업 중 → 나머지는 최근 턴 관측 순, 관측이 없으면 맨 뒤.
-  { agentId: "c", name: "체리", role: "문서", cwd: "/Users/me/docs", clockedOut: true, session: null, turn: null, waiting: [], asks: [] },
+  { agentId: "c", name: "체리", role: "문서", cwd: "/Users/me/docs", clockedOut: true, session: null, turn: null, asks: [] },
   { agentId: "d", name: "도토리", role: "테스트", cwd: "/Users/me/work/backend-service", clockedOut: false,
-    session: { sessionId: "s4", state: "running" }, turn: { phase: "idle", at: now - 60000 }, waiting: [], asks: [], cli: "claude", atPrompt: false },
+    session: { sessionId: "s4", state: "running" }, turn: { phase: "idle", at: now - 60000 }, asks: [], cli: "claude", atPrompt: false },
   { agentId: "e", name: "이끼", role: "빌드", cwd: "/Users/me/work/backend-service", clockedOut: false,
-    session: { sessionId: "s5", state: "running" }, turn: { phase: "working", at: now - 300000, since: now - 300000 }, waiting: [], asks: [], cli: "codex", atPrompt: false,
+    session: { sessionId: "s5", state: "running" }, turn: { phase: "working", at: now - 300000, since: now - 300000 }, asks: [], cli: "codex", atPrompt: false,
     work: { id: "p2", title: "작업보드 UI 구현", plan: { id: "proot", title: "웹 작업보드 출시 플랜", done: 2, total: 5, step: 3, autoRun: "running" } } },
 ];
 const code = '  printf "완료\\n"\n';

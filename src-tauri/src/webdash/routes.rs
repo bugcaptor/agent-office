@@ -304,7 +304,6 @@ async fn state(State(ctx): Ctx) -> Json<Value> {
             let session = live.get(&a.id);
             let turn = session.and_then(|(sid, _)| ctx.ctl.turns.get(sid));
             let probe = probes.get(&a.id).copied().unwrap_or_default();
-            let waiting = waiting_of(&ctx, &a.id);
             let asks = session.map(|(sid, _)| ctx.ctl.observer.permissions().list(sid)).unwrap_or_default();
             let queue = ctx.ctl.chat_queue.view(&ctx.ctl, &a.id, session.map(|(sid, _)| sid.as_str()));
             json!({
@@ -319,7 +318,6 @@ async fn state(State(ctx): Ctx) -> Json<Value> {
                 "defaultAgent": a.default_agent,
                 "session": session.map(|(sid, st)| json!({ "sessionId": sid, "state": session_state_str(*st) })),
                 "turn": turn,
-                "waiting": waiting,
                 "asks": asks,
                 "queue": queue,
                 "work": super::work_progress::agent_work(&work_items, &a.id),
@@ -362,16 +360,6 @@ async fn state(State(ctx): Ctx) -> Json<Value> {
     body["outputAt"] = Value::Object(output);
     body["now"] = json!(crate::types::now_ms());
     ok(body)
-}
-
-/// 답을 기다리는 알림(권한 요청 등).
-fn waiting_of(ctx: &Dash, agent_id: &str) -> Vec<Value> {
-    ctx.ctl
-        .manager
-        .pending_notifications(agent_id)
-        .into_iter()
-        .map(|n| json!({ "source": n.source, "message": n.message, "at": n.at }))
-        .collect()
 }
 
 /// 내용이 같으면 같은 지문. 브라우저가 바뀐 것만 다시 그린다.
