@@ -483,6 +483,15 @@ function previewSlot(c) {
   if (pv) slot.append(pv);
   return slot;
 }
+// 업무 탭: 진행 중 업무의 담당 캐릭터가 작업 중·답 대기면 같은 미리보기를 카드에 붙인다
+function taskPreviewIds() {
+  const ids = new Set();
+  for (const it of (tasksData && tasksData.open) || []) {
+    const c = it.status === "in_progress" && it.assigneeAgentId && charOf(it.assigneeAgentId);
+    if (c && isActive(c) && !isFolded(c)) ids.add(c.agentId);
+  }
+  return [...ids];
+}
 function refreshPreviews() {
   for (const slot of document.querySelectorAll("#main .pv-slot")) {
     const c = charOf(slot.dataset.agent);
@@ -1445,7 +1454,10 @@ async function tick() {
     } else if (view.tab === "tasks") {
       const allDone = !!(window.Dash && window.Dash.tasks && window.Dash.tasks.allDone);
       const tasksChanged = await refreshTasks(allDone);
-      if (view.tab === "tasks" && window.Dash && window.Dash.tasks) window.Dash.tasks.onTick(changed, tasksChanged);
+      const ids = taskPreviewIds();
+      keepLogs(ids);
+      await Promise.all(ids.map((id) => refreshLog(id, false).catch(() => "same")));
+      if (view.tab === "tasks" && window.Dash && window.Dash.tasks) { window.Dash.tasks.onTick(changed, tasksChanged); refreshPreviews(); }
     } else if (view.tab === "talks") {
       if (view.talk) {
         const d = await api(`/discussions/${encodeURIComponent(view.talk)}`);
@@ -1507,7 +1519,7 @@ window.Dash = {
   L, S, el, errText, toast, copyText, api, act, confirmBtn, fmtTime, firstLine,
   store, load, sstore, sload, avatar, phaseOf, waitingMessage, busyShell,
   leaf, cwdOf, placeOf, CLI_NAMES, WIDE, view, openAgent, openTask, render,
-  refreshNow, setHeaderVar, boot,
+  refreshNow, setHeaderVar, boot, previewSlot,
   getChars: () => chars,
   charOf,
   getTasks: () => tasksData,

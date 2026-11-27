@@ -7,7 +7,7 @@ const T = {
   ko: {
     newWork: "+ 새 업무", resumeNew: "+ 새 업무 이어 쓰기", newWorkTitle: "새 업무",
     emptyBoard: "등록된 업무가 없습니다. '+ 새 업무'로 할 일을 만들어 보세요.",
-    emptyGroup: "남은 업무가 없습니다.",
+    emptyGroup: "남은 업무가 없습니다.", pvOpen: "눌러서 담당 캐릭터의 대화 로그 보기",
     pickHint: "왼쪽 목록에서 업무를 고르거나 '+ 새 업무'를 눌러 만드세요.",
     unassigned: "미배정", missingAgent: "삭제된 캐릭터", missingWork: "(지워진 업무)", homeFolder: "홈",
     status: { review: "검토 대기", in_progress: "진행 중", todo: "할 일", done: "완료" },
@@ -93,7 +93,7 @@ const T = {
   en: {
     newWork: "+ New task", resumeNew: "+ Resume draft", newWorkTitle: "New task",
     emptyBoard: "No tasks yet. Click '+ New task' to create one.",
-    emptyGroup: "No open tasks.",
+    emptyGroup: "No open tasks.", pvOpen: "Click to open the assignee's conversation log",
     pickHint: "Pick a task on the left or click '+ New task'.",
     unassigned: "Unassigned", missingAgent: "Deleted character", missingWork: "(deleted task)", homeFolder: "Home",
     status: { review: "Review", in_progress: "In progress", todo: "To do", done: "Done" },
@@ -648,6 +648,14 @@ function renderBoardList() {
         dragId = null;
       },
     }, head);
+    const pvChar = item.status === "in_progress" && item.assigneeAgentId && D.charOf(item.assigneeAgentId);
+    if (pvChar) {
+      const slot = D.previewSlot(pvChar);
+      slot.classList.add("tb-pv");
+      slot.title = T.pvOpen;
+      slot.onclick = () => D.openAgent(pvChar.agentId);
+      card.append(slot);
+    }
     return card;
   };
 

@@ -348,3 +348,6 @@ main.tasks-wide { max-width: 1380px; }
 .tb-hint.err { color: var(--bad); }
 .tb-att { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 10px; padding: 8px 10px; border-radius: 9px; background: color-mix(in srgb, var(--warn) 16%, transparent); border: 1px solid color-mix(in srgb, var(--warn) 50%, var(--line)); font-size: 13px; }
 .tb-empty-detail { text-align: center; padding: 48px 16px; color: var(--muted); }
+.tb-pv { cursor: pointer; }
+.tb-pv .pv { margin-top: 6px; }
+.tb-pv .pv-lines { min-height: 0; }

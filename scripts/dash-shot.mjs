@@ -7,7 +7,7 @@
 // 대화 로그 속 이미지(썸네일·확대), 권한 요청·선택지 카드(AskUserQuestion 답·Bash 허용),
 // 텍스트·이미지 클립보드 복사와 이미지·파일 다운로드, 하단 사용량 바, 생각 중·멈춤 상태 줄,
 // 직접 입력과 보낼 대기열(쌓기·빼기), 로그 위 이 세션 추정 사용량, 화면 테마 토글(브라우저에 저장),
-// 목록의 활성 캐릭터 로그 미리보기(접기·세션이 바뀌면 다시 펼침), 스플릿뷰(칸 격자·완료로 내리기·사이드 패널).
+// 목록·업무 탭 진행 중 카드의 활성 캐릭터 로그 미리보기(접기·세션이 바뀌면 다시 펼침), 스플릿뷰(칸 격자·완료로 내리기·사이드 패널).
 import assert from "node:assert/strict";
 import { createServer } from "node:http";
 import { readFile, mkdir } from "node:fs/promises";
@@ -437,6 +437,10 @@ await pvLines("a").first().waitFor();
 await p.setViewportSize({ width: 390, height: 844 });
 await p.locator("#nav button", { hasText: "업무" }).click();
 await p.locator("#tb-list .tb-group").first().waitFor();
+// 진행 중 업무 카드에도 담당 캐릭터(작업 중)의 로그 미리보기가 붙는다. 다른 상태 업무에는 없다.
+await p.locator('.tb-card[data-id="w2"] .pv-slot .pv-l').first().waitFor();
+assert.equal(await p.locator('.tb-card[data-id="w2"] .pv-l').first().textContent(), "💬 아래 명령을 실행하세요.");
+assert.equal(await p.locator('.tb-card[data-id="w3"] .pv-slot').count(), 0);
 await p.screenshot({ path: `${outDir}/tasks-mobile.png`, fullPage: true });
 // 완료된 업무 '더 보기'로 전체 확장
 await p.locator(".tb-more-done").click();
