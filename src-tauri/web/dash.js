@@ -443,7 +443,7 @@ function renderChars() {
     const goal = goalOf(c);
     return el("div", { class: "card clickable", onclick: () => openAgent(c.agentId) },
       el("div", { class: "row" }, avatar(c),
-        el("div", { class: "grow" }, el("div", { class: "name", text: c.name }), el("div", { class: "sub", title: cwdOf(c), text: [c.role, placeOf(c)].filter(Boolean).join(" · ") })),
+        el("div", { class: "grow" }, el("div", { class: "name", text: c.name }), el("div", { class: "sub", title: cwdOf(c), text: placeOf(c) })),
         chips(c)),
       goal && el("div", { class: "goal", text: goal }),
       workBox(c),
@@ -586,13 +586,13 @@ function renderSide() {
       el("button", { type: "button", text: WIDE.matches ? S.sideHide : S.close, onclick: toggleSide })),
     ...others.map((c) => el("div", { class: "card clickable", onclick: () => openAgent(c.agentId) },
       el("div", { class: "row" }, avatar(c),
-        el("div", { class: "grow" }, el("div", { class: "name", text: c.name }), el("div", { class: "sub", text: c.office ? S.officeSub : c.role || "" })),
+        el("div", { class: "grow" }, el("div", { class: "name", text: c.name }), el("div", { class: "sub", title: cwdOf(c), text: c.office ? S.officeSub : placeOf(c) })),
         chips(c)), workBox(c, true))));
 }
 function renderPaneHead(c) {
   const [cls] = phaseOf(c);
   const wait = cls === "human" ? waitText(c) : null;
-  const sub = c.office ? [S.officeSub, c.cwd && leaf(c.cwd)] : [c.role, placeOf(c)];
+  const sub = c.office ? [S.officeSub, c.cwd && leaf(c.cwd)] : [placeOf(c)];
   return el("div", { class: "pane-head" },
     el("div", { class: "row" },
       el("div", { class: "row grow clickable", onclick: () => openAgent(c.agentId) }, avatar(c),
