@@ -84,6 +84,16 @@ pub struct LogPage {
     pub items: Vec<LogItem>,
 }
 
+impl LogPage {
+    /// 마지막 `n`개 항목만 남긴다. 목록 미리보기처럼 최근 몇 줄만 볼 때 2000개 백필을 다 보내지 않는다.
+    /// 앞부분이 빠지므로 받는 쪽은 이 쪽을 전체 로그로 쓰면 안 된다.
+    pub fn keep_last(mut self, n: usize) -> Self {
+        let cut = self.items.len().saturating_sub(n);
+        self.items.drain(..cut);
+        self
+    }
+}
+
 struct AgentLog {
     cwd: String,
     file_root: Option<PathBuf>,
@@ -457,6 +467,13 @@ mod tests {
         let switched = cache.read("x", "/w", Some(next.last), Some(next.epoch));
         assert_ne!(switched.epoch, first.epoch);
         assert_eq!(switched.items.iter().map(|i| i.item.text.as_str()).collect::<Vec<_>>(), ["fresh"]);
+
+        // 미리보기는 최근 항목만 받는다. 순번(`last`)은 그대로라 이어 받기가 된다.
+        append(&b, "later");
+        cache.agents.lock().unwrap()["x"].lock().unwrap().last_tick = Some(Instant::now() - MIN_TICK);
+        let tail = cache.read("x", "/w", None, None).keep_last(1);
+        assert_eq!(tail.items.iter().map(|i| i.item.text.as_str()).collect::<Vec<_>>(), ["later"]);
+        assert_eq!(tail.last, switched.last + 1);
         let _ = std::fs::remove_dir_all(&dir);
     }
 }

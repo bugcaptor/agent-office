@@ -206,6 +206,54 @@ details.taskform > summary::-webkit-details-marker { display: none; }
 details.taskform > summary::before { content: "▸ "; color: var(--muted); }
 details.taskform[open] > summary::before { content: "▾ "; }
 details.taskform > summary .sub { display: inline; font-weight: 400; margin-left: 6px; }
+/* 캐릭터 목록 머리: 스플릿뷰 토글. */
+.listbar { display: flex; justify-content: flex-end; align-items: center; gap: 8px; margin-bottom: 10px; }
+.switch { display: inline-flex; align-items: center; gap: 8px; border: 1px solid var(--line); background: var(--panel); color: var(--ink); border-radius: 999px; padding: 4px 11px 4px 6px; font: inherit; font-size: 13px; cursor: pointer; }
+.switch i { position: relative; width: 28px; height: 16px; border-radius: 99px; background: var(--chip); transition: background .15s; }
+.switch i::after { content: ""; position: absolute; top: 2px; left: 2px; width: 12px; height: 12px; border-radius: 50%; background: var(--muted); transition: transform .15s; }
+.switch[aria-checked="true"] i { background: var(--accent); }
+.switch[aria-checked="true"] i::after { transform: translateX(12px); background: #fff; }
+.listbar .b { padding: 5px 11px; cursor: pointer; }
+/* 활성 캐릭터 카드의 로그 미리보기(최신이 위). 접으면 상태 한 줄. */
+.pv { margin-top: 8px; padding-top: 6px; border-top: 1px dashed var(--line); font-size: 12.5px; }
+.pv-lines { min-height: 7.5em; line-height: 1.5; }
+.pv-l { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pv-l.tool, .pv-l.res { color: var(--muted); }
+.pv-l.tool b { font-weight: 600; }
+.pv-l.res { padding-left: 18px; }
+.pv-l.err { color: var(--bad); }
+.pv-l.side { opacity: .7; }
+.pv-empty { color: var(--muted); }
+.pv-fold { display: block; border: 0; background: none; color: var(--muted); font: inherit; font-size: 12px; padding: 4px 0 0; cursor: pointer; }
+button.pv.folded { display: block; width: 100%; text-align: left; border: 0; border-top: 1px dashed var(--line); background: none; color: var(--muted); font: inherit; font-size: 13px; padding: 6px 0 0; cursor: pointer; }
+/* 스플릿뷰: 활성 캐릭터 로그 칸 격자 + 다른 캐릭터 사이드 패널(좁으면 서랍). */
+main.wide { max-width: none; }
+.split { display: flex; gap: 12px; align-items: flex-start; }
+.side { display: none; flex: 0 0 240px; position: sticky; top: calc(var(--hdr, 90px) + 12px); max-height: calc(100vh - var(--hdr, 90px) - 70px); overflow: auto; }
+.split.side-open .side { display: block; }
+.side-h { display: flex; align-items: center; justify-content: space-between; font-size: 13px; color: var(--muted); margin: 0 2px 6px; }
+.side-h button { border: 0; background: none; color: var(--accent); font: inherit; font-size: 13px; cursor: pointer; }
+.side .card { padding: 8px; margin-bottom: 6px; }
+.side .avatar { width: 32px; height: 32px; border-radius: 8px; }
+.side .chips .chip.cli { display: none; }
+.backdrop { display: none; }
+.panes { flex: 1; min-width: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 340px), 1fr)); gap: 12px; }
+.panes > .empty { grid-column: 1 / -1; }
+.pane { display: flex; flex-direction: column; min-width: 0; height: var(--pane-h, 70vh); overflow: hidden; background: var(--panel); border: 1px solid var(--line); border-radius: 12px; }
+.pane.human { border-color: color-mix(in srgb, var(--warn) 60%, var(--line)); }
+.pane-head { flex: none; padding: 10px 10px 8px; border-bottom: 1px solid var(--line); }
+.pane-head .avatar { width: 36px; height: 36px; border-radius: 9px; }
+.pane-head .goal { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pane-head .wait { margin-top: 6px; }
+.pane-head button.b { flex: none; padding: 4px 9px; cursor: pointer; }
+.pane .live { flex: none; margin: 6px 10px 0; }
+.pane-body { flex: 1; min-height: 0; overflow: auto; overscroll-behavior: contain; padding: 0 10px 10px; }
+.pane-body .log { margin-top: 4px; }
+.pane-body .shot { max-height: 160px; }
+@media (max-width: 899px) {
+  .side { position: fixed; z-index: 16; top: 0; bottom: 0; left: 0; width: min(300px, 85vw); max-height: none; background: var(--bg); border-right: 1px solid var(--line); padding: max(12px, env(safe-area-inset-top)) 12px 60px; }
+  .split.side-open .backdrop { display: block; position: fixed; inset: 0; z-index: 15; background: rgba(0, 0, 0, .35); }
+}
 </style>
 </head>
 <body>
@@ -239,6 +287,11 @@ const S = {
     launchSend: (cli) => `${cli} 띄워 보내기`, launchedSend: "CLI를 띄워 보냈습니다", launchSending: "CLI를 띄우는 중…",
     queueBtn: "대기열에 넣기", queued: "대기열에 넣었습니다. 턴이 끝나면 보냅니다.", queueTitle: (n) => `보낼 대기열 ${n}건 · 턴이 끝날 때마다 하나씩 보냅니다`, queueCancel: "빼기", queueRemoved: "대기열에서 뺐습니다",
     taskHelp: "업무 보드에 남김",
+    split: "스플릿뷰", splitHint: "진행 중인 캐릭터들의 대화 로그를 한 화면에 나란히 봅니다",
+    fold: "▾ 접기", foldHint: "미리보기를 접습니다(세션이 바뀌면 다시 펼침)", pvNoLog: "읽을 대화 로그가 없습니다", pvImage: "🖼 이미지",
+    paneDone: "완료", paneDoneHint: "이 칸을 스플릿뷰에서 내립니다. 다시 작업을 시작하면 돌아옵니다.",
+    noActive: "진행 중인 캐릭터가 없습니다. 작업을 시작하거나 답을 기다리는 캐릭터가 여기 칸으로 나옵니다.",
+    others: (n) => `다른 캐릭터 ${n}`, close: "닫기", sideHide: "◀ 접기",
     cost: (tokens, cost, turns) => `이 세션 추정 사용량 · 토큰 ${tokens} · ${cost} · ${turns}턴`, costHint: "공개 API 요율로 환산한 추정치입니다. 구독제 실제 청구액과 다릅니다. CH(…)는 캐시 포함 전체 토큰.",
     live: { thinking: (t) => `생각 중… ${t}`, tool: (tool, t) => `${tool} 실행 중… ${t}`, stalled: (t) => `작업 중이지만 ${t}째 화면 출력이 없습니다 — 멈췄을 수 있습니다`, human: "답을 기다리는 중 — 멈춘 게 아닙니다", idle: "턴이 끝났습니다 · 입력을 기다림", off: "CLI가 돌고 있지 않습니다", sec: (s) => `${s}초`, minSec: (m, s) => `${m}분 ${s}초` },
     stalled: "응답 없음",
@@ -283,6 +336,11 @@ const S = {
     launchSend: (cli) => `Start ${cli} and send`, launchedSend: "Started the CLI and sent it", launchSending: "Starting the CLI…",
     queueBtn: "Queue", queued: "Queued. It will be sent when the turn ends.", queueTitle: (n) => `${n} queued · one is sent each time a turn ends`, queueCancel: "Remove", queueRemoved: "Removed from the queue",
     taskHelp: "kept on the task board",
+    split: "Split view", splitHint: "Watch the conversation logs of all active characters side by side",
+    fold: "▾ Collapse", foldHint: "Collapse the preview (it opens again when the session changes)", pvNoLog: "No conversation log", pvImage: "🖼 Image",
+    paneDone: "Done", paneDoneHint: "Take this pane off the split view. It comes back when the character starts working again.",
+    noActive: "No character is active. Characters that start working or wait for an answer show up here.",
+    others: (n) => `Other characters ${n}`, close: "Close", sideHide: "◀ Hide",
     cost: (tokens, cost, turns) => `Estimated session usage · ${tokens} tokens · ${cost} · ${turns} ${turns === 1 ? "turn" : "turns"}`, costHint: "Estimated at public API rates; not your subscription bill. CH(…) is the total including cache.",
     live: { thinking: (t) => `Thinking… ${t}`, tool: (tool, t) => `Running ${tool}… ${t}`, stalled: (t) => `Working, but no terminal output for ${t} — it may be stuck`, human: "Waiting for an answer — not stuck", idle: "Turn finished · waiting for input", off: "No CLI is running", sec: (s) => `${s}s`, minSec: (m, s) => `${m}m ${s}s` },
     stalled: "No response",
@@ -316,6 +374,9 @@ document.documentElement.lang = L;
 const TOKEN_KEY = "agent-office-web-dash-token";
 function store(k, v) { try { v == null ? localStorage.removeItem(k) : localStorage.setItem(k, v); } catch (_) {} }
 function load(k) { try { return localStorage.getItem(k); } catch (_) { return null; } }
+/** 이 탭 동안만 남는 값(새로고침해도 유지, 탭을 닫으면 사라짐). JSON으로 넣고 뺀다. */
+function sstore(k, v) { try { v == null ? sessionStorage.removeItem(k) : sessionStorage.setItem(k, JSON.stringify(v)); } catch (_) {} }
+function sload(k) { try { return JSON.parse(sessionStorage.getItem(k)); } catch (_) { return null; } }
 
 // ── 화면 테마 ──
 // 자동 → 밝게 → 어둡게 순으로 돈다. 자동은 기기(브라우저) 설정을 따른다. 고른 것은 이 브라우저에만 남는다.
@@ -548,9 +609,10 @@ function render() {
     return;
   }
   renderNav();
+  main.classList.toggle("wide", view.tab === "chars" && !view.agent && splitOn);
   if (view.tab === "chars") {
-    main.replaceChildren(...(view.agent ? renderAgent() : renderChars()));
-    markLog();
+    main.replaceChildren(...(view.agent ? renderAgent() : splitOn ? renderSplit() : renderChars()));
+    fitPanes();
   }
   else if (view.tab === "talks") main.replaceChildren(...renderTalks());
   else main.replaceChildren(...renderUsage());
@@ -560,10 +622,14 @@ function officeChar() {
   const o = officeData || {};
   return { agentId: OFFICE, office: true, name: S.office, role: S.officeSub, session: o.session, turn: o.turn, waiting: [], asks: o.asks || [], queue: o.queue, cli: o.cli, atPrompt: o.atPrompt, cwd: o.cwd, opening: o.opening, error: o.error, label: o.label };
 }
-function currentChar() {
-  if (view.agent === OFFICE) return officeData ? officeChar() : null;
-  return (chars || []).find((x) => x.agentId === view.agent);
+function charOf(agentId) {
+  if (agentId === OFFICE) return officeData ? officeChar() : null;
+  return (chars || []).find((x) => x.agentId === agentId);
 }
+function currentChar() { return charOf(view.agent); }
+/** 일반 에이전트(있으면)와 캐릭터 전부. */
+function allChars() { return [...(officeData ? [officeChar()] : []), ...(chars || [])]; }
+function openAgent(agentId) { drawerOpen = false; view.agent = agentId; render(); refreshNow(); window.scrollTo(0, 0); }
 function waitText(c) {
   if (!c.office || (c.asks && c.asks.length)) return waitingMessage(c);
   return c.turn && c.turn.phase === "needs-human" ? (c.turn.message || S.officeHuman) : null;
@@ -572,11 +638,12 @@ function renderOfficeCard() {
   const c = officeChar();
   const [cls] = phaseOf(c);
   const wait = cls === "human" ? waitText(c) : null;
-  return el("div", { class: "card clickable office", onclick: () => { view.agent = OFFICE; render(); refreshNow(); window.scrollTo(0, 0); } },
+  return el("div", { class: "card clickable office", onclick: () => openAgent(OFFICE) },
     el("div", { class: "row" }, avatar(c),
       el("div", { class: "grow" }, el("div", { class: "name", text: c.name }), el("div", { class: "sub", title: c.cwd || "", text: [S.officeSub, c.session && c.cwd && leaf(c.cwd)].filter(Boolean).join(" · ") })),
       chips(c)),
-    wait && el("div", { class: "wait", text: wait }));
+    wait && el("div", { class: "wait", text: wait }),
+    previewSlot(c));
 }
 /** 답을 기다리는 캐릭터, 작업 중인 캐릭터 순으로 먼저, 나머지는 마지막 턴 관측(`turn.at`)이 최근인 순으로.
  * 관측이 없으면 뒤로 가고 원래 순서를 지킨다. */
@@ -588,20 +655,235 @@ function sortedChars() {
 }
 function renderChars() {
   if (!chars) return [el("div", { class: "empty", text: "…" })];
-  return [renderOfficeCard(), ...sortedChars().map((c) => {
+  return [renderListBar(), renderOfficeCard(), ...sortedChars().map((c) => {
     const [cls] = phaseOf(c);
     const wait = cls === "human" ? waitingMessage(c) : null;
     const goal = goalOf(c);
-    return el("div", { class: "card clickable", onclick: () => { view.agent = c.agentId; render(); refreshNow(); window.scrollTo(0, 0); } },
+    return el("div", { class: "card clickable", onclick: () => openAgent(c.agentId) },
       el("div", { class: "row" }, avatar(c),
         el("div", { class: "grow" }, el("div", { class: "name", text: c.name }), el("div", { class: "sub", title: cwdOf(c), text: [c.role, placeOf(c)].filter(Boolean).join(" · ") })),
         chips(c)),
       goal && el("div", { class: "goal", text: goal }),
-      wait && el("div", { class: "wait", text: wait }));
+      wait && el("div", { class: "wait", text: wait }),
+      previewSlot(c));
   })];
 }
+function renderListBar(extra) {
+  return el("div", { class: "listbar", id: "listbar" }, extra,
+    el("button", { class: "switch", type: "button", role: "switch", "aria-checked": String(splitOn), title: S.splitHint, onclick: () => setSplit(!splitOn) }, el("i"), S.split));
+}
+
+// ── 목록 미리보기 ──
+// 작업 중이거나 답을 기다리는 캐릭터는 카드에 최근 로그 몇 항목을 한 줄씩 보인다(최신이 위, 도구 결과는 그 호출 아래).
+// 접은 것은 이 탭에 세션 id와 함께 남긴다 — 새로고침해도 접힌 채고, 세션이 바뀌면 다시 펼친다.
+const PV_LINES = 5;
+/** 미리보기는 서버에서 마지막 이만큼만 받는다(`/api/log?tail=`). */
+const PV_TAIL = 30;
+const FOLD_KEY = "agent-office-web-dash-folded";
+const folds = sload(FOLD_KEY) || {}; // agentId -> 접은 세션 id
+function sessionKey(c) { return c && c.session ? String(c.session.sessionId || "-") : null; }
+function isActive(c) { const p = phaseOf(c)[0]; return p === "working" || p === "human"; }
+function isFolded(c) { return folds[c.agentId] != null && folds[c.agentId] === sessionKey(c); }
+function setFolded(c, on) {
+  if (on) folds[c.agentId] = sessionKey(c); else delete folds[c.agentId];
+  sstore(FOLD_KEY, folds);
+}
+/** 최근 항목을 최신 블록부터 PV_LINES 줄. 도구 결과·이미지는 바로 앞 블록에 붙는다. */
+function previewItems(agentId) {
+  const log = logs.get(agentId);
+  const blocks = [];
+  for (const it of log.items.slice(-PV_TAIL)) {
+    if ((it.kind === "tool_result" || it.kind === "image") && blocks.length) blocks[blocks.length - 1].push(it);
+    else blocks.push([it]);
+  }
+  const out = [];
+  for (let i = blocks.length - 1; i >= 0 && out.length < PV_LINES; i--) for (const it of blocks[i]) if (out.length < PV_LINES) out.push(it);
+  return out;
+}
+function pvLine(it) {
+  const side = it.sidechain ? " side" : "";
+  if (it.kind === "tool_use") return el("div", { class: "pv-l tool" + side }, el("b", { text: "🔧 " + (it.toolName || "⤷") }), " " + firstLine(it.text, 160));
+  if (it.kind === "tool_result") return el("div", { class: "pv-l res" + (it.isError ? " err" : "") + side, text: "↳ " + firstLine(it.text, 160) });
+  if (it.kind === "image") return el("div", { class: "pv-l res" + side, text: S.pvImage });
+  return el("div", { class: "pv-l " + it.role + side, text: (it.role === "user" ? "👤 " : "💬 ") + firstLine(it.text, 200) });
+}
+function previewKey(c) {
+  if (!isActive(c)) return "";
+  if (isFolded(c)) return "f|" + phaseOf(c)[1];
+  const log = logs.get(c.agentId);
+  if (!log) return "…";
+  return [log.epoch, log.attached, log.items.length && previewItems(c.agentId).map((it) => it.seq).join(",")].join("|");
+}
+function renderPreview(c) {
+  if (!isActive(c)) return null;
+  const toggle = (e) => { e.stopPropagation(); setFolded(c, !isFolded(c)); refreshPreviews(); refreshNow(); };
+  if (isFolded(c)) return el("button", { class: "pv folded", type: "button", "aria-expanded": "false", onclick: toggle }, "▸ " + phaseOf(c)[1]);
+  const log = logs.get(c.agentId);
+  const lines = !log ? [el("div", { class: "pv-empty", text: "…" })]
+    : !log.attached ? [el("div", { class: "pv-empty", text: S.pvNoLog })]
+    : !log.items.length ? [el("div", { class: "pv-empty", text: S.noItems })]
+    : previewItems(c.agentId).map(pvLine);
+  return el("div", { class: "pv" }, el("div", { class: "pv-lines" }, ...lines),
+    el("button", { class: "pv-fold", type: "button", "aria-expanded": "true", title: S.foldHint, text: S.fold, onclick: toggle }));
+}
+function previewSlot(c) {
+  const slot = el("div", { class: "pv-slot", "data-agent": c.agentId });
+  slot.dataset.key = previewKey(c);
+  const pv = renderPreview(c);
+  if (pv) slot.append(pv);
+  return slot;
+}
+/** 바뀐 미리보기만 다시 그린다(카드는 그대로). */
+function refreshPreviews() {
+  for (const slot of document.querySelectorAll("#main .pv-slot")) {
+    const c = charOf(slot.dataset.agent);
+    if (!c) continue;
+    const key = previewKey(c);
+    if (slot.dataset.key === key) continue;
+    slot.dataset.key = key;
+    const pv = renderPreview(c);
+    slot.replaceChildren(...(pv ? [pv] : []));
+  }
+}
+
+// ── 스플릿뷰 ──
+// 목록에서 켜면(기기에 기억) 활성 캐릭터마다 대화 로그 칸을 격자로 둔다. 칸은 턴이 끝나도 남고, '완료'로 내리거나
+// 세션이 바뀌면 빠진다. 내린 캐릭터가 다시 활성이 되면(비활성을 한 번 거친 뒤) 칸이 다시 생긴다.
+// 칸 목록은 이 탭에 남겨 새로고침해도 그대로다. 나머지 캐릭터는 사이드 패널(좁은 화면은 서랍)에 둔다.
+const SPLIT_KEY = "agent-office-web-dash-split", SIDE_KEY = "agent-office-web-dash-side";
+const PANES_KEY = "agent-office-web-dash-panes", SUPPRESS_KEY = "agent-office-web-dash-pane-off";
+let splitOn = load(SPLIT_KEY) === "1";
+const panes = new Map(Object.entries(sload(PANES_KEY) || {})); // agentId -> 세션 id(넣은 순서가 칸 순서)
+const suppressed = new Set(sload(SUPPRESS_KEY) || []); // 활성인 채로 내린 캐릭터(비활성이 되면 풀림)
+let drawerOpen = false;
+const WIDE = window.matchMedia("(min-width: 900px)");
+function savePanes() { sstore(PANES_KEY, Object.fromEntries(panes)); sstore(SUPPRESS_KEY, [...suppressed]); }
+/** 상태에 맞춰 칸 목록을 고친다. 바뀌었으면 true. */
+function syncPanes() {
+  if (!chars) return false;
+  let changed = false;
+  const all = allChars();
+  const byId = new Map(all.map((c) => [c.agentId, c]));
+  for (const [id, sid] of panes) {
+    if (sessionKey(byId.get(id)) !== sid) { panes.delete(id); changed = true; }
+  }
+  for (const c of all) {
+    if (!isActive(c)) { if (suppressed.delete(c.agentId)) changed = true; continue; }
+    if (!suppressed.has(c.agentId) && !panes.has(c.agentId) && sessionKey(c)) { panes.set(c.agentId, sessionKey(c)); changed = true; }
+  }
+  if (changed) savePanes();
+  return changed;
+}
+function dismissPane(agentId) {
+  panes.delete(agentId);
+  const c = charOf(agentId);
+  if (c && isActive(c)) suppressed.add(agentId);
+  savePanes();
+  updateSplit(true, new Map());
+}
+function setSplit(on) {
+  splitOn = on; drawerOpen = false;
+  store(SPLIT_KEY, on ? "1" : null);
+  render(); refreshNow(); window.scrollTo(0, 0);
+}
+function sideOpen() { return WIDE.matches ? load(SIDE_KEY) !== "0" : drawerOpen; }
+function toggleSide() {
+  if (WIDE.matches) store(SIDE_KEY, sideOpen() ? "0" : null); else drawerOpen = !drawerOpen;
+  const split = document.getElementById("split");
+  if (split) split.classList.toggle("side-open", sideOpen());
+}
+function otherChars() { return allChars().filter((c) => !panes.has(c.agentId)); }
+function renderSplitBar() {
+  return renderListBar(el("button", { class: "b", type: "button", text: "☰ " + S.others(otherChars().length), onclick: toggleSide }));
+}
+function renderSide() {
+  const others = otherChars();
+  return el("aside", { class: "side", id: "side" },
+    el("div", { class: "side-h" }, el("span", { text: S.others(others.length) }),
+      el("button", { type: "button", text: WIDE.matches ? S.sideHide : S.close, onclick: toggleSide })),
+    ...others.map((c) => el("div", { class: "card clickable", onclick: () => openAgent(c.agentId) },
+      el("div", { class: "row" }, avatar(c),
+        el("div", { class: "grow" }, el("div", { class: "name", text: c.name }), el("div", { class: "sub", text: c.office ? S.officeSub : c.role || "" })),
+        chips(c)))));
+}
+function renderPaneHead(c) {
+  const [cls] = phaseOf(c);
+  const wait = cls === "human" ? waitText(c) : null;
+  const sub = c.office ? [S.officeSub, c.cwd && leaf(c.cwd)] : [c.role, placeOf(c)];
+  return el("div", { class: "pane-head" },
+    el("div", { class: "row" },
+      el("div", { class: "row grow clickable", onclick: () => openAgent(c.agentId) }, avatar(c),
+        el("div", { class: "grow" }, el("div", { class: "name", text: c.name }), el("div", { class: "sub", title: cwdOf(c), text: sub.filter(Boolean).join(" · ") }))),
+      chips(c),
+      el("button", { class: "b", type: "button", title: S.paneDoneHint, text: S.paneDone, onclick: () => dismissPane(c.agentId) })),
+    !c.office && goalOf(c) && el("div", { class: "goal", title: goalOf(c), text: goalOf(c) }),
+    wait && el("div", { class: "wait", text: wait }));
+}
+function renderPane(c) {
+  const live = el("div", { class: "live", role: "status", "data-agent": c.agentId });
+  fillLive(live, c);
+  return el("section", { class: "pane " + phaseOf(c)[0], "data-agent": c.agentId },
+    renderPaneHead(c), live, el("div", { class: "pane-body" }, renderLog(c.agentId, null)));
+}
+function renderSplit() {
+  if (!chars) return [el("div", { class: "empty", text: "…" })];
+  const list = [...panes.keys()].map(charOf).filter(Boolean);
+  return [renderSplitBar(),
+    el("div", { class: "split" + (sideOpen() ? " side-open" : ""), id: "split" },
+      el("div", { class: "backdrop", onclick: toggleSide }), renderSide(),
+      el("div", { class: "panes", id: "panes" }, ...(list.length ? list.map(renderPane) : [el("div", { class: "empty", text: S.noActive })])))];
+}
+/** 스플릿뷰를 통째로 다시 그리지 않는다 — 칸마다 스크롤과 펼친 도구 블록을 지킨다. */
+function updateSplit(changed, modes) {
+  const grid = document.getElementById("panes");
+  if (!grid) { render(); return; }
+  if (changed) {
+    const want = [...panes.keys()].map(charOf).filter(Boolean);
+    const have = new Map([...grid.querySelectorAll(":scope > .pane")].map((p) => [p.dataset.agent, p]));
+    for (const [id, p] of have) if (!panes.has(id) || !charOf(id)) { p.remove(); have.delete(id); }
+    grid.querySelector(":scope > .empty")?.remove();
+    let prev = null;
+    for (const c of want) {
+      let p = have.get(c.agentId);
+      if (p) {
+        p.className = "pane " + phaseOf(c)[0];
+        p.querySelector(".pane-head").replaceWith(renderPaneHead(c));
+      } else p = renderPane(c);
+      // 순서가 맞으면 옮기지 않는다(옮기면 칸 스크롤이 처음으로 돌아간다).
+      const at = prev ? prev.nextElementSibling : grid.firstElementChild;
+      if (at !== p) grid.insertBefore(p, at);
+      prev = p;
+    }
+    if (!want.length) grid.append(el("div", { class: "empty", text: S.noActive }));
+    document.getElementById("side")?.replaceWith(renderSide());
+    document.getElementById("listbar")?.replaceWith(renderSplitBar());
+  }
+  for (const p of grid.querySelectorAll(":scope > .pane")) {
+    const box = p.querySelector(".pane-body > .log");
+    const mode = modes.get(p.dataset.agent);
+    if (mode === "reset") box.replaceWith(renderLog(p.dataset.agent, null));
+    else if (mode === "append") appendLog(box);
+  }
+  fitPanes();
+}
+/** 칸 높이: 격자가 화면에 다 들어오게 나누되 너무 낮아지지 않게. 한 줄 격자(좁은 화면)는 화면의 80%. */
+function fitPanes() {
+  document.documentElement.style.setProperty("--hdr", document.querySelector("header").offsetHeight + "px");
+  const grid = document.getElementById("panes");
+  if (!grid) return;
+  const n = grid.querySelectorAll(":scope > .pane").length;
+  if (!n) return;
+  const cols = Math.max(1, getComputedStyle(grid).gridTemplateColumns.split(" ").length);
+  const rows = Math.ceil(n / cols);
+  const top = grid.getBoundingClientRect().top + window.scrollY;
+  const free = window.innerHeight - Math.min(top, document.querySelector("header").offsetHeight + 60) - 56;
+  const h = cols === 1 ? free * 0.8 : (free - 12 * (rows - 1)) / rows;
+  grid.style.setProperty("--pane-h", Math.round(Math.max(300, h)) + "px");
+}
+window.addEventListener("resize", () => { if (document.getElementById("panes")) fitPanes(); });
+WIDE.addEventListener("change", () => { drawerOpen = false; if (document.getElementById("split")) render(); });
 function renderAgent() {
-  const back = el("button", { class: "back", text: S.back, onclick: () => { view.agent = null; render(); } });
+  const back = el("button", { class: "back", text: S.back, onclick: () => { view.agent = null; render(); refreshNow(); } });
   const c = currentChar();
   if (!c) return [back];
   if (c.office) return [back, renderHead(c), renderAsks(c), renderOfficeForm(c), renderCost(c), renderLive(c), renderLog(c.agentId)];
@@ -857,6 +1139,7 @@ function refreshCost() {
 function refreshLive() {
   const box = document.getElementById("live");
   if (box) fillLive(box, currentChar());
+  for (const live of document.querySelectorAll("#panes .live[data-agent]")) fillLive(live, charOf(live.dataset.agent));
 }
 setInterval(refreshLive, 1000);
 
@@ -1109,10 +1392,14 @@ function firstLine(text, max = 90) {
   const line = (text || "").split("\n").find((l) => l.trim()) || "";
   return line.length > max ? line.slice(0, max) + "…" : line;
 }
-function renderLog(agentId) {
-  const box = el("div", { class: "log", id: "log" });
+/** 캐릭터 대화 로그 상자. 상세 화면은 id `log`, 스플릿 칸은 id 없이 쓴다. */
+function renderLog(agentId, id = "log") {
+  const box = el("div", { class: "log", id });
+  box._agent = agentId;
   const log = logs.get(agentId);
-  if (!log) { box.append(el("div", { class: "empty", text: "…" })); return box; }
+  // 미리보기용으로 최근 몇 항목만 든 로그는 그리지 않는다(다음 갱신에 전부 받는다).
+  if (!log || !log.full) { box.append(el("div", { class: "empty", text: "…" })); return box; }
+  box.dataset.last = String(log.last);
   if (!log.attached) { box.append(el("div", { class: "empty", text: S.noLog })); return box; }
   if (!log.items.length) { box.append(el("div", { class: "empty", text: S.noItems })); return box; }
   // 최신이 위로 오되, 도구 호출에 딸린 결과는 그 호출 블록 안에서 아래로 붙는다.
@@ -1130,14 +1417,14 @@ function placeItem(box, it) {
   // 이미지는 바로 앞 블록(도구 결과나 함께 보낸 사람 말)에 붙인다.
   if (it.kind === "image") {
     const top = box.firstElementChild;
-    if (top && top._side === side && top._joins) { top.append(renderItem(it)); return; }
+    if (top && top._side === side && top._joins) { top.append(renderItem(it, box._agent)); return; }
   }
   if (it.kind === "tool_result") {
     const i = st.pending.findIndex((p) => p.side === side);
     const host = i >= 0 ? st.pending.splice(i, 1)[0].el : st.last && st.last.side === side ? st.last.el : null;
-    if (host && host.parentNode === box) { host.append(renderItem(it)); return; }
+    if (host && host.parentNode === box) { host.append(renderItem(it, box._agent)); return; }
   }
-  const blk = el("div", { class: "blk" }, renderItem(it));
+  const blk = el("div", { class: "blk" }, renderItem(it, box._agent));
   blk._side = side;
   blk._joins = it.kind !== "text" || it.role === "user";
   box.prepend(blk);
@@ -1217,9 +1504,9 @@ function markdownBody(html) {
 }
 /** 말한 쪽 표시: 에이전트는 캐릭터 초상(없으면 이름 첫 글자, 일반 에이전트는 🤖), 사람은 👤.
  * 같은 주소의 그림은 브라우저가 문서 안에서 다시 쓰므로 말마다 새로 받지 않는다. */
-function speakerAvatar(role) {
+function speakerAvatar(role, agentId) {
   if (role === "user") return el("div", { class: "msgav", "aria-hidden": "true" }, "👤");
-  const c = currentChar();
+  const c = charOf(agentId);
   if (!c || c.office) return el("div", { class: "msgav", "aria-hidden": "true" }, "🤖");
   const initial = () => el("div", { class: "msgav", "aria-hidden": "true" }, (c.name || "?").slice(0, 1));
   if (!c.portrait) return initial();
@@ -1227,9 +1514,9 @@ function speakerAvatar(role) {
   img.onerror = () => img.replaceWith(initial());
   return img;
 }
-function renderItem(it) {
+function renderItem(it, agentId) {
   const side = it.sidechain ? " side" : "";
-  const agent = encodeURIComponent(view.agent);
+  const agent = encodeURIComponent(agentId);
   if (it.kind === "image") {
     if (!it.image) return el("div", { class: "tool", text: S.imageGone });
     // 그림이 온 경로·URL은 그림과 함께 늘 보인다(그림을 더 볼 수 없어도).
@@ -1245,13 +1532,13 @@ function renderItem(it) {
     return wrap;
   }
   if (it.kind === "text") {
-    const epoch = logs.get(view.agent).epoch;
+    const epoch = logs.get(agentId).epoch;
     const actions = (it.files || []).map((file, index) =>
       downloadButton(`${S.download} · ${file.name}`, `/api/file/${agent}/${epoch}/${it.seq}/${index}`, file.name));
     if (it.text) actions.unshift(copyButton(it.text, S.copyMessage));
     const msg = el("div", { class: "msg " + it.role + side }, it.html ? markdownBody(it.html) : messageBody(it.text),
       actions.length > 0 && el("div", { class: "content-actions" }, actions));
-    return el("div", { class: "msgrow " + it.role + side }, speakerAvatar(it.role), msg);
+    return el("div", { class: "msgrow " + it.role + side }, speakerAvatar(it.role, agentId), msg);
   }
   if (it.kind === "tool_use") {
     const head = (it.toolName ? it.toolName + ": " : "⤷ ") + firstLine(it.text);
@@ -1398,23 +1685,35 @@ function setHost(host, app) {
   document.getElementById("ver").textContent = (host ? "Agent Office " : "") + "v" + app;
   document.title = host ? `${host} · Agent Office` : "Agent Office";
 }
-/** 로그를 받아 쌓는다. "same"(새 항목 없음)·"append"(같은 세션에 이어짐)·"reset"(처음·새 세션). */
-async function refreshLog(agentId) {
-  const prev = logs.get(agentId);
-  const q = prev ? `?after=${prev.last}&epoch=${prev.epoch}` : "";
-  const d = await api(`/log/${encodeURIComponent(agentId)}${q}`);
+/**
+ * 로그를 받아 쌓는다. "same"(새 항목 없음)·"append"(같은 세션에 이어짐)·"reset"(처음·새 세션).
+ * `full`이 거짓이면 목록 미리보기용으로 최근 PV_TAIL개만 받아 든다(`full: false`). 미리보기만 든 캐릭터를
+ * 상세·스플릿 칸에서 보면 처음부터 다시 받는다.
+ */
+async function refreshLog(agentId, full = true) {
+  let prev = logs.get(agentId);
+  if (prev && full && !prev.full) { logs.delete(agentId); prev = null; }
+  const q = new URLSearchParams();
+  if (prev) { q.set("after", prev.last); q.set("epoch", prev.epoch); }
+  if (!full && !(prev && prev.full)) q.set("tail", PV_TAIL);
+  const qs = q.toString();
+  const d = await api(`/log/${encodeURIComponent(agentId)}${qs ? "?" + qs : ""}`);
   if (prev && prev.epoch === d.epoch) {
     if (!d.items.length && prev.attached === d.attached) return "same";
     const attachedChanged = prev.attached !== d.attached;
+    const keep = prev.full ? LOG_KEEP : PV_TAIL;
     prev.items.push(...d.items);
-    if (prev.items.length > LOG_KEEP) prev.items.splice(0, prev.items.length - LOG_KEEP);
+    if (prev.items.length > keep) prev.items.splice(0, prev.items.length - keep);
     prev.last = d.last; prev.attached = d.attached;
     return attachedChanged ? "reset" : "append";
   }
   // 새 세션(epoch가 바뀜)이면 이전 세션 대화는 버린다.
+  d.full = !q.has("tail");
   logs.set(agentId, d);
   return "reset";
 }
+/** 이 목록에 없는 캐릭터의 로그는 들고 있지 않는다. */
+function keepLogs(ids) { for (const k of [...logs.keys()]) if (!ids.includes(k)) logs.delete(k); }
 let busy = false;
 async function tick() {
   if (busy || !token || unauthorized || document.hidden) return;
@@ -1424,14 +1723,27 @@ async function tick() {
     // 사용량 바는 어느 탭에서든 갱신한다. 실패해도 다른 갱신은 이어 간다.
     const usageChanged = await refreshUsage().catch(() => false);
     if (view.tab === "chars" || hostShown == null) changed = await refreshChars();
+    // 칸 목록은 스플릿뷰가 꺼져 있어도 따라간다(켜자마자 막 끝난 칸도 보이게).
+    if (view.tab === "chars" && syncPanes()) changed = true;
     if (view.tab === "chars" && view.agent) {
       const agentId = view.agent;
-      // 보지 않는 캐릭터의 로그는 들고 있지 않는다.
-      for (const k of [...logs.keys()]) if (k !== agentId) logs.delete(k);
+      // 보지 않는 캐릭터의 로그는 들고 있지 않는다. 스플릿 칸 것은 돌아갈 때 다시 받지 않게 남긴다.
+      keepLogs([agentId, ...(splitOn ? panes.keys() : [])]);
       const logMode = await refreshLog(agentId);
       // 업무 목록을 못 받아도 상태·로그 갱신은 이어 간다. 일반 에이전트는 보낸 업무가 없다.
       if (agentId !== OFFICE) tasksData = await api("/tasks").catch(() => tasksData);
       if (view.agent === agentId) { updateAgentView(changed, logMode); refreshSent(); }
+    } else if (view.tab === "chars" && splitOn) {
+      const ids = [...panes.keys()];
+      keepLogs(ids);
+      const modes = new Map(await Promise.all(ids.map(async (id) => [id, await refreshLog(id).catch(() => "same")])));
+      if (view.tab === "chars" && !view.agent && splitOn) updateSplit(changed, modes);
+    } else if (view.tab === "chars") {
+      // 목록: 펼친 미리보기가 있는 활성 캐릭터만 최근 몇 항목을 받는다.
+      const ids = allChars().filter((c) => isActive(c) && !isFolded(c)).map((c) => c.agentId);
+      keepLogs(ids);
+      await Promise.all(ids.map((id) => refreshLog(id, false).catch(() => "same")));
+      if (view.tab === "chars" && !view.agent && !splitOn) { if (changed) render(); else refreshPreviews(); }
     } else if (view.tab === "talks") {
       if (view.talk) {
         const d = await api(`/discussions/${encodeURIComponent(view.talk)}`);
@@ -1463,19 +1775,15 @@ function updateAgentView(changed, logMode) {
   refreshMsg();
   refreshLive();
   refreshCost();
-  if (logMode === "reset") { document.getElementById("log").replaceWith(renderLog(c.agentId)); markLog(); }
-  else if (logMode === "append") prependLog(c.agentId);
+  if (logMode === "reset") document.getElementById("log").replaceWith(renderLog(c.agentId));
+  else if (logMode === "append") appendLog(document.getElementById("log"));
 }
-function markLog() {
-  const box = document.getElementById("log");
-  const log = view.agent && logs.get(view.agent);
-  if (box && log) box.dataset.last = String(log.last);
-}
-function prependLog(agentId) {
-  const box = document.getElementById("log");
-  const log = logs.get(agentId);
+/** 로그 상자에 새 항목만 맨 위로 붙인다. 비어 있던 상자는 새로 그린다. */
+function appendLog(box) {
+  const agentId = box && box._agent;
+  const log = agentId && logs.get(agentId);
   if (!box || !log) return;
-  if (!box.dataset.last || box.querySelector(".empty")) { box.replaceWith(renderLog(agentId)); markLog(); return; }
+  if (!box.dataset.last || box.querySelector(":scope > .empty")) { box.replaceWith(renderLog(agentId, box.id || null)); return; }
   const shown = Number(box.dataset.last);
   for (const it of log.items) if (it.seq > shown) placeItem(box, it);
   while (box.childElementCount > LOG_KEEP) box.lastElementChild.remove();

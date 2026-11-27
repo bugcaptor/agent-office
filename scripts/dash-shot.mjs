@@ -6,7 +6,8 @@
 // CLI 실행 중 재시작 경고, 셸 프롬프트에서 고른 CLI 띄우기, 끝난 업무 완료, 일반 에이전트 새 지시·이어서 보내기,
 // 대화 로그 속 이미지(썸네일·확대), 권한 요청·선택지 카드(AskUserQuestion 답·Bash 허용),
 // 텍스트·이미지 클립보드 복사와 이미지·파일 다운로드, 하단 사용량 바, 생각 중·멈춤 상태 줄,
-// 직접 입력과 보낼 대기열(쌓기·빼기), 로그 위 이 세션 추정 사용량, 화면 테마 토글(브라우저에 저장).
+// 직접 입력과 보낼 대기열(쌓기·빼기), 로그 위 이 세션 추정 사용량, 화면 테마 토글(브라우저에 저장),
+// 목록의 활성 캐릭터 로그 미리보기(접기·세션이 바뀌면 다시 펼침), 스플릿뷰(칸 격자·완료로 내리기·사이드 패널).
 import assert from "node:assert/strict";
 import { createServer } from "node:http";
 import { readFile, mkdir } from "node:fs/promises";
@@ -78,6 +79,7 @@ const tasks = {
   done: [],
 };
 const posts = [];
+const logReqs = [];
 let rev = 1;
 let aOutputAgo = 500;
 const usage = {
@@ -96,7 +98,11 @@ const server = createServer(async (req, res) => {
     return send({ app: "0.0.0", host: "회사 맥북 프로", rev: `r${rev}`, characters, officeAgent, folders, home: "/Users/me", outputAt: { a: Date.now() - aOutputAgo }, now: Date.now() });
   }
   if (url.pathname === "/api/usage") return send(usage);
-  if (url.pathname.startsWith("/api/log/")) return send({ epoch: 1, last: items.at(-1).seq, attached: true, items: url.searchParams.get("after") ? [] : items });
+  if (url.pathname.startsWith("/api/log/")) {
+    logReqs.push(url.pathname + url.search);
+    const tail = Number(url.searchParams.get("tail")) || items.length;
+    return send({ epoch: 1, last: items.at(-1).seq, attached: true, items: url.searchParams.get("after") ? [] : items.slice(-tail) });
+  }
   if (url.pathname.startsWith("/api/portrait/")) { res.setHeader("content-type", "image/png"); return res.end(png); }
   if (url.pathname.startsWith("/api/image/")) {
     if (url.searchParams.get("t") !== "abc" && req.headers.authorization !== "Bearer abc") {
@@ -280,6 +286,58 @@ assert.deepEqual(await theme(), ["dark", "rgb(20, 20, 18)"]);
 await p.screenshot({ path: `${outDir}/theme-dark.png` });
 await p.locator("#theme").click();
 assert.equal((await theme())[0], "auto");
+
+// 목록 미리보기: 활성(작업 중·답을 기다림) 캐릭터만, 최근 항목 5줄(최신 블록이 위, 도구 결과·이미지는 그 블록 아래).
+await p.goto(base.replace("#t=abc", ""));
+const pvLines = (id) => p.locator(`.pv-slot[data-agent="${id}"] .pv-l`);
+await pvLines("a").first().waitFor();
+assert.deepEqual(await pvLines("a").allTextContents(),
+  ["💬 아래 명령을 실행하세요.", "👤 이 화면 좀 봐 줘", "🖼 이미지", "🖼 이미지", "🔧 Read /tmp/shot.png"]);
+await pvLines("e").first().waitFor();
+assert.equal(await p.locator('.pv-slot[data-agent="b"] .pv').count(), 0);
+assert.ok(logReqs.some((r) => r === "/api/log/a?tail=30"), logReqs.join(" "));
+await p.screenshot({ path: `${outDir}/list-preview.png`, fullPage: true });
+// 접으면 상태 한 줄. 새로고침해도 같은 세션이면 접힌 채, 세션이 바뀌면 다시 펼친다.
+await p.locator('.pv-slot[data-agent="a"] .pv-fold').click();
+await p.locator('.pv-slot[data-agent="a"] button.pv.folded', { hasText: "▸ 작업 중" }).waitFor();
+assert.equal(await p.locator(".card.clickable .name").first().textContent(), "일반 에이전트");
+await p.reload();
+await p.locator('.pv-slot[data-agent="a"] button.pv.folded').waitFor();
+characters[0].session = { sessionId: "s1b", state: "running" }; rev++;
+await pvLines("a").first().waitFor();
+// 스플릿뷰: 활성 캐릭터 칸 격자, 나머지는 서랍(좁은 화면).
+await p.getByRole("switch", { name: "스플릿뷰" }).click();
+const paneIds = () => p.locator("#panes > .pane").evaluateAll((ps) => ps.map((x) => x.dataset.agent));
+await p.locator('#panes .pane[data-agent="e"] .log .msg').first().waitFor();
+// 보리는 앞에서 답을 기다리다 끝났다 — 완료로 내리기 전까지 칸이 남는다.
+assert.deepEqual((await paneIds()).sort(), ["a", "b", "e"]);
+await p.locator('#panes .pane[data-agent="b"] .chip.idle').waitFor();
+await p.screenshot({ path: `${outDir}/split-phone.png` });
+await p.getByRole("button", { name: /다른 캐릭터 3/ }).click();
+await p.locator("#split.side-open #side .card", { hasText: "도토리" }).waitFor();
+await p.screenshot({ path: `${outDir}/split-drawer.png` });
+await p.locator("#split .backdrop").click({ position: { x: 370, y: 400 } });
+await p.waitForFunction(() => !document.querySelector("#split.side-open"));
+await p.setViewportSize({ width: 1440, height: 900 });
+await p.waitForSelector("#split.side-open #side");
+await p.screenshot({ path: `${outDir}/split-wide.png` });
+// 턴이 끝나도 칸은 남고, 완료로 내리면 사이드 패널로 간다. 다시 작업하면 칸이 돌아온다.
+characters[4].turn = { phase: "idle", at: Date.now() }; rev++;
+await p.locator('#panes .pane[data-agent="e"] .chip.idle').waitFor();
+await p.locator('#panes .pane[data-agent="e"]').getByRole("button", { name: "완료" }).click();
+await p.waitForFunction(() => !document.querySelector('#panes .pane[data-agent="e"]'));
+await p.locator("#side .card", { hasText: "이끼" }).waitFor();
+characters[4].turn = { phase: "working", at: Date.now(), since: Date.now() }; rev++;
+await p.locator('#panes .pane[data-agent="e"]').waitFor();
+// 칸 머리를 누르면 상세, 돌아가면 스플릿뷰. 켜 둔 것은 기기에 남는다.
+await p.locator('#panes .pane[data-agent="a"] .pane-head .name').click();
+await p.waitForSelector("#log .msg");
+await p.locator(".back").click();
+await p.locator("#panes .pane").first().waitFor();
+await p.reload();
+await p.locator('#panes .pane[data-agent="e"]').waitFor();
+await p.getByRole("switch", { name: "스플릿뷰" }).click();
+await pvLines("a").first().waitFor();
 console.log(JSON.stringify(posts));
 await browser.close();
 server.close();

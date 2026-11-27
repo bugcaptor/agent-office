@@ -337,6 +337,8 @@ fn with_rev(mut v: Value) -> Value {
 struct LogQuery {
     after: Option<u64>,
     epoch: Option<u64>,
+    /// 마지막 이만큼만 돌려준다(목록 미리보기). 없으면 전부.
+    tail: Option<usize>,
 }
 
 async fn log(State(ctx): Ctx, Path(agent): Path<String>, Query(q): Query<LogQuery>) -> Json<Value> {
@@ -359,7 +361,10 @@ async fn log(State(ctx): Ctx, Path(agent): Path<String>, Query(q): Query<LogQuer
         .unwrap_or_else(crate::session::manager::home_dir);
     let dash = ctx.dash.clone();
     match tokio::task::spawn_blocking(move || dash.logs.read(&agent, &cwd, q.after, q.epoch)).await {
-        Ok(page) => ok(page),
+        Ok(page) => ok(match q.tail {
+            Some(n) => page.keep_last(n),
+            None => page,
+        }),
         Err(e) => fail(e.to_string()),
     }
 }
