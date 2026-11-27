@@ -19,9 +19,10 @@ use serde_json::{Map, Value};
 const AGENT_OFFICE_KEY: &str = "agent-office";
 
 /// hook.sh 절대 경로로부터 `"agent-office"` 키에 들어갈 값을 만든다.
-/// 이벤트는 셋뿐이다: PreInvocation(평면 배열), PostToolUse(matcher 묶음),
-/// Stop(평면 배열). 명령은 `AGENT_OFFICE_AGY_EVENT=<Event> sh '<hook.sh>'`
-/// 꼴 — 셸이 이벤트 이름으로 source를 정한다(agy_hook.rs).
+/// 이벤트는 넷이다: SessionStart(평면 배열, 캐릭터 성격·사무실 안내 주입),
+/// PreInvocation(평면 배열), PostToolUse(matcher 묶음), Stop(평면 배열).
+/// 명령은 `AGENT_OFFICE_AGY_EVENT=<Event> sh '<hook.sh>'` 꼴 — 셸이 이벤트
+/// 이름으로 동작을 고른다(agy_hook.rs).
 pub fn build_agent_office_entry(hook_script: &Path) -> Value {
     // 리뷰 지적: 경로를 수동으로 `'...'`로만 감싸면 경로 안에 작은따옴표가
     // 있을 때(드물지만 사용자 홈 디렉터리 이름에 따라 가능) 명령이 깨진다.
@@ -29,6 +30,9 @@ pub fn build_agent_office_entry(hook_script: &Path) -> Value {
     let hook = crate::session::wrapper_script::sh_quote(&hook_script.to_string_lossy());
     let command_for = |event: &str| format!("AGENT_OFFICE_AGY_EVENT={event} sh {hook}");
     serde_json::json!({
+        "SessionStart": [
+            { "type": "command", "command": command_for("SessionStart"), "timeout": 5 },
+        ],
         "PreInvocation": [
             { "type": "command", "command": command_for("PreInvocation"), "timeout": 5 },
         ],
@@ -129,6 +133,7 @@ mod tests {
 
         let value: Value = serde_json::from_slice(&std::fs::read(&file).unwrap()).unwrap();
         assert!(value.get(AGENT_OFFICE_KEY).is_some());
+        assert!(value["agent-office"]["SessionStart"].is_array());
         assert!(value["agent-office"]["PreInvocation"].is_array());
         assert!(value["agent-office"]["PostToolUse"][0]["matcher"] == "*");
         assert!(value["agent-office"]["Stop"].is_array());
@@ -213,6 +218,10 @@ mod tests {
     #[test]
     fn entry_commands_carry_the_event_env_and_hook_script_path() {
         let entry = build_agent_office_entry(&hook_script_path());
+        let start = entry["SessionStart"][0]["command"].as_str().unwrap();
+        assert!(start.starts_with("AGENT_OFFICE_AGY_EVENT=SessionStart sh "));
+        assert!(start.contains("/tmp/agent-office/observer/agy/hook.sh"));
+
         let pre = entry["PreInvocation"][0]["command"].as_str().unwrap();
         assert!(pre.starts_with("AGENT_OFFICE_AGY_EVENT=PreInvocation sh "));
         assert!(pre.contains("/tmp/agent-office/observer/agy/hook.sh"));
@@ -223,6 +232,7 @@ mod tests {
         let stop = entry["Stop"][0]["command"].as_str().unwrap();
         assert!(stop.starts_with("AGENT_OFFICE_AGY_EVENT=Stop sh "));
 
+        assert_eq!(entry["SessionStart"][0]["timeout"], 5);
         assert_eq!(entry["PreInvocation"][0]["timeout"], 5);
         assert_eq!(entry["PostToolUse"][0]["hooks"][0]["timeout"], 5);
         assert_eq!(entry["Stop"][0]["timeout"], 5);

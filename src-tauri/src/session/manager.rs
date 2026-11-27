@@ -511,12 +511,23 @@ impl SessionManager {
                     WrapperArg::Env("AGENT_OFFICE_CODEX_PERSONA".into()),
                 ],
             );
+
+            // Antigravity CLI(agy)에는 `--append-system-prompt` 플래그가 없지만
+            // `SessionStart` 훅의 `injectSteps`로 세션 시작 시 1회 systemMessage를
+            // 덧붙일 수 있다(agy 1.5.18 실측, `--resume` 재개 시에도 대화 기록에 유지).
+            // 전역 `~/.gemini/config/hooks.json`의 `hook.sh`가 외부 JSON 도구 없이
+            // `printf '%s'`만으로 출력할 수 있게 여기서 JSON 문자열을 완성해 싣는다.
+            plan.env.push((
+                "AGENT_OFFICE_AGY_SESSION_START".into(),
+                agy_session_start_payload(personality_prompt),
+            ));
         }
 
         // Pi·Kilo는 persona를 받지 않으므로 안내문만 따로 싣는다. Pi는 덧붙이기 플래그
         // (pi 1.1.0 `--append-system-prompt`), Kilo는 앱 소유 플러그인의
         // `experimental.chat.system.transform` 훅이 이 env를 읽는다(플러그인은 관찰이
-        // 켜졌을 때만 실린다). agy는 덧붙이기 채널이 없어 `AGENT_OFFICE_TASK`·`AGENT_OFFICE_MD`만 준다.
+        // 켜졌을 때만 실린다). agy는 위 `AGENT_OFFICE_AGY_SESSION_START`로 Claude·Codex와
+        // 같은 persona + 안내문을 함께 받는다(Unix 전역 `SessionStart` 훅).
         if let Some(office) = crate::office_instructions::appended_prompt(
             None,
             office_instructions.as_deref(),
@@ -1439,5 +1450,24 @@ fn codex_persona_config(prompt: &str) -> String {
         "developer_instructions={}",
         crate::office_instructions::toml_basic_string(prompt)
     )
+}
+
+/// persona + 사무실 안내 텍스트 → Antigravity CLI(`agy`) `SessionStart` 훅
+/// stdout JSON(`{"injectSteps":[{"systemMessage":{"systemMessage":"..."}}]}`).
+///
+/// `agy_hook.rs`의 `hook.sh`는 외부 JSON 도구(`jq`·`python3`) 없이
+/// `printf '%s'`만으로 출력하므로, 개행·따옴표·역슬래시·유니코드 이스케이프는
+/// Rust 쪽 `serde_json`에서 보장한다.
+pub(crate) fn agy_session_start_payload(prompt: &str) -> String {
+    serde_json::json!({
+        "injectSteps": [
+            {
+                "systemMessage": {
+                    "systemMessage": prompt,
+                }
+            }
+        ]
+    })
+    .to_string()
 }
 

@@ -349,6 +349,10 @@
             "AGENT_OFFICE_CODEX_PERSONA".into(),
             r#"developer_instructions="차분하게 답한다.\n근거를 먼저 제시한다.""#.into()
         )));
+        assert_eq!(
+            env_value(&control, "AGENT_OFFICE_AGY_SESSION_START"),
+            Some(crate::session::manager::agy_session_start_payload(prompt)),
+        );
         cleanup_observer_fixture(&control, &scratch);
     }
 
@@ -385,6 +389,10 @@
             "AGENT_OFFICE_CODEX_PERSONA".into(),
             r#"developer_instructions="해적처럼 말한다.""#.into()
         )));
+        assert_eq!(
+            env_value(&control, "AGENT_OFFICE_AGY_SESSION_START"),
+            Some(crate::session::manager::agy_session_start_payload("해적처럼 말한다.")),
+        );
         cleanup_observer_fixture(&control, &scratch);
     }
 
@@ -431,6 +439,10 @@
             )
         );
         assert!(env_value(&control, "AGENT_OFFICE_CODEX_PERSONA").unwrap().starts_with("developer_instructions=\"# Agent Office"));
+        assert_eq!(
+            env_value(&control, "AGENT_OFFICE_AGY_SESSION_START"),
+            Some(crate::session::manager::agy_session_start_payload(&appended)),
+        );
         let inbox = scratch.join("app").join("work-inbox");
         let cache = scratch.join("app").join("doc-view");
         assert_eq!(
@@ -499,6 +511,7 @@
         Arc::new(manager).create(req("a1", Some(false))).unwrap();
         assert_eq!(env_value(&control, "AGENT_OFFICE_PERSONA"), None);
         assert_eq!(env_value(&control, "AGENT_OFFICE_CODEX_WRITABLE_ROOTS"), None);
+        assert_eq!(env_value(&control, "AGENT_OFFICE_AGY_SESSION_START"), None);
         assert_eq!(env_value(&control, "AGENT_OFFICE_OFFICE_PROMPT"), None);
         assert!(recorded_wrappers.lock().is_empty());
         cleanup_observer_fixture(&control, &scratch);
@@ -606,6 +619,10 @@
             crate::office_instructions::doc_view_instructions(&md)
         );
         assert_eq!(env_value(&control, "AGENT_OFFICE_PERSONA"), Some(office.clone()));
+        assert_eq!(
+            env_value(&control, "AGENT_OFFICE_AGY_SESSION_START"),
+            Some(crate::session::manager::agy_session_start_payload(&office)),
+        );
         assert_eq!(env_value(&control, "AGENT_OFFICE_OFFICE_PROMPT"), Some(office));
         assert_eq!(env_value(&control, "AGENT_OFFICE_TASK").map(PathBuf::from), Some(shim));
         assert_eq!(env_value(&control, "AGENT_OFFICE_MD").map(PathBuf::from), Some(md));
@@ -654,7 +671,14 @@
         assert!(env_value(&control, "AGENT_OFFICE_CODEX_HOOK_STOP").is_some());
         let env = control.spawned_env();
         let keys: Vec<&str> = env.iter().map(|(key, _)| key.as_str()).collect();
-        for absent in ["AGENT_OFFICE_AGENT_ID", "AGENT_OFFICE_PERSONA", "AGENT_OFFICE_OFFICE_PROMPT", "AGENT_OFFICE_CODEX_WRITABLE_ROOTS", "AGENT_OFFICE_CODEX_PERSONA"] {
+        for absent in [
+            "AGENT_OFFICE_AGENT_ID",
+            "AGENT_OFFICE_PERSONA",
+            "AGENT_OFFICE_OFFICE_PROMPT",
+            "AGENT_OFFICE_CODEX_WRITABLE_ROOTS",
+            "AGENT_OFFICE_CODEX_PERSONA",
+            "AGENT_OFFICE_AGY_SESSION_START",
+        ] {
             assert!(!keys.contains(&absent), "{absent} must be absent: {keys:?}");
         }
         assert_eq!(env_value(&control, crate::discussion_session::SESSION_ENV).as_deref(), Some("discuss-d1.a1"));
@@ -742,6 +766,26 @@
         assert!(!config.contains('\n'), "실제 개행이 남으면 TOML이 깨진다");
     }
 
+    #[test]
+    fn agy_session_start_payload_serializes_inject_steps_system_message() {
+        let text = "따옴표 \"인용\"과 역슬래시 \\ 그리고\n줄바꿈";
+        let payload = crate::session::manager::agy_session_start_payload(text);
+        assert!(!payload.contains('\n'), "단일 줄 JSON이어야 한다");
+        let parsed: serde_json::Value = serde_json::from_str(&payload).expect("valid json");
+        assert_eq!(
+            parsed,
+            serde_json::json!({
+                "injectSteps": [
+                    {
+                        "systemMessage": {
+                            "systemMessage": text,
+                        }
+                    }
+                ]
+            })
+        );
+    }
+
     #[tokio::test]
     async fn blank_persona_does_not_add_env_or_wrapper() {
         let (manager, control, recorded_wrappers, scratch) = build_observer_manager(false, vec![]);
@@ -754,7 +798,8 @@
             .spawned_env()
             .iter()
             .all(|(key, _)| key != "AGENT_OFFICE_PERSONA"
-                && key != "AGENT_OFFICE_CODEX_PERSONA"));
+                && key != "AGENT_OFFICE_CODEX_PERSONA"
+                && key != "AGENT_OFFICE_AGY_SESSION_START"));
         cleanup_observer_fixture(&control, &scratch);
     }
 

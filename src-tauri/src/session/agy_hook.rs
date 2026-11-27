@@ -37,12 +37,32 @@ use std::path::{Path, PathBuf};
 
 /// hooks.json에 박히는 훅 명령이 부르는 POSIX sh 스크립트.
 /// `AGENT_OFFICE_AGY_EVENT`(hooks.json 명령이 앞에 붙이는 env)로 이벤트를
-/// 구분하고, `AGENT_OFFICE_HOOK_URL`/`AGENT_OFFICE_SESSION`이 없으면(=
-/// agent-office 밖에서 agy를 실행 중) 즉시 종료한다.
+/// 구분한다:
+/// - `SessionStart`: 관찰(`AGENT_OFFICE_HOOK_URL`) 여부와 무관하게
+///   `AGENT_OFFICE_SESSION`과 `AGENT_OFFICE_AGY_SESSION_START`가 모두 있으면
+///   미리 직렬화해 둔 `injectSteps` JSON을 그대로 출력해 캐릭터 성격·사무실
+///   안내문을 세션 시작 시 1회 주입한다. 없으면 `{}`만 출력하고 즉시 종료한다.
+/// - `PreInvocation` / `PostToolUse` / `Stop`: 관찰 이벤트를 로컬 훅 서버로
+///   보낸다. `AGENT_OFFICE_HOOK_URL`/`AGENT_OFFICE_SESSION`이 없으면(=
+///   agent-office 밖에서 agy를 실행 중) 즉시 종료한다.
 const AGY_HOOK_SH: &str = r#"#!/bin/sh
 # agent-office-agy-hook.sh — agent-office가 생성. 편집 금지(부팅 시 덮어씀).
-# Antigravity CLI(agy) 훅 이벤트를 agent-office 로컬 훅 서버로 전달한다.
-#
+# Antigravity CLI(agy) 훅 이벤트를 처리한다:
+#   - SessionStart: 세션 시작 시 1회 캐릭터 성격·사무실 안내문(systemMessage) 주입.
+#   - PreInvocation/PostToolUse/Stop: 관찰 이벤트를 agent-office 로컬 훅 서버로 전달.
+
+# SessionStart는 관찰이 꺼진 세션에서도 Claude·Codex처럼 프롬프트를 주입한다.
+# agent-office 밖(AGENT_OFFICE_SESSION 없음)이거나 주입할 프롬프트가 없으면
+# (토의 세션 등) stdin을 읽지 않고 무해한 `{}`만 찍고 종료한다.
+if [ "$AGENT_OFFICE_AGY_EVENT" = "SessionStart" ]; then
+  if [ -n "$AGENT_OFFICE_SESSION" ] && [ -n "$AGENT_OFFICE_AGY_SESSION_START" ]; then
+    printf '%s' "$AGENT_OFFICE_AGY_SESSION_START"
+  else
+    printf '{}'
+  fi
+  exit 0
+fi
+
 # 실측: PreToolUse의 decision은
 # 실행을 게이트하고 Stop의 decision=="continue"는 루프를 멈추지 못하게
 # 만든다 — 그래서 관찰 대상 세 이벤트(PreInvocation/PostToolUse/Stop) 모두
@@ -218,10 +238,11 @@ mod tests {
         assert!(AGY_HOOK_SH.contains("http://127.0.0.1:${port}/hook"));
     }
 
-    /// 1.4 실측 회귀 방지: 세 이벤트 모두 무해한 출력을 먼저 찍는다.
+    /// 1.4 실측 회귀 방지: 관찰 대상 세 이벤트(SessionStart 분기 이후)는
+    /// 무해한 출력을 env 가드보다 먼저 찍는다.
     #[test]
     fn hook_script_prints_harmless_output_first() {
-        let printf_pos = AGY_HOOK_SH.find("printf '{}'").expect("prints {}");
+        let printf_pos = AGY_HOOK_SH.rfind("printf '{}'").expect("prints {}");
         let env_check = AGY_HOOK_SH.find("AGENT_OFFICE_HOOK_URL").unwrap();
         assert!(printf_pos < env_check, "harmless output must print before any guard/exit");
     }
@@ -334,6 +355,60 @@ esac
             calls[1].contains(":23456/hook"),
             "retry hits the port from observer-port: {calls:?}",
         );
+
+        let _ = std::fs::remove_dir_all(&scratch);
+    }
+
+    /// SessionStart 실측 계약: 관찰(AGENT_OFFICE_HOOK_URL)이 꺼져 있어도
+    /// AGENT_OFFICE_SESSION + AGENT_OFFICE_AGY_SESSION_START가 있으면
+    /// injectSteps JSON을 그대로 출력하고 exit 0, agent-office 밖이거나
+    /// 프롬프트 env가 비어 있으면 `{}`만 출력한다.
+    #[cfg(unix)]
+    #[test]
+    fn real_sh_session_start_injects_payload_without_observer_and_noops_outside() {
+        if !std::path::Path::new("/bin/sh").exists() {
+            eprintln!("skipping: /bin/sh not present on this host");
+            return;
+        }
+
+        let scratch = scratch_dir();
+        let hook_path = write_hook_script(&scratch).unwrap();
+        let payload = crate::session::manager::agy_session_start_payload(
+            "해적처럼 말한다.\n\n# Agent Office task board\n\"인용\" \\ 경로",
+        );
+
+        let run = |envs: &[(&str, &str)]| {
+            let mut cmd = std::process::Command::new("/bin/sh");
+            cmd.arg(&hook_path)
+                .env_clear()
+                .env("PATH", "/bin:/usr/bin")
+                .env("AGENT_OFFICE_AGY_EVENT", "SessionStart")
+                .stdin(std::process::Stdio::null())
+                .stdout(std::process::Stdio::piped());
+            for (k, v) in envs {
+                cmd.env(k, v);
+            }
+            let out = cmd.output().expect("spawn /bin/sh hook.sh");
+            assert!(out.status.success(), "hook.sh must always exit 0");
+            String::from_utf8(out.stdout).expect("utf-8 stdout")
+        };
+
+        // 관찰 env(AGENT_OFFICE_HOOK_URL)가 없어도 세션 안에서 프롬프트를 주입한다.
+        let injected = run(&[
+            ("AGENT_OFFICE_SESSION", "s1"),
+            ("AGENT_OFFICE_AGY_SESSION_START", &payload),
+        ]);
+        assert_eq!(injected, payload);
+        let parsed: serde_json::Value = serde_json::from_str(&injected).expect("valid json");
+        assert_eq!(
+            parsed["injectSteps"][0]["systemMessage"]["systemMessage"].as_str(),
+            Some("해적처럼 말한다.\n\n# Agent Office task board\n\"인용\" \\ 경로"),
+        );
+
+        // agent-office 밖(AGENT_OFFICE_SESSION 없음)에서는 payload가 있어도 no-op.
+        assert_eq!(run(&[("AGENT_OFFICE_AGY_SESSION_START", &payload)]), "{}");
+        // 토의 세션 등 프롬프트가 비어 있으면 no-op.
+        assert_eq!(run(&[("AGENT_OFFICE_SESSION", "s1")]), "{}");
 
         let _ = std::fs::remove_dir_all(&scratch);
     }
