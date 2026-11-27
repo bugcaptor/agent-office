@@ -189,6 +189,24 @@ const SCENARIOS: Record<string, (lang: string) => Scenario> = {
   office: base,
   /** 머신 연동 호스트: 붙은 머신 하나·끊긴 머신 하나의 층이 생긴다. */
   machines: (lang) => ({ ...base(lang), remote: linkRemoteFixture as RemoteOffice }),
+  /**
+   * 머신 연동 업무 분배: 호스트 보드에 다른 머신 캐릭터(studio-pc의 Ada)에게 맡긴 플랜 단계가 있고, 이 앱이 클라이언트로
+   * 받은 업무 하나가 맨 위 묶음에 있다(한 화면에서 두 쪽을 본다).
+   */
+  "machines-work": (lang) => {
+    const b = base(lang);
+    return {
+      ...b,
+      remote: linkRemoteFixture as RemoteOffice,
+      settings: { ...b.settings, settings: { ...b.settings.settings, workPanelsEnabled: true } },
+      workItems: [
+        work("m1", "API: add search endpoint", "in_progress", "d-1a2b3c4d:agent-a", 0, { repo: { url: "github.com/acme/app", subpath: "server", worktree: true }, sessionIds: ["d-1a2b3c4d:s9"] }),
+        work("m2", "Web: search page", "todo", "p1", 1, { dependsOn: ["m1"] }),
+        work("m3", "Ship search across machines", "todo", "p1", 2, { dependsOn: ["m2"], plan: true, body: "Server on studio-pc, web here." }),
+        work("t-recv1", "Fix flaky login test", "review", "p2", 3, { received: { hostName: "Studio", cwd: "/Users/me/dev/app/web", receivedAt: 1720000000000 }, sessionIds: ["s-r1"] }),
+      ],
+    };
+  },
   /** 세션 둘이 돌고 하나는 입력을 기다리는 상태. */
   working: (lang) => ({
     ...base(lang),

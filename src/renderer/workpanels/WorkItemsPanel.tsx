@@ -28,7 +28,12 @@ import { isRecurring, scheduleTemplateOf } from "./workSchedule";
 import { formatLocalMinute } from "../shared/localDateTime";
 import { projectAnchorCwd, projectNameFromCwd } from "../labels/labelText";
 import { DiscussionSection } from "../discussion/DiscussionSection";
+import { useRemoteFloors } from "../link/remoteFloors";
+import { remoteSendBlocked } from "../link/remoteWork";
 import { useDiscussionStore } from "../discussion/discussionStore";
+
+/** 호스트에서 받은 업무 묶음의 키(캐릭터 id와 겹치지 않는다). */
+const RECEIVED_GROUP = "@received";
 
 export function WorkItemsPanel() {
   const { t } = useTranslation("workpanels");
@@ -43,6 +48,11 @@ export function WorkItemsPanel() {
   const summaries = useSessionSummaryStore((s) => s.summaries);
   const monitored = useWorkMonitorStore((s) => s.sessions);
   const collapsedGroups = useWorkGroupStore((s) => s.collapsed);
+  // 머신 연동 호스트: 다른 머신 캐릭터도 담당이 될 수 있다(`기기id:캐릭터id`).
+  const remoteOffice = useRemoteFloors((s) => s.office);
+  const remoteNames: Record<string, string> = {};
+  for (const machine of remoteOffice.machines) for (const c of machine.characters) remoteNames[c.id] = `${c.name} · ${machine.name}`;
+  const known: Record<string, unknown> = { ...remoteNames, ...agents };
   const setGroupCollapsed = useWorkGroupStore((s) => s.setCollapsed);
   const [draft, setDraft] = useState<WorkItemDraft | null>(null);
   const [creating, setCreating] = useState(false);
@@ -79,7 +89,7 @@ export function WorkItemsPanel() {
     const agentBusy = !!assignee && Object.values(busy).includes(assignee);
     // 플랜 루트는 플랜 메모라 보내지 않는다. 자동 진행이 선행 태스크만 진행한다.
     const blockedReason = !hasWorkContent(value) ? undefined : scheduleTemplateOf(item, items) ? "work-send-schedule-template" : value.plan ? "work-send-plan-root" : waitingOn.length ? "work-send-blocked"
-      : workSendDisabledReason(assignee ? agents[assignee] : undefined) ?? (agentBusy && !sending ? "work-send-busy" : undefined);
+      : (assignee && remoteNames[assignee] ? remoteSendBlocked(value) : workSendDisabledReason(assignee ? agents[assignee] : undefined)) ?? (agentBusy && !sending ? "work-send-busy" : undefined);
     const save = () => { edit(item.id, patch); clearEdit(item.id); void useWorkItemStore.getState().flush(); };
     // 보내기에 성공하면 팝업을 닫아 열린 터미널을 보여준다. 실패·확인 취소는 오류를 볼 수 있게 열어 둔다.
     const send = async () => {
@@ -101,6 +111,7 @@ export function WorkItemsPanel() {
       <WorkEditor itemId={item.id} value={value} busy={sending} dirty={dirty}
         onChange={(change) => setEdits((current) => ({ ...current, [item.id]: { ...current[item.id], ...change } }))}
         onSave={save} onDiscard={() => clearEdit(item.id)} />
+      {item.received && <p className="work-muted work-received-note">{t("received.hint")} {t("received.cwd", { cwd: item.received.cwd })}</p>}
       {item.lastError && <p role="alert">{sendErrorText(item.lastError)}</p>}
       <AutoRunSection root={item} />
       <WorkScheduleSection key={`schedule-${item.id}`} item={item} />
@@ -131,7 +142,8 @@ export function WorkItemsPanel() {
       <span>{plan && <span className="work-status-chip work-plan-chip">{t("plan.chip")}</span>}
         {(!plan || item.status !== "todo") && <span className="work-status-chip">{t(`status.${item.status}`)}</span>}
         <strong className={!item.title.trim() ? "work-title-derived" : undefined}>{workItemTitle(item)}</strong>{dirty && <small>{t("unsavedChanges")}</small>}
-        {run && <small className={`work-auto-chip ${run.state}`}>{t(run.pauseReason === "usage-wait" && run.state === "paused" ? "autoRun.chip.usageWait" : `autoRun.chip.${run.state}`)}</small>}
+        {run && <small className={`work-auto-chip ${run.state}`}>{t(run.state === "paused" && run.pauseReason === "usage-wait" ? "autoRun.chip.usageWait"
+          : run.state === "paused" && run.pauseReason === "link-offline" ? "autoRun.chip.linkWait" : `autoRun.chip.${run.state}`)}</small>}
         {item.schedule && <small className={`work-schedule-chip${item.schedule.enabled ? "" : " off"}`}>{item.schedule.enabled && item.schedule.nextAt !== undefined
           ? t(isRecurring(item) ? "schedule.chip.recurring" : "schedule.chip.once", { when: formatLocalMinute(item.schedule.nextAt) })
           : t("schedule.chip.off")}</small>}
@@ -139,6 +151,7 @@ export function WorkItemsPanel() {
         {plan && !item.plan && <small title={t("plan.rootRunsHint")}>{t("plan.rootRuns")}</small>}
         {plan && <small className="work-plan-progress">{t("autoRun.progress", { done: plan.done, total: plan.total })}</small>}
         {role?.member?.unassigned && <small>{t("unassigned")}</small>}
+        {item.received && <small className="work-received-chip" title={item.received.cwd}>{t("received.chip", { host: item.received.hostName || "?" })}{item.assigneeAgentId && agents[item.assigneeAgentId] ? ` · ${agents[item.assigneeAgentId].name}` : ""}</small>}
         {!plan && waitingOn.length > 0 && <small className="work-blocked">{t("blockedBy", { titles: waitingOn.map(workItemTitle).join(", ") })}</small>}
         {!plan && !role?.member && dependents > 0 && item.status !== "done" && <small>{t("dependents", { count: dependents })}</small>}</span>
     </button>;
@@ -159,7 +172,8 @@ export function WorkItemsPanel() {
       {sessionId && <WorkCardMonitor sessionId={sessionId} assignee={item.assigneeAgentId} status={item.status} />}
     </article>;
   };
-  const plans = planLayout(items, (item) => assigneeKey(item, agents));
+  const groupOf = (item: WorkItem) => item.received ? RECEIVED_GROUP : assigneeKey(item, known);
+  const plans = planLayout(items, groupOf);
   // 플랜 루트와 그 아래 들인 업무. 접힘은 캐릭터 묶음과 같은 저장소에 `plan:<id>`로 둔다.
   const planBlock = (root: WorkItem, groupKey: string) => {
     const members = plans.members.get(root.id) ?? [];
@@ -169,16 +183,18 @@ export function WorkItemsPanel() {
     return <div className="work-plan" key={root.id}>
       {card(root, { plan: { done: all.filter((item) => item.status === "done").length, total: all.length, expanded, toggle: members.length ? () => setGroupCollapsed(key, expanded) : undefined } })}
       {expanded && members.length > 0 && <div className="work-plan-members">
-        {members.map((item) => card(item, { member: { unassigned: assigneeKey(item, agents) !== groupKey } }))}
+        {members.map((item) => card(item, { member: { unassigned: groupOf(item) !== groupKey } }))}
       </div>}
     </div>;
   };
   // 캐릭터(오피스 순서) → 미배정 → 삭제된 캐릭터 순. 캐릭터 묶음은 업무가 없어도 '＋'로 바로 만들 수 있게 보이고,
   // 미배정·삭제된 캐릭터 묶음은 업무가 있을 때만 보인다. agentOrder에 없는 캐릭터도 업무가 사라지지 않게 뒤에 붙인다.
-  const groups = [...new Set([...agentOrder.filter((id) => agents[id]), ...Object.keys(agents)]), "", MISSING_ASSIGNEE].map((key) => ({
-    key, name: key === "" ? t("unassigned") : key === MISSING_ASSIGNEE ? t("missingAgent") : agents[key].name,
+  // 호스트에서 받은 업무는 맨 위 한 묶음, 다른 머신 캐릭터 묶음은 이 머신 캐릭터 뒤(업무가 있을 때만).
+  const remoteKeys = Object.keys(remoteNames).filter((id) => items.some((item) => item.assigneeAgentId === id));
+  const groups = [RECEIVED_GROUP, ...new Set([...agentOrder.filter((id) => agents[id]), ...Object.keys(agents)]), ...remoteKeys, "", MISSING_ASSIGNEE].map((key) => ({
+    key, name: key === RECEIVED_GROUP ? t("received.group") : key === "" ? t("unassigned") : key === MISSING_ASSIGNEE ? t("missingAgent") : agents[key]?.name ?? remoteNames[key],
     // 플랜 루트 아래로 옮긴 업무는 제 묶음에서 뺀다.
-    items: items.filter((item) => assigneeKey(item, agents) === key && !plans.claimed.has(item.id)),
+    items: items.filter((item) => groupOf(item) === key && !plans.claimed.has(item.id)),
   })).filter((group) => group.items.length > 0 || agents[group.key]);
   // 프로젝트는 머리 위 라벨과 같은 규칙: 세션 cwd가 프로필 cwd 밖으로 나갔을 때만 세션 쪽 폴더 이름.
   const projectOf = (agentId: string) => {

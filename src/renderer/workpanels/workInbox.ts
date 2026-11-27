@@ -4,6 +4,12 @@ import { useAppStore } from "../store/appStore";
 import { useWorkItemStore, type InboxRequest } from "./workItemStore";
 import { parseScheduleSpec } from "./workSchedule";
 import { receiveDiscussionInbox, receiveRoleInbox } from "../discussion/discussionInbox";
+import { useRemoteFloors } from "../link/remoteFloors";
+
+/** 머신 연동 호스트: 붙은 머신 캐릭터들(담당 해석용). */
+function remoteMembers(): Pick<AgentProfile, "id" | "name">[] {
+  return useRemoteFloors.getState().office.machines.flatMap((m) => m.characters.map((c) => ({ id: c.id, name: c.name })));
+}
 
 export function resolveAssignee(raw: string | undefined, profiles: Pick<AgentProfile, "id" | "name">[]): string | undefined {
   if (!raw) return;
@@ -57,7 +63,8 @@ async function receive(epoch: number): Promise<void> {
     if (epoch !== generation || !timer) return;
     // 지난 저장 실패가 남아 있으면 먼저 재시도해 오류를 풀고 같은 주기에 가져온다.
     if (useWorkItemStore.getState().error === "save") await useWorkItemStore.getState().flush();
-    const profiles = Object.values(useAppStore.getState().agents);
+    // 다른 머신 캐릭터(`기기id:캐릭터id`)도 담당이 된다. 그 머신의 받은 업무 세션은 자기 원격 id로 남긴다.
+    const profiles = [...Object.values(useAppStore.getState().agents), ...remoteMembers()];
     // 완료·삭제·수정 요청은 같은 주기의 추가를 먼저 반영한 뒤 파일 이름(시각) 순으로 적용해
     // 방금 남긴 업무도 대상으로 삼을 수 있다.
     const isRequest = (entry: InboxEntry) => !!(entry.done?.length || entry.delete?.length || entry.edit);

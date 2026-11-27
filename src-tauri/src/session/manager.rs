@@ -462,6 +462,8 @@ impl SessionManager {
         let md_shim = ensure(&self.md_cli, "md");
         let discuss_shim = if discussion { ensure(&self.discuss_cli, "discuss") } else { None };
         let work_inbox = self.app_data_dir.as_ref().map(|dir| dir.join("work-inbox"));
+        // 머신 연동 클라이언트의 호스트 보드 수신함(`office-task --host`·받은 업무 세션이 쓴다).
+        let host_inbox = self.app_data_dir.as_ref().map(|dir| crate::link::work::host_board_inbox(dir));
         let doc_view_cache = self.app_data_dir.as_ref().map(|dir| crate::doc_view::cache_dir(dir));
         // 토의 세션은 업무 보드·문서 뷰어 안내를 싣지 않는다(읽기 전용 토의에 필요 없다).
         let office_enabled = task_shim.is_some() && (self.work_panels_enabled)() && !discussion;
@@ -550,6 +552,8 @@ impl SessionManager {
         // 대화 세션은 질의응답용이라 아무것도 더하지 않는다.
         let writable_roots: Vec<&std::path::Path> = [
             work_inbox.as_deref().filter(|_| office_enabled),
+            // 클라이언트로 호스트 보드를 받은 적이 있을 때만(폴더가 있을 때) 더한다.
+            host_inbox.as_deref().filter(|p| office_enabled && p.is_dir()),
             doc_view_cache.as_deref().filter(|_| md_shim.is_some()),
         ]
         .into_iter()

@@ -23,6 +23,8 @@ pub const FILE: &str = "link-remote.json";
 pub const KIND_AGENTS: &str = "agents";
 /// 머신 하나에서 받는 캐릭터 상한(지나치게 큰 스냅숏을 막는다).
 const MAX_CHARACTERS: usize = 200;
+/// 머신 하나에서 받는 저장소 상한.
+const MAX_REPOS: usize = 1000;
 /// 명단에 남기는 키(끊긴 동안 보일 모습).
 const ROSTER_KEYS: &[&str] = &["agentId", "name", "role", "cwd", "clockedOut", "portrait", "appearance", "shellAssist", "label"];
 
@@ -53,6 +55,8 @@ pub struct RemoteMachine {
     pub name: String,
     pub online: bool,
     pub characters: Vec<RemoteCharacter>,
+    /// 그 머신에 클론이 있는 저장소(정규화한 git 원격 주소). 업무를 맡기기 전에 본다. 끊겨도 마지막 목록을 둔다.
+    pub repos: Vec<String>,
 }
 
 /// `link-remote` 이벤트와 `link_remote` 커맨드의 몸.
@@ -78,12 +82,16 @@ struct Machine {
     output_at: serde_json::Map<String, Value>,
     /// 끊긴 동안 보일 명단.
     roster: Vec<Value>,
+    /// 클론이 있는 저장소(마지막으로 받은 것).
+    repos: Vec<String>,
 }
 
 #[derive(Debug, Default, Serialize, Deserialize)]
 struct RosterFile {
     #[serde(default)]
     devices: HashMap<String, Vec<Value>>,
+    #[serde(default, skip_serializing_if = "HashMap::is_empty")]
+    repos: HashMap<String, Vec<String>>,
 }
 
 pub type OfficeListener = Arc<dyn Fn(&RemoteOffice) + Send + Sync>;
@@ -163,11 +171,18 @@ impl RemoteView {
             .and_then(|p| std::fs::read(p).ok())
             .and_then(|b| serde_json::from_slice::<RosterFile>(&b).ok())
             .unwrap_or_default();
-        let machines = roster
+        let mut repos = roster.repos;
+        let mut machines: HashMap<String, Machine> = roster
             .devices
             .into_iter()
-            .map(|(id, roster)| (id, Machine { roster, ..Default::default() }))
+            .map(|(id, roster)| {
+                let repos = repos.remove(&id).unwrap_or_default();
+                (id, Machine { roster, repos, ..Default::default() })
+            })
             .collect();
+        for (id, repos) in repos {
+            machines.entry(id).or_default().repos = repos;
+        }
         Self {
             host,
             path,
@@ -187,6 +202,7 @@ impl RemoteView {
         let Some(path) = &self.path else { return };
         let file = RosterFile {
             devices: machines.iter().filter(|(_, m)| !m.roster.is_empty()).map(|(id, m)| (id.clone(), m.roster.clone())).collect(),
+            repos: machines.iter().filter(|(_, m)| !m.repos.is_empty()).map(|(id, m)| (id.clone(), m.repos.clone())).collect(),
         };
         if let Ok(bytes) = serde_json::to_vec_pretty(&file) {
             let tmp = path.with_extension("json.tmp");
@@ -198,6 +214,9 @@ impl RemoteView {
 
     /// 붙은 기기가 올린 것(호스트 이벤트 처리기가 부른다).
     pub fn ingest(&self, device_id: &str, kind: &str, data: &Value) {
+        if kind == super::work::KIND_REPOS {
+            return self.ingest_repos(device_id, data);
+        }
         if kind != KIND_AGENTS {
             return;
         }
@@ -232,6 +251,28 @@ impl RemoteView {
             }
         }
         self.publish();
+    }
+
+    fn ingest_repos(&self, device_id: &str, data: &Value) {
+        let Some(list) = data.get("repos").and_then(Value::as_array) else { return };
+        let mut repos: Vec<String> = list.iter().filter_map(Value::as_str).filter(|s| !s.is_empty() && s.len() <= 512).take(MAX_REPOS).map(str::to_string).collect();
+        repos.sort();
+        repos.dedup();
+        {
+            let mut machines = self.machines.lock().unwrap();
+            let m = machines.entry(device_id.to_string()).or_default();
+            if m.repos == repos {
+                return;
+            }
+            m.repos = repos;
+            self.save_roster(&machines);
+        }
+        self.publish();
+    }
+
+    /// 그 머신에 클론이 있는 저장소(정규화한 원격 주소).
+    pub fn repos_of(&self, device_id: &str) -> Vec<String> {
+        self.machines.lock().unwrap().get(device_id).map(|m| m.repos.clone()).unwrap_or_default()
     }
 
     /// 페어링된 기기(이름 순)와 붙어 있는지.
@@ -305,14 +346,20 @@ impl RemoteView {
     }
 
     pub fn office_view(&self) -> RemoteOffice {
-        RemoteOffice {
-            machines: self.each(|id, name, online, chars, _| RemoteMachine {
-                device_id: id.to_string(),
-                name: name.to_string(),
-                online,
-                characters: chars.iter().map(|c| office_character(id, online, c)).collect(),
-            }),
+        let mut machines = self.each(|id, name, online, chars, _| RemoteMachine {
+            device_id: id.to_string(),
+            name: name.to_string(),
+            online,
+            characters: chars.iter().map(|c| office_character(id, online, c)).collect(),
+            repos: Vec::new(),
+        });
+        {
+            let known = self.machines.lock().unwrap();
+            for m in &mut machines {
+                m.repos = known.get(&m.device_id).map(|k| k.repos.clone()).unwrap_or_default();
+            }
         }
+        RemoteOffice { machines }
     }
 
     /// 오피스 씬 모습이 바뀌었으면 알린다(받은 스냅숏, 연결·해제·이름 바뀜마다 부른다).

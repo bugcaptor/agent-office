@@ -782,6 +782,7 @@ fn link_remote_serializes_to_fixture() {
                     needs_human: false,
                     clocked_out: false,
                 }],
+                repos: vec![],
             },
             RemoteMachine {
                 device_id: "d-1a2b3c4d".into(),
@@ -809,6 +810,7 @@ fn link_remote_serializes_to_fixture() {
                         clocked_out: false,
                     },
                 ],
+                repos: vec!["github.com/acme/app".into()],
             },
         ],
     };

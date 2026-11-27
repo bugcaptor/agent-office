@@ -1,3 +1,4 @@
+import { useId } from "react";
 import { useTranslation } from "react-i18next";
 import type { WorkStatus } from "@shared/types";
 import { useAppStore } from "../store/appStore";
@@ -6,6 +7,9 @@ import { dependencyCandidates } from "./workDependencies";
 import { WorkAgentFields } from "./WorkAgentFields";
 import { AUTO_RUN_LIMITS, validWorkLimits } from "./autoRunLimits";
 import { hasWorkContent, workItemTitle, type WorkItemDraft } from "./workItemDraft";
+import { findRemote, useRemoteFloors } from "../link/remoteFloors";
+import { repoIssue } from "../link/remoteWork";
+import type { WorkRepo } from "@shared/types";
 
 export function WorkEditor({ itemId, value, busy = false, creating = false, dirty, onChange, onSave, onDiscard }: {
   /** 편집 중인 업무. 새 업무면 없다. 선행 작업 후보에서 자신과 순환을 뺄 때 쓴다. */
@@ -23,6 +27,8 @@ export function WorkEditor({ itemId, value, busy = false, creating = false, dirt
   const { t } = useTranslation("workpanels");
   const agents = useAppStore((s) => s.agents);
   const items = useWorkItemStore((s) => s.items);
+  const office = useRemoteFloors((s) => s.office);
+  const remote = value.assigneeAgentId ? findRemote(office, value.assigneeAgentId) : null;
   const dependsOn = value.dependsOn ?? [];
   const candidates = dependencyCandidates(itemId, dependsOn, items);
   const setDependsOn = (next: string[]) => onChange({ dependsOn: next.length ? next : undefined });
@@ -34,9 +40,14 @@ export function WorkEditor({ itemId, value, busy = false, creating = false, dirt
       <label>{t("body")}<textarea value={value.body} rows={4} onChange={(e) => onChange({ body: e.target.value })} /></label>
       <label>{t("assignee")}<select value={value.assigneeAgentId ?? ""} onChange={(e) => onChange({ assigneeAgentId: e.target.value || undefined })}>
         <option value="">{t("unassigned")}</option>
-        {value.assigneeAgentId && !agents[value.assigneeAgentId] && <option value={value.assigneeAgentId}>{t("missingAgent")}</option>}
+        {value.assigneeAgentId && !agents[value.assigneeAgentId] && !remote && <option value={value.assigneeAgentId}>{t("missingAgent")}</option>}
         {Object.values(agents).map((agent) => <option key={agent.id} value={agent.id}>{agent.name}</option>)}
+        {/* 머신 연동 호스트: 붙은(또는 끊긴) 머신의 캐릭터에게도 맡긴다. */}
+        {office.machines.filter((m) => m.characters.length).map((m) => <optgroup key={m.deviceId} label={t("remoteGroup", { machine: m.name })}>
+          {m.characters.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+        </optgroup>)}
       </select></label>
+      {remote && <RepoFields value={value.repo} machine={remote.machine} onChange={(repo) => onChange({ repo })} />}
       <WorkAgentFields value={value.agent} inherited={value.assigneeAgentId ? agents[value.assigneeAgentId]?.defaultAgent : undefined} onChange={(agent) => onChange({ agent })} />
       <label>{t("statusLabel")}<select value={value.status} onChange={(e) => onChange({ status: e.target.value as WorkStatus })}>
         {WORK_STATUS_ORDER.map((status) => <option key={status} value={status}>{t(`status.${status}`)}</option>)}
@@ -81,4 +92,31 @@ export function WorkEditor({ itemId, value, busy = false, creating = false, dirt
       <button type="submit" className="pixel-btn primary" disabled={!canSave}>{t(creating ? "add" : "save")}</button>
     </div>
   </form>;
+}
+
+/** 다른 머신 캐릭터에게 맡길 때의 저장소. 그 머신이 알린 클론 목록에서 고르거나 주소를 넣는다. */
+function RepoFields({ value, machine, onChange }: { value?: WorkRepo; machine: import("@shared/types").RemoteMachine; onChange(repo: WorkRepo | undefined): void }) {
+  const { t } = useTranslation("workpanels");
+  const id = useId();
+  const repo = value ?? { url: "" };
+  const set = (patch: Partial<WorkRepo>) => {
+    const next: WorkRepo = { ...repo, ...patch };
+    // 빈 값은 저장하지 않는다. 주소가 비면 저장소 없음(그 캐릭터의 시작 폴더)이다.
+    for (const key of ["subpath", "branch"] as const) if (!next[key]?.trim()) delete next[key];
+    if (!next.worktree) delete next.worktree;
+    onChange(next.url.trim() || next.subpath || next.branch || next.worktree ? next : undefined);
+  };
+  const issue = repoIssue(value, machine);
+  return <fieldset className="work-repo-fields">
+    <legend>{t("repo.title")}</legend>
+    <label>{t("repo.url")}<input list={id} value={repo.url} placeholder={t("repo.urlPlaceholder")} spellCheck={false} onChange={(e) => set({ url: e.target.value })} /></label>
+    <datalist id={id} aria-label={t("repo.known", { machine: machine.name })}>{machine.repos.map((url) => <option key={url} value={url} />)}</datalist>
+    <label>{t("repo.subpath")}<input value={repo.subpath ?? ""} spellCheck={false} onChange={(e) => set({ subpath: e.target.value })} /></label>
+    <label>{t("repo.branch")}<input value={repo.branch ?? ""} spellCheck={false} onChange={(e) => set({ branch: e.target.value })} /></label>
+    <label className="work-plan-root-toggle"><input type="checkbox" checked={!!repo.worktree} onChange={(e) => set({ worktree: e.target.checked })} />{t("repo.worktree")}</label>
+    <p className="work-muted">{t("repo.hint")}</p>
+    {!machine.online && <p className="work-send-hint">{t("repo.offline", { machine: machine.name })}</p>}
+    {issue === "link-repo-missing" && <p className="work-send-hint" role="alert">{t("repo.missing", { machine: machine.name })}</p>}
+    {issue === "link-repo-invalid" && <p className="work-send-hint" role="alert">{t("sendErrors.repoInvalid")}</p>}
+  </fieldset>;
 }

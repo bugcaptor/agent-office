@@ -8,15 +8,24 @@ const KEYS: Record<string, string> = {
   "work-send-save-failed": "saveFailed", "work-send-blocked": "blocked", "work-send-plan-root": "planRoot", "work-send-schedule-template": "scheduleTemplate", "work-send-auto-run": "autoRunActive", "work-send-prompt-invalid": "promptInvalid", "work-send-model-invalid": "modelInvalid",
   "automation-agy-effort-invalid": "effortInvalid", "automation-effort-invalid": "effortInvalid",
   "automation-agy-model-catalog-unavailable": "modelCatalog", "automation-agy-model-unavailable": "modelCatalog",
+  // 머신 연동: 다른 머신 캐릭터에게 맡긴 업무.
+  "link-device-offline": "linkOffline", "link-repo-missing": "repoMissing", "link-repo-invalid": "repoInvalid", "link-repo-dirty": "repoDirty",
+  "link-branch-invalid": "branchInvalid", "link-worktree-failed": "worktreeFailed", "link-checkout-failed": "checkoutFailed",
+  "link-subpath-missing": "subpathMissing", "link-no-work-dir": "noWorkDir", "link-send-timeout": "linkTimeout", "link-unsupported": "linkUnsupported",
+  // 그 머신이 관찰 꺼짐으로 거절했다(보내기 오류로 남는다).
+  "auto-run-observer-off": "remoteObserverOff",
 };
+const LINK_KEYS = new Set(["repoMissing", "worktreeFailed", "checkoutFailed"]);
 /** 시작 차단·일시정지 상세 코드를 화면 문장으로. 자동 진행 코드가 아니면 보내기 오류 문구를 쓴다. `t`는 workpanels 이름공간이다. */
 export function codeText(t: (key: string, options?: Record<string, unknown>) => string, code: string, options?: Record<string, unknown>): string {
   if (code.startsWith("auto-run-") && !code.startsWith("auto-run-judge")) return t(`autoRun.blocked.${code}`, options);
-  if (code.startsWith("work-send-") || code.startsWith("automation-")) return sendErrorText(code);
+  if (code.startsWith("work-send-") || code.startsWith("automation-") || code.startsWith("link-")) return sendErrorText(code);
   return code;
 }
 export function sendErrorText(error: string): string {
   const at = error.indexOf(":");
   const key = KEYS[at < 0 ? error : error.slice(0, at)];
-  return key ? t(`workpanels:sendErrors.${key}`, { detail: at < 0 ? "" : error.slice(at + 1) }) : t("workpanels:sendError", { error });
+  // 상세가 붙는 문구(`…{{detail}}.`)는 상세를 괄호로 단다.
+  const detail = at < 0 ? "" : error.slice(at + 1).trim();
+  return key ? t(`workpanels:sendErrors.${key}`, { detail: detail && LINK_KEYS.has(key) ? ` (${detail})` : detail }) : t("workpanels:sendError", { error });
 }

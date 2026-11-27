@@ -28,11 +28,20 @@ const MAX_BLOB: usize = 16 * 1024 * 1024;
 
 /// 요청 처리기와 올리기 루프를 건다(앱 시작 때 한 번).
 pub fn install(link: &Arc<LinkState>, ctl: Arc<ControlContext>, dash: Arc<WebDashState>) {
+    // 업무 분배(`work.rs`): 클라이언트는 받은 업무·클론 목록·호스트 보드 사본, 호스트는 보드 사본 보내기.
+    let work = super::work::ClientWork::new(ctl.app_data_dir.clone());
+    super::work::install_client(link, work.clone(), ctl.clone());
+    super::work::install_host(link, ctl.clone());
     {
         let (ctl, dash) = (ctl.clone(), dash.clone());
         link.client.set_request_handler(Arc::new(move |kind, data| {
-            let (ctl, dash) = (ctl.clone(), dash.clone());
-            Box::pin(async move { answer(&ctl, &dash, &kind, data).await })
+            let (ctl, dash, work) = (ctl.clone(), dash.clone(), work.clone());
+            Box::pin(async move {
+                if let Some(result) = super::work::answer(&work, &ctl, &dash, &kind, &data).await {
+                    return result;
+                }
+                answer(&ctl, &dash, &kind, data).await
+            })
         }));
     }
     let link = Arc::downgrade(link);

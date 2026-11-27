@@ -305,6 +305,7 @@ const impl: Partial<AgentOfficeApi> = {
   onNotificationCleared: (cb) => subscribe(Events.notificationCleared, cb),
   onActivity: (cb) => subscribe(Events.activityEvent, cb),
   onTurnUsage: (cb) => subscribe(Events.turnUsage, cb),
+  onLinkTask: (cb) => subscribe(Events.linkTask, cb),
   onAppSettingsChanged: (cb) => subscribe(Events.appSettingsChanged, cb),
   appendSessionTurn() {},
   async listNotifications(agentId) { return scenario.notifications.filter((n) => n.agentId === agentId); },
@@ -342,6 +343,9 @@ const impl: Partial<AgentOfficeApi> = {
     const { client: _client, ...status } = linkStatusFixture as LinkStatus;
     return { ...status, host: status.host && { ...status.host, pairing: { code: "ABCDEFGH", expiresAt: Date.now() + 5 * 60_000 } } };
   },
+  async linkWork() { return {}; },
+  async linkTaskReport() {},
+  async linkTaskStates() { return []; },
   async linkRemote() {
     // `machines` 시나리오: 붙은 머신 하나(답을 기다리는 캐릭터 포함)·끊긴 머신 하나.
     return scenario.remote ?? { machines: [] };

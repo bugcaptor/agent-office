@@ -627,7 +627,7 @@ mod tests {
     #[test]
     fn office_task_routes_discuss_to_create() {
         let tmp = team(true);
-        let env = crate::work_inbox_cli::TaskEnv { work_inbox: None, app_data: Some(tmp.path().into()), agent_id: None };
+        let env = crate::work_inbox_cli::TaskEnv { work_inbox: None, app_data: Some(tmp.path().into()), agent_id: None, session_id: None };
         let args: Vec<String> = ["--discuss", "--moderator", "Mo", "--with", "Ada", "주제"].iter().map(|s| s.to_string()).collect();
         let (mut out, mut err) = (Vec::new(), Vec::new());
         let code = crate::work_inbox_cli::run_with(&args, &env, &mut "".as_bytes(), &mut out, &mut err, chrono::Utc::now());

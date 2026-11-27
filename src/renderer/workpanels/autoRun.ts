@@ -20,9 +20,11 @@ import { workItemTitle } from "./workItemDraft";
 import { requestWorkSend, workSendDisabledReason } from "./workSendStore";
 import type { ForecastProvider, UsageBlock } from "../usage/usageForecast";
 import {
-  assessFollowup, assessJudge, assessTask, costMark, costSinceMark, recordFollowupSample, recordJudgeCost,
+  assessFollowup, assessJudge, assessRemote, assessTask, costMark, costSinceMark, recordFollowupSample, recordJudgeCost,
   recordTaskSample, refreshUsage, workerProvider,
 } from "../usage/usageForecastStore";
+import { isRemoteAgentId, remoteAssignee, remoteFollowUp, remoteLastReply, remoteSendBlocked, remoteUsage, repoIssue } from "../link/remoteWork";
+import { useRemoteFloors } from "../link/remoteFloors";
 import { effectiveLimit } from "./autoRunLimits";
 import { scheduleTemplateOf } from "./workSchedule";
 
@@ -72,15 +74,31 @@ export function runSteps(root: WorkItem, items: WorkItem[]): WorkItem[] {
   return root.plan || !plan.length ? plan : [...plan, root];
 }
 
+/** 단계를 맡는 캐릭터. 단계에 담당이 없으면 루트 담당이 맡는다(다른 캐릭터·다른 머신 캐릭터도 된다). */
+export function stepRunner(step: Pick<WorkItem, "assigneeAgentId">, root: Pick<WorkItem, "assigneeAgentId">): string | undefined {
+  return step.assigneeAgentId ?? root.assigneeAgentId;
+}
+/** 이 실행이 쓰는 캐릭터들: 루트 담당과 남은 단계의 담당. */
+export function runRunners(root: WorkItem, items: WorkItem[]): Set<string> {
+  const runners = new Set<string>();
+  if (root.assigneeAgentId) runners.add(root.assigneeAgentId);
+  for (const step of runSteps(root, items)) {
+    const runner = stepRunner(step, root);
+    if (step.status !== "done" && runner) runners.add(runner);
+  }
+  return runners;
+}
 /** 진행자를 붙잡고 있는 다른 루트(끝나지 않은 자동 진행). 시작 차단 문구에서 이름과 열기로 보여 준다. */
 export function busyRunRoot(root: WorkItem, items: WorkItem[]): WorkItem | undefined {
-  return items.find((item) => item.id !== root.id && item.autoRun && item.autoRun.state !== "finished" && item.assigneeAgentId === root.assigneeAgentId);
+  const mine = runRunners(root, items);
+  return items.find((item) => item.id !== root.id && item.autoRun && item.autoRun.state !== "finished"
+    && [...runRunners(item, items)].some((runner) => mine.has(runner)));
 }
 
 /** 시작을 막는 이유. 없으면 undefined. 코드는 `sendErrorText`·`autoRun.blocked.*`로 표시한다. */
 export function startBlockedReason(root: WorkItem, items: WorkItem[], agents: Readonly<Record<string, AgentProfile>>, observerEnabled: boolean): string | undefined {
   if (root.status === "done") return "auto-run-root-done";
-  if (!root.assigneeAgentId || !agents[root.assigneeAgentId]) return "auto-run-no-assignee";
+  if (!root.assigneeAgentId || !(agents[root.assigneeAgentId] || isRemoteAgentId(root.assigneeAgentId))) return "auto-run-no-assignee";
   const open = runSteps(root, items).filter((item) => item.status !== "done");
   if (!open.length) return "auto-run-no-plan";
   // 루트만 남았는데 진행 중·검토 대기면 보낼 수 없다. 다시 진행하려면 할 일로 되돌린다.
@@ -89,10 +107,22 @@ export function startBlockedReason(root: WorkItem, items: WorkItem[], agents: Re
   if (open.some((item) => scheduleTemplateOf(item, items)) || scheduleTemplateOf(root, items)) return "auto-run-schedule-template";
   // 진행자 한 명은 끝나지 않은 실행을 하나만 가진다. 멈춘 실행의 현재 태스크와 섞이지 않게 한다.
   if (busyRunRoot(root, items)) return "auto-run-runner-busy";
-  const profile = workSendDisabledReason(agents[root.assigneeAgentId]);
-  if (profile) return profile;
-  if (!observerEnabled) return "auto-run-observer-off";
-  if (open.some((item) => item.assigneeAgentId && item.assigneeAgentId !== root.assigneeAgentId)) return "auto-run-foreign-task";
+  // 단계마다 맡는 캐릭터를 본다. 다른 머신 캐릭터는 저장소가 그 머신에 있는지까지 본다(끊긴 것은 막지 않고
+  // 그 단계 차례에 다시 붙기를 기다린다).
+  let local = false;
+  for (const step of open) {
+    const runner = stepRunner(step, root)!;
+    const remote = remoteAssignee(runner);
+    if (remote) {
+      const issue = repoIssue(step.repo, remote.machine);
+      if (issue) return issue;
+      continue;
+    }
+    local = true;
+    const profile = workSendDisabledReason(agents[runner]);
+    if (profile) return profile;
+  }
+  if (local && !observerEnabled) return "auto-run-observer-off";
   return undefined;
 }
 
@@ -199,11 +229,33 @@ function taskCli(item: WorkItem, profile: AgentProfile | undefined) {
 
 /** 다음에 보낼 태스크의 작업자 구독(화면의 사용량 예측용). 남은 단계가 없으면 루트 기준. */
 export function nextTaskWorker(root: WorkItem, all: WorkItem[], agents: Readonly<Record<string, AgentProfile>>): ForecastProvider | null {
-  const profile = root.assigneeAgentId ? agents[root.assigneeAgentId] : undefined;
   const run = root.autoRun;
   const next = (run?.currentId ? all.find((item) => item.id === run.currentId) : undefined)
     ?? runSteps(root, all).find((item) => item.status !== "done" && !pendingPrerequisites(item, all).length) ?? root;
-  return workerProvider({ cli: taskCli(next, profile) });
+  const runner = stepRunner(next, root);
+  return workerProvider({ cli: taskCli(next, runner ? agents[runner] : undefined) });
+}
+
+/** 다른 머신 단계: 그 머신이 끊겼으면 그 머신에 다시 붙기를 기다리며 멈춘다(true). */
+function waitForLink(rootId: string, runner: string, patch: Partial<AutoRun> = {}): boolean {
+  const remote = remoteAssignee(runner);
+  if (!remote || remote.machine.online) return false;
+  update(rootId, (latest) => withLog({ ...latest, ...patch, state: "paused", pauseReason: "link-offline", pauseDetail: remote.machine.name, usageWait: undefined }, { kind: "pause", text: "link-offline" }));
+  return true;
+}
+
+/** 다른 머신 작업자의 사용량으로 판단한다. 모자라면 다시 볼 시각까지 기다린다. */
+async function waitForRemoteUsage(rootId: string, stage: "task" | "followup", runner: string, worker: ForecastProvider | null, patch: Partial<AutoRun> = {}): Promise<boolean> {
+  const run = running(rootId);
+  if (!run || run.usageGuard === false || !worker) return false;
+  if (run.usageOverride) { update(rootId, (latest) => ({ ...latest, usageOverride: undefined })); return false; }
+  const snapshot = await remoteUsage(runner);
+  const block = assessRemote(stage, worker, snapshot);
+  if (!block || !running(rootId)) return false;
+  const device = runner.slice(0, runner.indexOf(":"));
+  const usageWait: AutoRunUsageWait = { ...block, stage, worker, remote: device };
+  update(rootId, (latest) => withLog({ ...latest, ...patch, state: "paused", pauseReason: "usage-wait", pauseDetail: undefined, usageWait }, { kind: "pause", text: "usage-wait" }));
+  return true;
 }
 
 /**
@@ -257,7 +309,7 @@ export function resumeAutoRunFromCtl(rootId: string): string | undefined {
   if (!run) return "auto-run-no-run";
   if (run.state !== "paused") return "auto-run-not-paused";
   if (run.pauseReason === "user" || run.pauseReason === "escalated" || run.pauseReason === "human-input") return "auto-run-paused-by-human";
-  if (run.pauseReason !== "usage-wait" && ctlResumesSinceSend(run) >= MAX_CTL_RESUMES) return "auto-run-recovery-limit";
+  if (run.pauseReason !== "usage-wait" && run.pauseReason !== "link-offline" && ctlResumesSinceSend(run) >= MAX_CTL_RESUMES) return "auto-run-recovery-limit";
   resumeAutoRun(rootId, { viaCtl: true });
   return undefined;
 }
@@ -279,7 +331,7 @@ export function resumeAutoRun(rootId: string, options: { auto?: boolean; viaCtl?
   const root = find(rootId);
   const run = root?.autoRun;
   if (!root || !run || run.state !== "paused") return;
-  if (options.auto && run.pauseReason !== "usage-wait") return;
+  if (options.auto && run.pauseReason !== "usage-wait" && run.pauseReason !== "link-offline") return;
   // 판단 직후 멈췄다면 같은 턴을 다시 판단한다. 후속 지시 한도에 걸렸다면 한 번 더 기회를 준다.
   const limit = effectiveLimit("maxFollowUps", root, find(run.currentId));
   const followUps = run.pauseReason === "followup-limit" ? Math.min(run.followUps, Math.max(0, limit - 1)) : run.followUps;
@@ -324,8 +376,7 @@ export async function stepAutoRun(rootId: string): Promise<void> {
   const run = running(rootId);
   const root = find(rootId);
   if (!run || !root) return;
-  const runner = root.assigneeAgentId;
-  if (!runner) return pause(rootId, "task-changed");
+  if (!root.assigneeAgentId) return pause(rootId, "task-changed");
   if (run.currentId) {
     const current = find(run.currentId);
     if (!current || current.status === "todo") return pause(rootId, "task-changed", current ? workItemTitle(current) : undefined);
@@ -353,7 +404,6 @@ export async function stepAutoRun(rootId: string): Promise<void> {
 
 async function pickAndSend(rootId: string): Promise<void> {
   const root = find(rootId)!;
-  const runner = root.assigneeAgentId!;
   const all = items();
   const plan = runSteps(root, all);
   const open = plan.filter((item) => item.status !== "done");
@@ -369,12 +419,22 @@ async function pickAndSend(rootId: string): Promise<void> {
   if (busy) return pause(rootId, "task-busy", workItemTitle(busy));
   const next = ready[0];
   if (!next) return pause(rootId, "task-changed");
-  if (next.assigneeAgentId && next.assigneeAgentId !== runner) return pause(rootId, "task-changed", workItemTitle(next));
+  const runner = stepRunner(next, root)!;
+  const remote = isRemoteAgentId(runner);
+  if (!remote && !useAppStore.getState().agents[runner]) return pause(rootId, "task-changed", workItemTitle(next));
+  if (remote && waitForLink(rootId, runner)) return;
+  if (remote) {
+    // 저장소가 빠졌거나 캐릭터가 사라졌으면 보내기 전에 멈춘다(그 머신이 거절할 일이다).
+    const blocked = remoteSendBlocked({ assigneeAgentId: runner, repo: next.repo });
+    if (blocked) return pause(rootId, "send-failed", blocked);
+  }
   const worker = workerProvider({ cli: taskCli(next, useAppStore.getState().agents[runner]) });
-  if (waitForUsage(rootId, "task", worker, () => assessTask(worker))) return;
+  if (remote ? await waitForRemoteUsage(rootId, "task", runner, worker) : waitForUsage(rootId, "task", worker, () => assessTask(worker))) return;
+  if (!running(rootId)) return;
   if (!next.assigneeAgentId) useWorkItemStore.getState().edit(next.id, { assigneeAgentId: runner });
   const run = running(rootId)!;
-  const mark = { ...costMark(runner), judgeCost: run.costUsd };
+  // 다른 머신 작업자의 비용은 이 머신 장부에 없다. 사용량 표본을 남기지 않는다.
+  const mark = remote ? undefined : { ...costMark(runner), judgeCost: run.costUsd };
   update(rootId, (latest) => withLog({ ...latest, currentId: next.id, followUps: 0, sentAt: Date.now(), pendingFollowUp: undefined, taskMark: mark, turnMark: mark }, { kind: "send", taskId: next.id }));
   const before = next.sessionIds.length;
   await requestWorkSend(next.id, { auto: true, overHumanInput: true, appendBody: workerContext(root, plan, next, run.log) });
@@ -392,18 +452,23 @@ async function pickAndSend(rootId: string): Promise<void> {
 
 async function judge(rootId: string, current: WorkItem): Promise<void> {
   const root = find(rootId)!;
-  const runner = root.assigneeAgentId!;
+  const runner = stepRunner(current, root)!;
+  const remote = isRemoteAgentId(runner);
   const state = useAppStore.getState();
   const profile = state.agents[runner];
   const session = lastSession(current);
   const cli = taskCli(current, profile);
   const worker = workerProvider({ cli });
+  // 다른 머신이 끊겼으면 응답을 읽을 수 없다. 다시 붙으면 같은 턴을 판단한다.
+  if (remote && waitForLink(rootId, runner)) return;
   // 판단자도 Claude 구독을 쓴다. 이미 한도에 닿았으면 부르지 않고 기다린다.
   if (waitForUsage(rootId, "judge", worker, () => assessJudge())) return;
   const run = running(rootId)!;
   recordTurnSample(rootId, runner, worker);
-  const cwd = (session ? useSessionSummaryStore.getState().summaries[session]?.cwd : undefined) ?? state.taskLabels[runner]?.cwd ?? profile?.cwd ?? "";
-  const reply = await tauriApi.workLastReply(runner, cli, cwd).catch((error: unknown) => { console.warn("auto-run: reply read failed", error); return null; });
+  const readReply = remote
+    ? remoteLastReply(runner, cli, current.id)
+    : tauriApi.workLastReply(runner, cli, (session ? useSessionSummaryStore.getState().summaries[session]?.cwd : undefined) ?? state.taskLabels[runner]?.cwd ?? profile?.cwd ?? "");
+  const reply = await readReply.catch((error: unknown) => { console.warn("auto-run: reply read failed", error); return null; });
   // 이번 턴을 보낸 뒤에 쓰인 보고만 읽는다. 지난 턴의 보고가 새 턴의 증거로 쓰이지 않게 한다.
   const report = await tauriApi.autoRunReport(current.id, run.sentAt ?? 0).catch((error: unknown) => { console.warn("auto-run: report read failed", error); return null; });
   const plan = runSteps(root, items());
@@ -426,7 +491,7 @@ async function judge(rootId: string, current: WorkItem): Promise<void> {
   const latest = running(rootId);
   if (!latest || latest.currentId !== current.id) return;
   if (result.decision === "next") {
-    recordTaskUsage(latest, runner, worker);
+    if (!remote) recordTaskUsage(latest, runner, worker);
     update(rootId, (r) => withLog({ ...r, currentId: undefined, followUps: 0, sentAt: undefined, pendingFollowUp: undefined, taskMark: undefined, turnMark: undefined }, { kind: "next", taskId: current.id, text: result.note }));
     // 루트 자신은 완료로 바꾸지 않는다(완료면 실행이 루트 완료로 끝난다). 검토 대기로 두고 실행을 마친다.
     if (current.id === rootId) return pickAndSend(rootId);
@@ -443,15 +508,23 @@ async function sendFollowUp(rootId: string, current: WorkItem, message: string):
   const root = find(rootId)!;
   const limit = effectiveLimit("maxFollowUps", root, find(current.id));
   if (root.autoRun!.followUps >= limit) return pause(rootId, "followup-limit", message, limit);
-  const runner = root.assigneeAgentId!;
+  const runner = stepRunner(current, root)!;
+  const remote = isRemoteAgentId(runner);
   const session = lastSession(current);
   const worker = workerProvider({ cli: taskCli(current, useAppStore.getState().agents[runner]) });
-  if (waitForUsage(rootId, "followup", worker, () => assessFollowup(worker), { pendingFollowUp: message })) return;
+  // 다른 머신이 끊겼으면 지시를 남겨 두고 기다린다. 다시 붙으면 다시 판단하지 않고 보낸다.
+  if (remote && waitForLink(rootId, runner, { pendingFollowUp: message })) return;
+  if (remote
+    ? await waitForRemoteUsage(rootId, "followup", runner, worker, { pendingFollowUp: message })
+    : waitForUsage(rootId, "followup", worker, () => assessFollowup(worker), { pendingFollowUp: message })) return;
+  if (!running(rootId)) return;
   if (!session) return pause(rootId, "session-ended", workItemTitle(current));
-  const mark = { ...costMark(runner), judgeCost: running(rootId)?.costUsd ?? 0 };
+  const mark = remote ? undefined : { ...costMark(runner), judgeCost: running(rootId)?.costUsd ?? 0 };
   let submittedAt: number;
   try {
-    ({ submittedAt } = await tauriApi.sendWorkFollowUp({ agentId: runner, sessionId: session, text: message }));
+    ({ submittedAt } = remote
+      ? await remoteFollowUp(runner, session, message)
+      : await tauriApi.sendWorkFollowUp({ agentId: runner, sessionId: session, text: message }));
   } catch (error) {
     const code = error instanceof Error ? error.message : String(error);
     if (!running(rootId)) return;
@@ -496,6 +569,8 @@ const USAGE_CHECK_MS = 30_000;
 const waking = new Set<string>();
 
 function stillShort(wait: AutoRunUsageWait): boolean {
+  // 다른 머신 사용량은 그 머신에 다시 물어야 한다. 다시 볼 시각까지 기다렸다가 이어 간 단계가 다시 묻는다.
+  if (wait.remote) return true;
   const worker = wait.worker ?? null;
   return !!(wait.stage === "task" ? assessTask(worker) : wait.stage === "followup" ? assessFollowup(worker) : assessJudge());
 }
@@ -540,13 +615,37 @@ export function checkPermissionWaits(now = Date.now()): void {
   }
 }
 
+// ── 머신 끊김 ──────────────────────────────────────────────────────────
+
+/** 다음에 할 단계(지금 단계, 없으면 준비된 첫 단계)를 맡은 캐릭터. */
+function pendingRunner(root: WorkItem, all: WorkItem[]): string | undefined {
+  const run = root.autoRun;
+  const step = (run?.currentId ? all.find((item) => item.id === run.currentId) : undefined)
+    ?? runSteps(root, all).find((item) => item.status !== "done" && !pendingPrerequisites(item, all).length);
+  return step ? stepRunner(step, root) : undefined;
+}
+
+/** 머신이 끊겨 멈춘 실행 가운데 그 머신이 다시 붙은 것을 이어 간다. */
+export function checkLinkWaits(): void {
+  const all = items();
+  for (const item of all) {
+    const run = item.autoRun;
+    if (run?.state !== "paused" || run.pauseReason !== "link-offline") continue;
+    const runner = pendingRunner(item, all);
+    const remote = remoteAssignee(runner);
+    // 단계가 바뀌어 이 머신 캐릭터가 맡게 됐어도 이어 간다(그 단계가 다시 본다).
+    if (!remote || remote.machine.online) resumeAutoRun(item.id, { auto: true });
+  }
+}
+
 /** 업무·모니터 변화마다 돌고 있는 실행을 깨운다. 단계가 스스로 할 일이 없으면 바로 끝난다. */
 export function installAutoRun(): () => void {
   const wake = () => { for (const item of items()) if (item.autoRun?.state === "running") kick(item.id); };
   const offItems = useWorkItemStore.subscribe((state, previous) => { if (state.items !== previous.items) wake(); });
   const offMonitor = useWorkMonitorStore.subscribe(wake);
+  const offRemote = useRemoteFloors.subscribe((state, previous) => { if (state.office !== previous.office) checkLinkWaits(); });
   const check = () => { void checkUsageWaits(); checkPermissionWaits(); };
   const offUsage = useAppStore.subscribe((state, previous) => { if (state.usage !== previous.usage) check(); });
   const timer = setInterval(check, USAGE_CHECK_MS);
-  return () => { offItems(); offMonitor(); offUsage(); clearInterval(timer); };
+  return () => { offItems(); offMonitor(); offRemote(); offUsage(); clearInterval(timer); };
 }

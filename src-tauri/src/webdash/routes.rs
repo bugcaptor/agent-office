@@ -1143,6 +1143,17 @@ async fn send_task(State(ctx): Ctx, Path(id): Path<String>, body: Option<Json<Se
     let Some(assignee) = item.assignee_agent_id.as_deref() else {
         return fail("work-send-agent-missing");
     };
+    let label = if item.title.trim().is_empty() { first_line(&item.body) } else { item.title.clone() };
+    // 다른 머신 캐릭터에게 맡긴 업무는 앱이 그 머신에 넘긴다(그 머신 세션은 그 머신이 연다).
+    if remote_of(&ctx, assignee).is_some() {
+        return match bridged(&ctx, json!({ "op": "work-send", "itemId": id, "restartConfirmed": true })).await {
+            Ok(v) => {
+                activity(&ctx, "work-send", None, Some(&label));
+                ok(v)
+            }
+            Err(e) => fail(e),
+        };
+    }
     if profile(&ctx, assignee).is_none() {
         return fail("work-send-agent-missing");
     }
@@ -1156,7 +1167,6 @@ async fn send_task(State(ctx): Ctx, Path(id): Path<String>, body: Option<Json<Se
     if target.restart_required && !restart {
         return fail("restart-required");
     }
-    let label = if item.title.trim().is_empty() { first_line(&item.body) } else { item.title.clone() };
     match bridged(&ctx, json!({ "op": "work-send", "itemId": id, "restartConfirmed": restart })).await {
         Ok(v) => {
             activity(&ctx, "work-send", Some(assignee), Some(&label));

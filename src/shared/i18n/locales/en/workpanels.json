@@ -112,7 +112,19 @@
     "blocked": "Finish all prerequisites before sending.",
     "autoRunActive": "This character is running an auto run. Pause it before sending.",
     "planRoot": "A plan root is not sent. Use auto-run to run the tasks it waits on.",
-    "scheduleTemplate": "A recurring schedule template is not sent directly. A copy is made and run at each scheduled time."
+    "scheduleTemplate": "A recurring schedule template is not sent directly. A copy is made and run at each scheduled time.",
+    "linkOffline": "That machine is offline. Send again after it reconnects.",
+    "repoMissing": "That machine has no clone of this repository{{detail}}. Clone it there, then send again.",
+    "repoInvalid": "Cannot read the repository address. Enter a git remote URL.",
+    "repoDirty": "The clone on that machine has uncommitted changes, so the branch was not switched. Use a worktree or clean it up there.",
+    "branchInvalid": "The branch name is not valid.",
+    "worktreeFailed": "Could not create a worktree on that machine{{detail}}.",
+    "checkoutFailed": "Could not switch the branch on that machine{{detail}}.",
+    "subpathMissing": "This subfolder does not exist in that machine's repository.",
+    "noWorkDir": "Pick a repository or give the character a start folder.",
+    "linkTimeout": "That machine did not report the result of the send. Check its terminal.",
+    "linkUnsupported": "The app on that machine cannot receive tasks. Update the app there.",
+    "remoteObserverOff": "Turn on agent observation on that machine."
   },
   "resumeNewWork": "Resume new task",
   "add": "Add",
@@ -198,7 +210,8 @@
       "running": "Auto running",
       "paused": "Auto run paused",
       "finished": "Auto run finished",
-      "usageWait": "Waiting for usage"
+      "usageWait": "Waiting for usage",
+      "linkWait": "Waiting for machine"
     },
     "idle": "Runs the {{count}} remaining prerequisites one by one in {{name}}'s terminal. Each task gets a fresh session, and when a turn ends a judge (claude -p) decides what happens next.",
     "progress": "{{done}}/{{total}} done",
@@ -241,14 +254,14 @@
       "usage-wait": "Subscription usage looks too low to continue, so the run waits for the limit window to reset.",
       "ctl-pause": "Paused from the CLI.",
       "escalated": "An external agent handed this to a person. Check it, then press Continue.",
-      "permission-timeout": "Waited too long for a permission or question to be answered. Answer it in the terminal, then press Continue."
+      "permission-timeout": "Waited too long for a permission or question to be answered. Answer it in the terminal, then press Continue.",
+      "link-offline": "The machine running the next step is offline. It continues on its own when it reconnects."
     },
     "blocked": {
       "auto-run-root-done": "You can't start from a finished task.",
       "auto-run-no-assignee": "Pick an assignee. That character runs the tasks.",
       "auto-run-no-plan": "No prerequisites are left.",
       "auto-run-observer-off": "Turn on Agent observation in Settings. The run needs hooks to know when a turn ends.",
-      "auto-run-foreign-task": "A prerequisite is assigned to another character. Assign it to this character or leave it unassigned.",
       "auto-run-runner-busy": "This character has another auto run that is not finished: \"{{title}}\". End it first.",
       "auto-run-root-busy": "Only the root task is left, and it is In progress or in Review. Move it back to To do to run it again.",
       "auto-run-schedule-template": "This is a recurring schedule template (or one of its steps), so it cannot be started directly. A copy is made and run at each scheduled time."
@@ -380,5 +393,24 @@
       "schedule-not-todo": "The task is not in To do."
     },
     "skippedTitle": "Schedule skipped: {{title}}"
+  },
+  "repo": {
+    "title": "Repository",
+    "url": "Git remote URL",
+    "urlPlaceholder": "github.com/team/repo",
+    "subpath": "Subfolder",
+    "branch": "Branch",
+    "worktree": "Create a worktree for this task and work in it",
+    "hint": "Another machine works in its clone of this address. Leave it empty to use the character's start folder.",
+    "missing": "{{machine}} has no clone of this repository.",
+    "offline": "{{machine}} is offline.",
+    "known": "Repositories on {{machine}}"
+  },
+  "remoteGroup": "{{machine}} (other machine)",
+  "received": {
+    "group": "Received from host",
+    "chip": "From {{host}}",
+    "cwd": "Folder: {{cwd}}",
+    "hint": "The host runs this task. Its progress and reports go to the host's board."
   }
 }

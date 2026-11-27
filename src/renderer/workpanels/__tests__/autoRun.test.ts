@@ -70,7 +70,7 @@ describe("자동 진행 계획", () => {
     expect(ids.indexOf(a)).toBeLessThan(ids.indexOf(b));
     expect(ids).toContain(c);
   });
-  it("다른 캐릭터의 업무·관찰 꺼짐·남은 작업 없음이면 시작을 막는다", () => {
+  it("단계 담당을 못 쓰거나 관찰 꺼짐·남은 작업 없음이면 시작을 막는다", () => {
     const { a, b, root } = plan();
     const items = () => useWorkItemStore.getState().items;
     const agents = useAppStore.getState().agents;
@@ -81,8 +81,11 @@ describe("자동 진행 계획", () => {
     expect(startBlockedReason(get(root), items(), agents, true)).toBe("auto-run-runner-busy");
     expect(busyRunRoot(get(root), items())?.id).toBe(other);
     useWorkItemStore.getState().setAutoRun(other, undefined);
+    // 단계는 다른 캐릭터가 맡을 수 있다. 그 캐릭터를 못 쓰면 막는다.
     useWorkItemStore.getState().edit(a, { assigneeAgentId: "b" });
-    expect(startBlockedReason(get(root), items(), agents, true)).toBe("auto-run-foreign-task");
+    expect(startBlockedReason(get(root), items(), agents, true)).toBeUndefined();
+    expect(startBlockedReason(get(root), items(), { ...agents, b: { ...agents.b, clockedOut: true } }, true)).toBe("work-send-clocked-out");
+    expect(startBlockedReason(get(root), items(), { a: profile }, true)).toBe("work-send-agent-missing");
     useWorkItemStore.getState().edit(a, { status: "done" }); useWorkItemStore.getState().edit(b, { status: "done" });
     expect(startBlockedReason(get(root), items(), agents, true)).toBe("auto-run-no-plan");
     // 플랜 루트가 아니면 루트 자신이 남은 단계다. 진행 중·검토 대기면 보낼 수 없다.

@@ -12,6 +12,7 @@ import { linkWorkSession } from "./sessionSummaryStore";
 import { pendingPrerequisites } from "./workDependencies";
 import { scheduleTemplateOf } from "./workSchedule";
 import { isInsideCwd } from "../labels/labelText";
+import { isRemoteAgentId, sendRemoteWork } from "../link/remoteWork";
 
 interface Confirmation { itemId: string; title: string; agentName: string; target: WorkSendTarget }
 export const useWorkSendStore = create<{ busy: Record<string, string>; confirmation: Confirmation | null }>(() => ({ busy: {}, confirmation: null }));
@@ -29,7 +30,10 @@ function snapshot(item: WorkItem, agent: AgentProfile): string {
 }
 /** 자동 진행이 이 캐릭터를 진행자로 쓰는 중인가. */
 export function autoRunRunner(agentId: string): WorkItem | undefined {
-  return useWorkItemStore.getState().items.find((i) => i.autoRun?.state === "running" && i.assigneeAgentId === agentId);
+  const items = useWorkItemStore.getState().items;
+  // 루트 담당과 지금 단계의 담당(단계마다 다른 캐릭터·머신이 맡을 수 있다).
+  return items.find((i) => i.autoRun?.state === "running"
+    && (i.assigneeAgentId === agentId || items.find((step) => step.id === i.autoRun!.currentId)?.assigneeAgentId === agentId));
 }
 function profileError(agent: AgentProfile | undefined, auto = false): string | undefined {
   if (!agent) return "work-send-agent-missing";
@@ -59,11 +63,15 @@ export interface WorkSendOptions {
   overHumanInput?: boolean;
   /** 프롬프트 본문 뒤에 붙일 자동 진행 맥락. 업무에는 저장하지 않는다. */
   appendBody?: string;
+  /** 호스트에서 받은 업무: 이 폴더에서 새 세션을 열어 보낸다(세션이 있으면 재시작한다). */
+  cwd?: string;
 }
 /** 명시적 클릭만 입력을 발생시킨다. 확인/10초 대기 중 같은 캐릭터는 한 건만 보낸다. */
 export function requestWorkSend(itemId: string, options: WorkSendOptions = {}): Promise<void> {
   const item = useWorkItemStore.getState().items.find((i) => i.id === itemId);
   if (!item) return Promise.resolve();
+  // 다른 머신 캐릭터에게 맡긴 업무는 그 머신에 넘긴다(작업 폴더는 그 머신이 저장소로 정한다).
+  if (isRemoteAgentId(item.assigneeAgentId)) return sendRemoteWork(item, options);
   const agent = item.assigneeAgentId ? useAppStore.getState().agents[item.assigneeAgentId] : undefined;
   const all = useWorkItemStore.getState().items;
   const error = scheduleTemplateOf(item, all) ? "work-send-schedule-template" : pendingPrerequisites(item, all).length ? "work-send-blocked" : profileError(agent, options.auto);
@@ -88,6 +96,8 @@ export function requestWorkSend(itemId: string, options: WorkSendOptions = {}): 
       let target = await tauriApi.inspectWorkSendTarget(agent.id);
       unchanged();
       let freshSession = false;
+      // 받은 업무는 정한 폴더의 새 세션에서 연다.
+      if (options.cwd && target.sessionId) target = { ...target, restartRequired: true };
       if (target.restartRequired) {
         if (options.auto || options.restartConfirmed) {
           // 자동 진행·웹에서 확인한 보내기는 확인창 없이 새 세션으로 바꾸되, 사람이 쓰다 만 입력은 지우지 않는다.
@@ -109,7 +119,7 @@ export function requestWorkSend(itemId: string, options: WorkSendOptions = {}): 
         if (current.sessionId !== confirmed.sessionId || current.humanInputRevision !== confirmed.humanInputRevision) throw new Error("work-send-human-input");
         const { restartAgentSession } = await import("../agent/restartAgentSession");
         unchanged();
-        const result = await restartAgentSession(agent.id, { cwd: options.auto ? undefined : sendCwd(agent.id), strictCwd: true, expected: { sessionId: confirmed.sessionId!, humanInputRevision: confirmed.humanInputRevision } });
+        const result = await restartAgentSession(agent.id, { cwd: options.cwd ?? (options.auto ? undefined : sendCwd(agent.id)), strictCwd: true, expected: { sessionId: confirmed.sessionId!, humanInputRevision: confirmed.humanInputRevision } });
         if (!result || result.state !== "running") throw new Error("work-send-create-failed");
         target = await tauriApi.inspectWorkSendTarget(agent.id);
         if (target.sessionId !== result.sessionId) throw new Error("work-send-session-changed");
@@ -120,7 +130,7 @@ export function requestWorkSend(itemId: string, options: WorkSendOptions = {}): 
         let result;
         try {
           useAppStore.getState().setSessionState({ agentId: agent.id, status: "starting" });
-          result = await runGuardedCreateSession(agent.id, undefined, { strictCwd: true });
+          result = await runGuardedCreateSession(agent.id, options.cwd ? { cwd: options.cwd } : undefined, { strictCwd: true });
         } finally { release(); }
         if (!result || result.state !== "running") throw new Error("work-send-create-failed");
         target = await tauriApi.inspectWorkSendTarget(agent.id);

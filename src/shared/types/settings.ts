@@ -259,7 +259,9 @@ export interface WebDashControlRequest {
     | "work-create" | "work-edit" | "work-delete" | "work-reorder" | "work-send" | "work-done" | "work-schedule"
     | "autorun-start" | "autorun-pause" | "autorun-resume" | "autorun-end" | "autorun-usage-guard"
     | "discuss-start" | "discuss-answer"
-    | "office-agent-open" | "office-agent-close";
+    | "office-agent-open" | "office-agent-close"
+    /** 머신 연동 클라이언트: 호스트가 보낸 업무를 받은 업무로 넣고 보낸다. */
+    | "link-work-receive";
   agentId?: string;
   itemId?: string;
   targetId?: string;
@@ -286,6 +288,10 @@ export interface WebDashControlRequest {
   /** office-agent-open: 첫 프롬프트와 작업 폴더. */
   prompt?: string;
   cwd?: string | null;
+  /** link-work-receive: 자동 진행이 보낸 것인가, 호스트 이름, 호스트가 붙인 보내기 번호. */
+  auto?: boolean;
+  hostName?: string;
+  sendSeq?: number | null;
 }
 
 /** 웹 상태판에 넘기는 캐릭터 라벨(렌더러에만 있는 값). */

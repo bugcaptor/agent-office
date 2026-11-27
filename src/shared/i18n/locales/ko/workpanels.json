@@ -112,7 +112,19 @@
     "blocked": "선행 작업을 모두 완료한 뒤 보내세요.",
     "autoRunActive": "이 캐릭터가 자동 진행 중입니다. 일시정지한 뒤 보내세요.",
     "planRoot": "플랜 루트는 보내지 않습니다. 자동 진행으로 선행 태스크를 진행하세요.",
-    "scheduleTemplate": "반복 예약 템플릿은 직접 보내지 않습니다. 예약한 시각마다 복사본을 만들어 실행합니다."
+    "scheduleTemplate": "반복 예약 템플릿은 직접 보내지 않습니다. 예약한 시각마다 복사본을 만들어 실행합니다.",
+    "linkOffline": "그 머신이 끊겨 있습니다. 다시 붙은 뒤 보내세요.",
+    "repoMissing": "그 머신에 이 저장소의 클론이 없습니다{{detail}}. 클론한 뒤 다시 보내세요.",
+    "repoInvalid": "저장소 주소를 읽을 수 없습니다. git 원격 주소를 넣으세요.",
+    "repoDirty": "그 머신의 클론에 커밋하지 않은 변경이 있어 브랜치를 바꾸지 않았습니다. 워크트리를 쓰거나 그 머신에서 정리하세요.",
+    "branchInvalid": "브랜치 이름이 올바르지 않습니다.",
+    "worktreeFailed": "그 머신에서 워크트리를 만들지 못했습니다{{detail}}.",
+    "checkoutFailed": "그 머신에서 브랜치를 바꾸지 못했습니다{{detail}}.",
+    "subpathMissing": "그 머신의 저장소에 이 하위 경로가 없습니다.",
+    "noWorkDir": "저장소를 정하거나 그 캐릭터에 시작 폴더를 두세요.",
+    "linkTimeout": "그 머신이 보내기 결과를 알려 주지 않았습니다. 그 머신의 터미널을 확인하세요.",
+    "linkUnsupported": "그 머신의 앱이 업무 받기를 모릅니다. 그 머신의 앱을 업데이트하세요.",
+    "remoteObserverOff": "그 머신에서 에이전트 관찰을 켜야 합니다."
   },
   "resumeNewWork": "새 태스크 작성 계속",
   "add": "추가",
@@ -198,7 +210,8 @@
       "running": "자동 진행 중",
       "paused": "자동 진행 멈춤",
       "finished": "자동 진행 완료",
-      "usageWait": "사용량 대기"
+      "usageWait": "사용량 대기",
+      "linkWait": "머신 대기"
     },
     "idle": "{{name}}의 터미널에서 남은 선행 작업 {{count}}개를 차례로 진행합니다. 태스크마다 새 세션을 열고, 턴이 끝나면 판단자(claude -p)가 다음 할 일을 정합니다.",
     "progress": "{{done}}/{{total}} 완료",
@@ -241,14 +254,14 @@
       "usage-wait": "구독 사용량이 모자랄 것 같아 한도 창이 리셋되기를 기다립니다.",
       "ctl-pause": "CLI가 일시정지했습니다.",
       "escalated": "외부 에이전트가 사람에게 넘겼습니다. 확인한 뒤 계속을 누르세요.",
-      "permission-timeout": "권한 승인이나 질문에 답을 너무 오래 기다려 멈췄습니다. 터미널에서 답한 뒤 계속을 누르세요."
+      "permission-timeout": "권한 승인이나 질문에 답을 너무 오래 기다려 멈췄습니다. 터미널에서 답한 뒤 계속을 누르세요.",
+      "link-offline": "다음 단계를 맡은 머신이 끊겼습니다. 다시 붙으면 스스로 이어 갑니다."
     },
     "blocked": {
       "auto-run-root-done": "완료된 태스크에서는 시작할 수 없습니다.",
       "auto-run-no-assignee": "담당 캐릭터를 정하세요. 그 캐릭터가 진행자입니다.",
       "auto-run-no-plan": "남은 선행 작업이 없습니다.",
       "auto-run-observer-off": "설정에서 에이전트 관찰을 켜세요. 턴 종료를 훅으로 알아야 합니다.",
-      "auto-run-foreign-task": "다른 캐릭터에게 배정된 선행 작업이 있습니다. 진행자에게 배정하거나 미배정으로 바꾸세요.",
       "auto-run-runner-busy": "이 캐릭터에게 끝나지 않은 다른 자동 진행 \"{{title}}\"이 있습니다. 그쪽을 끝낸 뒤 시작하세요.",
       "auto-run-root-busy": "남은 것은 루트 태스크뿐인데 진행 중이거나 검토 대기입니다. 다시 진행하려면 할 일로 되돌리세요.",
       "auto-run-schedule-template": "반복 예약 템플릿(또는 그 단계)이라 직접 시작할 수 없습니다. 예약한 시각마다 복사본을 만들어 진행합니다."
@@ -380,5 +393,24 @@
       "schedule-not-todo": "할 일 상태가 아닙니다."
     },
     "skippedTitle": "예약 건너뜀: {{title}}"
+  },
+  "repo": {
+    "title": "저장소",
+    "url": "git 원격 주소",
+    "urlPlaceholder": "github.com/팀/저장소",
+    "subpath": "하위 경로",
+    "branch": "브랜치",
+    "worktree": "이 업무용 워크트리를 만들어 그 안에서 일하기",
+    "hint": "다른 머신은 이 주소의 클론에서 일합니다. 비워 두면 그 캐릭터의 시작 폴더입니다.",
+    "missing": "{{machine}}에 이 저장소의 클론이 없습니다.",
+    "offline": "{{machine}}이(가) 끊겨 있습니다.",
+    "known": "{{machine}}의 저장소"
+  },
+  "remoteGroup": "{{machine}} (다른 머신)",
+  "received": {
+    "group": "호스트에서 받은 업무",
+    "chip": "{{host}}에서 받음",
+    "cwd": "작업 폴더: {{cwd}}",
+    "hint": "호스트가 진행하는 업무입니다. 진행 상태와 보고는 호스트 보드로 올라갑니다."
   }
 }

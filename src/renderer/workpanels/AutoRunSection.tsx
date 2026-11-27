@@ -9,6 +9,7 @@ import { codeText } from "./sendErrorText";
 import { TaskChatButton, useTaskChatButton } from "./TaskChatButton";
 import { AutoRunUsage, UsageWaitDetail } from "./AutoRunUsage";
 import { AUTO_RUN_LIMITS, effectiveLimit } from "./autoRunLimits";
+import { remoteName } from "../link/remoteWork";
 import { busyRunRoot, endAutoRun, pauseAutoRun, planItems, resumeAutoRun, runSteps, startAutoRun, startBlockedReason } from "./autoRun";
 
 
@@ -17,7 +18,7 @@ function pauseText(t: (key: string, options?: Record<string, unknown>) => string
   if (!run.pauseDetail) return { reason };
   // 판단자 메시지는 그대로, 오류 코드는 문장으로 보여 준다.
   const message = run.pauseReason === "judge-stop" || run.pauseReason === "followup-limit" || run.pauseReason === "task-busy" || run.pauseReason === "task-changed"
-    || run.pauseReason === "session-ended" || run.pauseReason === "escalated" || run.pauseReason === "permission-timeout";
+    || run.pauseReason === "session-ended" || run.pauseReason === "escalated" || run.pauseReason === "permission-timeout" || run.pauseReason === "link-offline";
   return { reason, detail: message ? run.pauseDetail : codeText(t, run.pauseDetail) };
 }
 
@@ -56,7 +57,7 @@ export function AutoRunSection({ root }: { root: WorkItem }) {
   const plan = runSteps(root, items);
   const titles = new Map(items.map((item) => [item.id, workItemTitle(item)]));
   const done = plan.filter((item) => item.status === "done").length;
-  const runner = root.assigneeAgentId ? agents[root.assigneeAgentId]?.name : undefined;
+  const runner = root.assigneeAgentId ? agents[root.assigneeAgentId]?.name ?? remoteName(root.assigneeAgentId) : undefined;
   const blocked = run && run.state !== "finished" ? undefined : startBlockedReason(root, items, agents, observerEnabled);
   const current = run?.currentId ? items.find((item) => item.id === run.currentId) : undefined;
   const paused = run?.state === "paused" ? pauseText(t, run) : undefined;

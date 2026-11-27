@@ -121,12 +121,14 @@ fn actions_for(reason: &str, resumes: usize) -> Vec<&'static str> {
         "task-changed" | "task-busy" => vec!["edit", "resume", "escalate", "end"],
         "permission-timeout" => vec!["focus", "resume", "escalate", "end"],
         "usage-wait" => vec!["wait", "resume"],
+        // 그 머신이 다시 붙으면 스스로 이어 간다.
+        "link-offline" => vec!["wait", "resume", "end"],
         // 사람의 입력·결정이다. 외부 에이전트는 기다리기만 한다.
         "human-input" => vec!["escalate", "wait"],
         "user" | "escalated" => vec!["wait"],
         _ => vec!["escalate", "end"],
     };
-    if resumes >= MAX_CTL_RESUMES && reason != "usage-wait" && actions.contains(&"resume") {
+    if resumes >= MAX_CTL_RESUMES && !matches!(reason, "usage-wait" | "link-offline") && actions.contains(&"resume") {
         actions.retain(|a| *a != "resume");
         if !actions.contains(&"escalate") {
             actions.insert(0, "escalate");
@@ -512,6 +514,8 @@ mod tests {
             auto_run: None,
             schedule: None,
             scheduled_from: None,
+            repo: None,
+            received: None,
             created_at: 0,
             updated_at: 0,
         }

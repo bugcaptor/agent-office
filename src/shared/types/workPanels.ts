@@ -6,6 +6,23 @@ export interface WorkAgent {
   effort?: string;
 }
 export type WorkStatus = "todo" | "in_progress" | "review" | "done";
+/** 업무의 저장소(머신 연동). `url`은 git 원격 주소(정규화해 비교), 나머지는 업무마다 정한다. */
+export interface WorkRepo {
+  url: string;
+  /** 저장소 최상위에서 들어갈 하위 폴더. */
+  subpath?: string;
+  /** 이 브랜치에서 일한다(없으면 만든다). 워크트리가 아니면 클론이 깨끗할 때만 바꾼다. */
+  branch?: string;
+  /** 업무마다 따로 워크트리를 만들어 그 안에서 일한다. */
+  worktree?: boolean;
+}
+/** 호스트에서 받은 업무의 표시. id는 호스트 보드의 id와 같다. */
+export interface WorkReceived {
+  hostName: string;
+  /** 그 머신에서 정한 작업 폴더. */
+  cwd: string;
+  receivedAt: number;
+}
 export interface WorkItem {
   id: string;
   /** 빈 문자열이면 표시 제목은 본문 앞부분에서 만든다. */
@@ -30,6 +47,10 @@ export interface WorkItem {
   schedule?: WorkSchedule;
   /** 반복 예약 회차로 복제된 업무면 원본 템플릿 id. */
   scheduledFrom?: string;
+  /** 다른 머신 캐릭터에게 맡길 때 작업 폴더를 정하는 저장소. 그 머신이 같은 원격 주소의 클론을 가져야 한다. */
+  repo?: WorkRepo;
+  /** 클라이언트: 호스트에서 받은 업무. 로컬 보드에 따로 보이고 진행 상태는 호스트로 올라간다. */
+  received?: WorkReceived;
   createdAt: number;
   updatedAt: number;
 }
@@ -67,6 +88,8 @@ export type AutoRunPauseReason =
   | "escalated"
   /** 권한 승인·질문을 너무 오래 기다렸다. */
   | "permission-timeout"
+  /** 다음 단계를 맡은 머신이 끊겼다. 다시 붙으면 스스로 이어 간다. */
+  | "link-offline"
   /** 구독 사용량이 모자랄 것으로 보여 한도 창 리셋을 기다린다. 때가 되면 스스로 이어 간다. */
   | "usage-wait";
 export type AutoRunLogKind = "start" | "send" | "next" | "followup" | "pause" | "resume" | "finish" | "human-done" | "root-done";
@@ -122,6 +145,8 @@ export interface AutoRunUsageWait {
   stage: "task" | "followup" | "judge";
   /** 작업자 CLI의 구독(사용량 창이 없는 CLI면 null). 대기 중 다시 검사할 때 쓴다. */
   worker?: "claude" | "codex" | null;
+  /** 다른 머신 작업자의 사용량으로 판단했으면 그 기기 id. 다시 볼 시각까지 기다린다. */
+  remote?: string;
 }
 export interface SessionSummary {
   sessionId: string;

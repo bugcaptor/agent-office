@@ -18,7 +18,9 @@ pub mod host;
 pub mod outbox;
 pub mod protocol;
 pub mod remote;
+pub mod repos;
 pub mod share;
+pub mod work;
 
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, Weak};
@@ -83,6 +85,8 @@ pub trait LinkEvents: Send + Sync {
     fn status(&self, status: &LinkStatus);
     /// 호스트: 다른 머신 캐릭터들의 오피스 모습이 바뀌었다(`link-remote`).
     fn remote(&self, office: &RemoteOffice);
+    /// 호스트: 붙은 머신이 받은 업무의 진행 상태를 올렸다(`link-task`, 몸에 `deviceId`가 붙는다).
+    fn task(&self, _data: &serde_json::Value) {}
 }
 
 pub struct TauriLinkEvents(pub tauri::AppHandle);
@@ -96,6 +100,10 @@ impl LinkEvents for TauriLinkEvents {
         use tauri::Emitter;
         let _ = self.0.emit_to("main", "link-remote", office);
     }
+    fn task(&self, data: &serde_json::Value) {
+        use tauri::Emitter;
+        let _ = self.0.emit_to("main", "link-task", data);
+    }
 }
 
 pub struct LinkState {
@@ -106,6 +114,9 @@ pub struct LinkState {
     pub client: Arc<LinkClient>,
     /// 호스트: 붙은 머신들의 캐릭터.
     pub remote: Arc<RemoteView>,
+    /// 호스트: 붙은 머신이 마지막으로 올린 받은 업무 진행 상태(`기기id:업무id` → 이벤트 몸). 렌더러가 늦게 떠도
+    /// 놓치지 않게 들고 있다가 `link_task_states`로 준다.
+    pub task_states: Arc<Mutex<std::collections::HashMap<String, serde_json::Value>>>,
     events: Arc<dyn LinkEvents>,
     last: Mutex<Option<LinkStatus>>,
 }
@@ -151,19 +162,22 @@ impl LinkState {
             ));
             let client = Arc::new(LinkClient::new(dir.clone(), machine_id.clone(), name(), changed));
             let remote = Arc::new(RemoteView::new(host.clone(), dir.as_ref().map(|d| d.join(remote::FILE))));
+            let task_states = Arc::new(Mutex::new(std::collections::HashMap::new()));
             {
                 let remote = Arc::downgrade(&remote);
+                let (dir, events, tasks) = (dir.clone(), events.clone(), task_states.clone());
                 host.set_event_handler(Arc::new(move |device, kind, data| {
                     if let Some(r) = remote.upgrade() {
                         r.ingest(device, kind, data);
                     }
+                    work::host_event(dir.as_deref(), events.as_ref(), &tasks, device, kind, data);
                 }));
             }
             {
                 let events = events.clone();
                 remote.set_listener(Arc::new(move |office| events.remote(office)));
             }
-            LinkState { dir, config: Mutex::new(config), machine_id, host, client, remote, events, last: Mutex::new(None) }
+            LinkState { dir, config: Mutex::new(config), machine_id, host, client, remote, task_states, events, last: Mutex::new(None) }
         });
         state.apply();
         state

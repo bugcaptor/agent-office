@@ -90,6 +90,15 @@ export function assessTurn(worker: ForecastProvider | null, now = Date.now()): U
   if (!worker) return null;
   return assessUsage(predictFollowupNeeds(model, worker).filter((need) => need.provider === worker), snapshot(), model, ledger, now);
 }
+/**
+ * 다른 머신 작업자에게 새 태스크(`task`)·후속 지시(`followup`)를 보내도 되는가. 그 머신이 준 사용량으로 본다.
+ * 보고 뒤 쓴 양은 이 머신 장부에 없으므로 더하지 않는다(그 머신의 보고값을 그대로 쓴다). 판단자는 이 머신 구독이라 뺀다.
+ */
+export function assessRemote(stage: "task" | "followup", worker: ForecastProvider | null, remote: UsageSnapshot | null, now = Date.now()): UsageBlock | null {
+  if (!worker || !remote) return null;
+  const needs = (stage === "task" ? predictTaskNeeds(model, worker) : predictFollowupNeeds(model, worker)).filter((need) => need.provider === worker);
+  return assessUsage(needs, remote, model, emptyLedger(now), now);
+}
 /** 판단자를 불러도 되는가. */
 export function assessJudge(now = Date.now()): UsageBlock | null {
   return assessUsage(judgeNeeds(), snapshot(), model, ledger, now);

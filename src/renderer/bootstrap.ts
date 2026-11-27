@@ -46,6 +46,8 @@ import { installWebDashControl } from "./webdash/webDashControl";
 import { installWebDash } from "./webdash/webDashStore";
 import { installLink } from "./link/linkStore";
 import { installRemoteFloors } from "./link/remoteFloors";
+import { installRemoteWork } from "./link/remoteWork";
+import { installReceivedWork } from "./link/receivedWork";
 import { installScheduleRunner } from "./workpanels/scheduleRunner";
 import { installUsageForecast } from "./usage/usageForecastStore";
 import { installWorkInboxLifecycle } from "./workpanels/lifecycle";
@@ -187,6 +189,9 @@ export async function bootApp(): Promise<() => void> {
   const offLink = installLink();
   // 머신 연동 호스트: 붙은 머신들의 캐릭터(오피스 머신별 층).
   const offRemoteFloors = installRemoteFloors();
+  // 머신 연동 업무 분배: 호스트는 다른 머신에 맡긴 업무의 진행 상태를 받고, 클라이언트는 받은 업무의 상태를 올린다.
+  const offRemoteWork = installRemoteWork();
+  const offReceivedWork = installReceivedWork();
   // 예약 실행기. 자동 진행·보내기를 부르므로 그 뒤에 건다. 메인 창에서만 돈다.
   const offScheduleRunner = installScheduleRunner();
   const offWorkInbox = installWorkInboxLifecycle();
@@ -249,6 +254,8 @@ export async function bootApp(): Promise<() => void> {
     offWebDash();
     offLink();
     offRemoteFloors();
+    offRemoteWork();
+    offReceivedWork();
     offScheduleRunner();
     offUsageForecast();
     offWorkInbox();

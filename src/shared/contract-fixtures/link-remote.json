@@ -14,7 +14,8 @@
           "needsHuman": false,
           "clockedOut": false
         }
-      ]
+      ],
+      "repos": []
     },
     {
       "deviceId": "d-1a2b3c4d",
@@ -41,7 +42,8 @@
           "needsHuman": false,
           "clockedOut": false
         }
-      ]
+      ],
+      "repos": ["github.com/acme/app"]
     }
   ]
 }

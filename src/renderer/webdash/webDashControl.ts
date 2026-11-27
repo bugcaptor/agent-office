@@ -16,6 +16,7 @@ import { pendingPrerequisites } from "../workpanels/workDependencies";
 import { hasWorkContent, type WorkItemDraft } from "../workpanels/workItemDraft";
 import { disabledSchedule, enabledSchedule, scheduleTemplateOf } from "../workpanels/workSchedule";
 import { handleDiscussionControl } from "../discussion/discussionControl";
+import { isRemoteAgentId, remoteSendBlocked } from "../link/remoteWork";
 
 function fireAndForget(label: string, work: Promise<unknown>): void {
   work.catch((err: unknown) => console.warn(`web dash: ${label} failed`, err));
@@ -147,6 +148,7 @@ export async function handleWebDashControl(request: WebDashControlRequest): Prom
       const blocked = scheduleTemplateOf(item, all) ? "work-send-schedule-template"
         : item.plan ? "work-send-plan-root"
         : pendingPrerequisites(item, all).length ? "work-send-blocked"
+        : isRemoteAgentId(item.assigneeAgentId) ? remoteSendBlocked(item)
         : workSendDisabledReason(app.agents[item.assigneeAgentId]);
       if (blocked) return { error: blocked };
       fireAndForget("work send", requestWorkSend(item.id, { restartConfirmed: request.restartConfirmed === true }));
@@ -273,6 +275,10 @@ export async function handleWebDashControl(request: WebDashControlRequest): Prom
       fireAndForget("office agent open", openOfficeAgent({ prompt, cli, restart, ...(request.cwd ? { cwd: request.cwd } : {}) })
         .then((error) => { if (error) console.warn("web dash: office agent open failed", error); }));
       return {};
+    }
+    case "link-work-receive": {
+      const { receiveHostWork } = await import("../link/receivedWork");
+      return receiveHostWork(request);
     }
     case "office-agent-close": {
       const { closeOfficeAgent } = await import("../officeAgent/officeAgentStore");

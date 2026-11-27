@@ -36,7 +36,7 @@ import type {
 } from './settings';
 import type { ApiKeyStatus } from './apiKeys';
 import type { ShellAssistConfig, ShellAssistEndpoint, ShellSuggestion } from './shellAssist';
-import type { LinkConfig, LinkStatus, RemoteOffice } from './link';
+import type { LinkConfig, LinkStatus, LinkTaskEvent, LinkTaskReport, LinkWorkKind, RemoteOffice } from './link';
 import type { AwardRecord, AwardSpeech, AwardsFile } from './awards';
 import type { DiaryEntry, WorkLogItem } from './diary';
 import type { MemoSheet, MemoSheetMeta } from './memo';
@@ -274,6 +274,12 @@ export interface AgentOfficeApi {
   linkForgetHost(): Promise<LinkStatus>;
   /** 호스트: 붙은 머신들의 캐릭터(오피스 머신별 층). 호스트 모드가 아니면 빈 목록. */
   linkRemote(): Promise<RemoteOffice>;
+  /** 호스트: 원격 캐릭터(`기기id:캐릭터id`)의 머신에 업무 일을 묻는다(보내기·후속 지시·마지막 응답·사용량). */
+  linkWork(agentId: string, kind: LinkWorkKind, data: Record<string, unknown>): Promise<unknown>;
+  /** 클라이언트: 받은 업무의 진행 상태를 호스트에 올린다. */
+  linkTaskReport(report: LinkTaskReport): Promise<void>;
+  /** 호스트: 붙은 머신들이 마지막으로 올린 받은 업무 진행 상태. */
+  linkTaskStates(): Promise<LinkTaskEvent[]>;
   /** 셸 캐릭터 LLM 설정(`shell-assist.json`). */
   shellAssistGetConfig(): Promise<ShellAssistConfig>;
   /** 저장하고 다듬은 값을 돌려준다. */
@@ -325,6 +331,8 @@ export interface AgentOfficeApi {
   /** turn-usage(한 턴의 토큰 사용량) 구독. notification-new와 독립된 채널이라
    * 서브에이전트로 억제된 Stop에서도 온다. Returns an unsubscribe function. */
   onTurnUsage(cb: (e: TurnUsageEvent) => void): () => void;
+  /** 호스트: 붙은 머신이 받은 업무의 진행 상태를 올렸다. */
+  onLinkTask(cb: (e: LinkTaskEvent) => void): () => void;
   /** app-settings-changed(백엔드가 저장한 새 설정 전체) 구독. Returns an unsubscribe function. */
   onAppSettingsChanged(cb: (settings: AppSettings) => void): () => void;
   /** 완료된 턴 1건을 로컬 시계열 로그에 append (fire-and-forget). */

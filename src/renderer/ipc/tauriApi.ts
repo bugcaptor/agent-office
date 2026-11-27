@@ -24,6 +24,7 @@ import { invoke, Channel } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { Commands, Events } from "@shared/ipc";
 import type {
+  LinkTaskEvent,
   ActivityEvent,
   AgentOfficeApi,
   AppSettings,
@@ -295,6 +296,9 @@ export const tauriApi: AgentOfficeApi = {
   async linkPair(address, code) { return await invoke(Commands.linkPair, { address, code }); },
   async linkForgetHost() { return await invoke(Commands.linkForgetHost); },
   async linkRemote() { return await invoke(Commands.linkRemote); },
+  async linkWork(agentId, kind, data) { return await invoke(Commands.linkWork, { agentId, kind, data }); },
+  async linkTaskReport(report) { await invoke(Commands.linkTaskReport, { report }); },
+  async linkTaskStates() { return await invoke(Commands.linkTaskStates); },
   async shellAssistGetConfig() { return await invoke(Commands.shellAssistGetConfig); },
   async shellAssistSetConfig(config) { return await invoke(Commands.shellAssistSetConfig, { config }); },
   async shellAssistListModels(endpoint) { return await invoke(Commands.shellAssistListModels, { endpoint }); },
@@ -578,6 +582,10 @@ export const tauriApi: AgentOfficeApi = {
 
   onTurnUsage(cb) {
     return wrapListen<TurnUsageEvent>(Events.turnUsage, cb);
+  },
+
+  onLinkTask(cb) {
+    return wrapListen<LinkTaskEvent>(Events.linkTask, cb);
   },
 
   onAppSettingsChanged(cb) {

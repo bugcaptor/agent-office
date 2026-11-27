@@ -24,6 +24,8 @@ const WORK_ITEM_KEYS: Record<keyof WorkItem, true> = {
   autoRun: true,
   schedule: true,
   scheduledFrom: true,
+  repo: true,
+  received: true,
   createdAt: true,
   updatedAt: true,
 };

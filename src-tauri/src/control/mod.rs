@@ -1035,6 +1035,8 @@ mod tests {
             auto_run: None,
             schedule: None,
             scheduled_from: None,
+            repo: None,
+            received: None,
             created_at: 0,
             updated_at: 0,
         };

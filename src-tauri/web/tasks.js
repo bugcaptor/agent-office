@@ -221,8 +221,9 @@ function allItems() {
 }
 function itemById(id) { return allItems().find((i) => i.id === id); }
 function charsMap() {
+  // 다른 머신 캐릭터에게 맡긴 업무도 그 캐릭터 묶음에 보이게 넣는다(앱에서 맡긴 것).
   const m = new Map();
-  for (const c of D.getChars() || []) m.set(c.agentId, c);
+  for (const c of D.getAllChars() || []) m.set(c.agentId, c);
   return m;
 }
 function workItemTitle(item) {
@@ -351,6 +352,8 @@ function busyRunRoot(root, items) {
 }
 function workSendDisabledReason(c, items) {
   if (!c) return "work-send-agent-missing";
+  // 다른 머신 캐릭터: 그 머신이 붙어 있어야 한다(저장소 확인은 앱이 한다).
+  if (c.remote) return c.machine && c.machine.online ? null : "link-device-offline";
   if (items.some((i) => i.autoRun && i.autoRun.state === "running" && i.assigneeAgentId === c.agentId)) return "work-send-auto-run";
   if (c.session && c.session.state === "starting") return "work-send-busy";
   if (c.clockedOut) return "work-send-clocked-out";
@@ -365,10 +368,16 @@ function startBlockedReason(root, items, cmap, observerEnabled) {
   if (open.length === 1 && open[0].id === root.id && root.status !== "todo") return "auto-run-root-busy";
   if (open.some((i) => scheduleTemplateOf(i, items)) || scheduleTemplateOf(root, items)) return "auto-run-schedule-template";
   if (busyRunRoot(root, items)) return "auto-run-runner-busy";
-  const prof = workSendDisabledReason(cmap.get(root.assigneeAgentId), items);
-  if (prof) return prof;
-  if (!observerEnabled) return "auto-run-observer-off";
-  if (open.some((i) => i.assigneeAgentId && i.assigneeAgentId !== root.assigneeAgentId)) return "auto-run-foreign-task";
+  // 단계마다 맡는 캐릭터(없으면 루트 담당)를 본다. 다른 머신 단계는 그 차례에 머신이 붙기를 기다린다.
+  let local = false;
+  for (const step of open) {
+    const c = cmap.get(step.assigneeAgentId || root.assigneeAgentId);
+    if (c && c.remote) continue;
+    local = true;
+    const prof = workSendDisabledReason(c, items);
+    if (prof) return prof;
+  }
+  if (local && !observerEnabled) return "auto-run-observer-off";
   return null;
 }
 function sendBlockedReason(value, origItem, items, cmap) {
@@ -560,11 +569,13 @@ function renderBoardList() {
   }
 
   // 캐릭터(오피스 순서) → 미배정 → 삭제된 캐릭터
-  const keys = [...chars.map((c) => c.agentId), "", MISSING_ASSIGNEE];
+  const remoteKeys = [...cmap.values()].filter((c) => c.remote && items.some((it) => it.assigneeAgentId === c.agentId)).map((c) => c.agentId);
+  const keys = [...chars.map((c) => c.agentId), ...remoteKeys, "", MISSING_ASSIGNEE];
   const groups = keys.map((key) => ({
     key,
     char: cmap.get(key) || null,
-    name: key === "" ? T.unassigned : key === MISSING_ASSIGNEE ? T.missingAgent : cmap.get(key).name,
+    name: key === "" ? T.unassigned : key === MISSING_ASSIGNEE ? T.missingAgent
+      : cmap.get(key).remote ? `${cmap.get(key).name} · ${(cmap.get(key).machine || {}).name || ""}` : cmap.get(key).name,
     items: items.filter((it) => assigneeKey(it, cmap) === key && !plans.claimed.has(it.id)),
   })).filter((g) => g.items.length > 0 || g.char);
 
@@ -683,7 +694,7 @@ function renderBoardList() {
       g.char && avatar(g.char),
       el("span", { class: "tb-gname" }, el("strong", { text: g.name }), proj && el("small", { text: proj, title: cwdOf(g.char) })),
       el("span", { class: "tb-count" + (remaining ? "" : " zero"), text: String(remaining) }),
-      g.char && el("button", { class: "tb-add", type: "button", title: `${g.name} · ${T.newWork}`, text: "+", onclick: (e) => { e.preventDefault(); e.stopPropagation(); startCreate(g.key); } }));
+      g.char && !g.char.remote && el("button", { class: "tb-add", type: "button", title: `${g.name} · ${T.newWork}`, text: "+", onclick: (e) => { e.preventDefault(); e.stopPropagation(); startCreate(g.key); } }));
 
     const body = el("div", { class: "tb-group-body" });
     if (!open.length && !done.length) body.append(el("div", { class: "tb-group-empty", text: T.emptyGroup }));

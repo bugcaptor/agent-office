@@ -25,7 +25,7 @@
 mod work_panels;
 mod media;
 mod misc;
-mod repository_audit;
+pub(crate) mod repository_audit;
 mod persistence;
 mod session;
 // pub: contract 테스트(src-tauri/tests/contract_fixtures.rs)가

@@ -42,6 +42,9 @@ export const Commands = {
   linkPair: "link_pair",
   linkForgetHost: "link_forget_host",
   linkRemote: "link_remote",
+  linkWork: "link_work",
+  linkTaskReport: "link_task_report",
+  linkTaskStates: "link_task_states",
   shellAssistGetConfig: "shell_assist_get_config",
   shellAssistSetConfig: "shell_assist_set_config",
   shellAssistListModels: "shell_assist_list_models",
@@ -255,4 +258,6 @@ export const Events = {
   // 머신 연동 상태(모드·기기·연결)가 바뀌었다.
   linkStatus: "link-status",
   linkRemote: "link-remote",
+  // 호스트: 붙은 머신이 받은 업무의 진행 상태를 올렸다.
+  linkTask: "link-task",
 } as const;

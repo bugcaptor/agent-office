@@ -29,6 +29,8 @@
       "nextAt": 1720600000000
     },
     "scheduledFrom": "w-template",
+    "repo": { "url": "github.com/acme/app", "subpath": "web", "branch": "feature/x", "worktree": true },
+    "received": { "hostName": "Studio", "cwd": "/Users/me/app/web", "receivedAt": 1720000000100 },
     "createdAt": 1720000000000,
     "updatedAt": 1720000000500
   },

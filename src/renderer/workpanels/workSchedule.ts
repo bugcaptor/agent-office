@@ -151,4 +151,4 @@ export function disableTouchedSchedules(items: WorkItem[], touched: ReadonlySet<
 }
 
 /** 실행 내용으로 보는 필드. 사람 없이 바뀌면 켜진 예약을 끈다(상태·정렬·실행 기록은 뺀다). */
-export const RUN_CONTENT_KEYS = ["title", "body", "assigneeAgentId", "agent", "dependsOn", "plan", "maxFollowUps", "permissionWaitMinutes"] as const;
+export const RUN_CONTENT_KEYS = ["title", "body", "assigneeAgentId", "agent", "dependsOn", "plan", "maxFollowUps", "permissionWaitMinutes", "repo"] as const;

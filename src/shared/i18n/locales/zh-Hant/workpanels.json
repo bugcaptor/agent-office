@@ -112,7 +112,19 @@
     "blocked": "請先完成所有前置任務再傳送。",
     "autoRunActive": "此角色正在自動推進中。請先暫停再傳送。",
     "planRoot": "計畫根不會傳送。請用自動執行來執行它等待的任務。",
-    "scheduleTemplate": "重複排程的範本不直接傳送。每到排程時間會複製一份並執行。"
+    "scheduleTemplate": "重複排程的範本不直接傳送。每到排程時間會複製一份並執行。",
+    "linkOffline": "該機器已中斷連線。請在重新連線後再傳送。",
+    "repoMissing": "該機器上沒有這個儲存庫的複本{{detail}}。請先複製後再傳送。",
+    "repoInvalid": "無法讀取儲存庫位址。請輸入 git 遠端位址。",
+    "repoDirty": "該機器的複本有未提交的變更，因此沒有切換分支。請使用工作樹或在該機器上整理。",
+    "branchInvalid": "分支名稱無效。",
+    "worktreeFailed": "無法在該機器上建立工作樹{{detail}}。",
+    "checkoutFailed": "無法在該機器上切換分支{{detail}}。",
+    "subpathMissing": "該機器的儲存庫中沒有這個子資料夾。",
+    "noWorkDir": "請指定儲存庫，或為該角色設定起始資料夾。",
+    "linkTimeout": "該機器沒有回報傳送結果。請查看該機器的終端機。",
+    "linkUnsupported": "該機器上的應用程式無法接收任務。請更新該機器上的應用程式。",
+    "remoteObserverOff": "請在該機器上開啟代理觀察。"
   },
   "resumeNewWork": "繼續編寫新任務",
   "add": "新增",
@@ -198,7 +210,8 @@
       "running": "自動推進中",
       "paused": "自動推進已暫停",
       "finished": "自動推進已完成",
-      "usageWait": "等待用量"
+      "usageWait": "等待用量",
+      "linkWait": "等待機器"
     },
     "idle": "在{{name}}的終端機中依序推進剩餘的 {{count}} 個前置任務。每個任務開啟新工作階段，每輪結束後由評審(claude -p)決定下一步。",
     "progress": "已完成 {{done}}/{{total}}",
@@ -241,14 +254,14 @@
       "usage-wait": "訂閱用量看起來不夠，正在等待限額視窗重設。",
       "ctl-pause": "已由 CLI 暫停。",
       "escalated": "外部代理已轉交給人。確認後請點擊「繼續」。",
-      "permission-timeout": "等待權限核准或問題回答過久，已暫停。請在終端機中回答後點擊「繼續」。"
+      "permission-timeout": "等待權限核准或問題回答過久，已暫停。請在終端機中回答後點擊「繼續」。",
+      "link-offline": "負責下一步的機器已中斷連線。重新連線後會自動繼續。"
     },
     "blocked": {
       "auto-run-root-done": "無法從已完成的任務開始。",
       "auto-run-no-assignee": "請選擇負責角色。該角色將負責推進。",
       "auto-run-no-plan": "沒有剩餘的前置任務。",
       "auto-run-observer-off": "請在設定中開啟代理觀察。需要透過掛鉤得知每輪何時結束。",
-      "auto-run-foreign-task": "有前置任務指派給其他角色。請將其指派給推進角色或改為未指派。",
       "auto-run-runner-busy": "此角色還有另一個尚未結束的自動推進「{{title}}」。請先結束它。",
       "auto-run-root-busy": "只剩根任務，但它正在進行或待審核。要再次執行，請把它改回待辦。",
       "auto-run-schedule-template": "這是重複排程的範本(或其步驟)，無法直接開始。每到排程時間會複製一份並推進。"
@@ -380,5 +393,24 @@
       "schedule-not-todo": "任務不在待辦狀態。"
     },
     "skippedTitle": "已略過排程：{{title}}"
+  },
+  "repo": {
+    "title": "儲存庫",
+    "url": "git 遠端位址",
+    "urlPlaceholder": "github.com/團隊/儲存庫",
+    "subpath": "子資料夾",
+    "branch": "分支",
+    "worktree": "為此任務建立工作樹並在其中工作",
+    "hint": "其他機器會在該位址的複本中工作。留空則使用該角色的起始資料夾。",
+    "missing": "{{machine}} 上沒有這個儲存庫的複本。",
+    "offline": "{{machine}} 已中斷連線。",
+    "known": "{{machine}} 上的儲存庫"
+  },
+  "remoteGroup": "{{machine}}（其他機器）",
+  "received": {
+    "group": "從主機收到的任務",
+    "chip": "來自 {{host}}",
+    "cwd": "工作資料夾：{{cwd}}",
+    "hint": "此任務由主機推進。進度和回報會傳送到主機的看板。"
   }
 }

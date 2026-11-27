@@ -112,7 +112,19 @@
     "blocked": "请先完成所有前置任务再发送。",
     "autoRunActive": "该角色正在自动推进中。请先暂停再发送。",
     "planRoot": "计划根不会发送。请用自动执行运行它等待的任务。",
-    "scheduleTemplate": "重复计划的模板不直接发送。每到计划时间会复制一份并执行。"
+    "scheduleTemplate": "重复计划的模板不直接发送。每到计划时间会复制一份并执行。",
+    "linkOffline": "该机器已断开。请在重新连接后再发送。",
+    "repoMissing": "该机器上没有这个仓库的克隆{{detail}}。请先克隆后再发送。",
+    "repoInvalid": "无法读取仓库地址。请输入 git 远程地址。",
+    "repoDirty": "该机器的克隆有未提交的更改，因此没有切换分支。请使用工作树或在该机器上整理。",
+    "branchInvalid": "分支名称无效。",
+    "worktreeFailed": "无法在该机器上创建工作树{{detail}}。",
+    "checkoutFailed": "无法在该机器上切换分支{{detail}}。",
+    "subpathMissing": "该机器的仓库中没有这个子文件夹。",
+    "noWorkDir": "请指定仓库，或为该角色设置起始文件夹。",
+    "linkTimeout": "该机器没有报告发送结果。请查看该机器的终端。",
+    "linkUnsupported": "该机器上的应用无法接收任务。请更新该机器上的应用。",
+    "remoteObserverOff": "请在该机器上开启代理观察。"
   },
   "resumeNewWork": "继续编写新任务",
   "add": "添加",
@@ -198,7 +210,8 @@
       "running": "自动推进中",
       "paused": "自动推进已暂停",
       "finished": "自动推进已完成",
-      "usageWait": "等待用量"
+      "usageWait": "等待用量",
+      "linkWait": "等待机器"
     },
     "idle": "在{{name}}的终端中依次推进剩余的 {{count}} 个前置任务。每个任务开启新会话，每轮结束后由评审(claude -p)决定下一步。",
     "progress": "已完成 {{done}}/{{total}}",
@@ -241,14 +254,14 @@
       "usage-wait": "订阅用量看起来不够，正在等待限额窗口重置。",
       "ctl-pause": "已由 CLI 暂停。",
       "escalated": "外部代理已转交给人。确认后请点击“继续”。",
-      "permission-timeout": "等待权限批准或问题回答过久，已暂停。请在终端中回答后点击“继续”。"
+      "permission-timeout": "等待权限批准或问题回答过久，已暂停。请在终端中回答后点击“继续”。",
+      "link-offline": "负责下一步的机器已断开。重新连接后会自动继续。"
     },
     "blocked": {
       "auto-run-root-done": "无法从已完成的任务开始。",
       "auto-run-no-assignee": "请选择负责角色。该角色将负责推进。",
       "auto-run-no-plan": "没有剩余的前置任务。",
       "auto-run-observer-off": "请在设置中开启代理观察。需要通过钩子得知每轮何时结束。",
-      "auto-run-foreign-task": "有前置任务分配给了其他角色。请将其分配给推进角色或改为未分配。",
       "auto-run-runner-busy": "该角色还有另一个未结束的自动推进「{{title}}」。请先结束它。",
       "auto-run-root-busy": "只剩根任务，但它正在进行或待审核。要再次运行，请把它改回待办。",
       "auto-run-schedule-template": "这是重复计划的模板(或其步骤)，不能直接开始。每到计划时间会复制一份并推进。"
@@ -380,5 +393,24 @@
       "schedule-not-todo": "任务不在待办状态。"
     },
     "skippedTitle": "已跳过计划：{{title}}"
+  },
+  "repo": {
+    "title": "仓库",
+    "url": "git 远程地址",
+    "urlPlaceholder": "github.com/团队/仓库",
+    "subpath": "子文件夹",
+    "branch": "分支",
+    "worktree": "为此任务创建工作树并在其中工作",
+    "hint": "其他机器会在该地址的克隆中工作。留空则使用该角色的起始文件夹。",
+    "missing": "{{machine}} 上没有这个仓库的克隆。",
+    "offline": "{{machine}} 已断开。",
+    "known": "{{machine}} 上的仓库"
+  },
+  "remoteGroup": "{{machine}}（其他机器）",
+  "received": {
+    "group": "从主机收到的任务",
+    "chip": "来自 {{host}}",
+    "cwd": "工作文件夹：{{cwd}}",
+    "hint": "此任务由主机推进。进度和报告会发送到主机的看板。"
   }
 }

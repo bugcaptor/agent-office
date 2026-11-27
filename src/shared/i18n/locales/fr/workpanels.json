@@ -112,7 +112,19 @@
     "blocked": "Terminez tous les prérequis avant l’envoi.",
     "autoRunActive": "Ce personnage exécute une exécution automatique. Mettez-la en pause avant d'envoyer.",
     "planRoot": "Une racine de plan n’est pas envoyée. Utilisez l’exécution auto pour lancer les tâches qu’elle attend.",
-    "scheduleTemplate": "Un modèle de planification récurrente n’est pas envoyé directement. Une copie est créée et exécutée à chaque échéance."
+    "scheduleTemplate": "Un modèle de planification récurrente n’est pas envoyé directement. Une copie est créée et exécutée à chaque échéance.",
+    "linkOffline": "Cette machine est hors ligne. Renvoyez après sa reconnexion.",
+    "repoMissing": "Cette machine n'a pas de clone de ce dépôt{{detail}}. Clonez-le là-bas, puis renvoyez.",
+    "repoInvalid": "Adresse de dépôt illisible. Saisissez une URL distante git.",
+    "repoDirty": "Le clone sur cette machine a des modifications non validées : la branche n'a pas été changée. Utilisez un worktree ou nettoyez-le là-bas.",
+    "branchInvalid": "Le nom de branche n'est pas valide.",
+    "worktreeFailed": "Impossible de créer un worktree sur cette machine{{detail}}.",
+    "checkoutFailed": "Impossible de changer de branche sur cette machine{{detail}}.",
+    "subpathMissing": "Ce sous-dossier n'existe pas dans le dépôt de cette machine.",
+    "noWorkDir": "Choisissez un dépôt ou donnez un dossier de départ au personnage.",
+    "linkTimeout": "Cette machine n'a pas signalé le résultat de l'envoi. Vérifiez son terminal.",
+    "linkUnsupported": "L'application de cette machine ne sait pas recevoir de tâches. Mettez-la à jour.",
+    "remoteObserverOff": "Activez l'observation des agents sur cette machine."
   },
   "resumeNewWork": "Continuer la nouvelle tâche",
   "add": "Ajouter",
@@ -198,7 +210,8 @@
       "running": "Exécution auto",
       "paused": "Exécution auto en pause",
       "finished": "Exécution auto terminée",
-      "usageWait": "Attente d'utilisation"
+      "usageWait": "Attente d'utilisation",
+      "linkWait": "Attente de la machine"
     },
     "idle": "Exécute une à une les {{count}} tâches préalables restantes dans le terminal de {{name}}. Chaque tâche démarre une nouvelle session et, à la fin de chaque tour, un juge (claude -p) décide de la suite.",
     "progress": "{{done}}/{{total}} terminées",
@@ -241,14 +254,14 @@
       "usage-wait": "L'utilisation de l'abonnement semble insuffisante : l'exécution attend la réinitialisation de la fenêtre de limite.",
       "ctl-pause": "Mis en pause depuis la CLI.",
       "escalated": "Un agent externe l'a confié à une personne. Vérifiez, puis appuyez sur Continuer.",
-      "permission-timeout": "Attente trop longue d'une autorisation ou d'une réponse. Répondez dans le terminal, puis appuyez sur Continuer."
+      "permission-timeout": "Attente trop longue d'une autorisation ou d'une réponse. Répondez dans le terminal, puis appuyez sur Continuer.",
+      "link-offline": "La machine chargée de l'étape suivante est hors ligne. Elle reprend d'elle-même à la reconnexion."
     },
     "blocked": {
       "auto-run-root-done": "Impossible de démarrer depuis une tâche terminée.",
       "auto-run-no-assignee": "Choisissez un personnage responsable. C'est lui qui exécute les tâches.",
       "auto-run-no-plan": "Il ne reste aucune tâche préalable.",
       "auto-run-observer-off": "Activez l'observation des agents dans les paramètres. L'exécution a besoin des hooks pour savoir quand un tour se termine.",
-      "auto-run-foreign-task": "Une tâche préalable est assignée à un autre personnage. Assignez-la à ce personnage ou laissez-la non assignée.",
       "auto-run-runner-busy": "Ce personnage a une autre exécution automatique non terminée : « {{title}} ». Terminez-la d'abord.",
       "auto-run-root-busy": "Il ne reste que la tâche racine, et elle est en cours ou en revue. Remettez-la à faire pour la relancer.",
       "auto-run-schedule-template": "C’est un modèle de planification récurrente (ou l’une de ses étapes) : il ne peut pas être lancé directement. Une copie est créée et exécutée à chaque échéance."
@@ -380,5 +393,24 @@
       "schedule-not-todo": "La tâche n’est pas à l’état À faire."
     },
     "skippedTitle": "Planification sautée : {{title}}"
+  },
+  "repo": {
+    "title": "Dépôt",
+    "url": "URL distante git",
+    "urlPlaceholder": "github.com/equipe/depot",
+    "subpath": "Sous-dossier",
+    "branch": "Branche",
+    "worktree": "Créer un worktree pour cette tâche et y travailler",
+    "hint": "Une autre machine travaille dans son clone de cette adresse. Laissez vide pour utiliser le dossier de départ du personnage.",
+    "missing": "{{machine}} n'a pas de clone de ce dépôt.",
+    "offline": "{{machine}} est hors ligne.",
+    "known": "Dépôts de {{machine}}"
+  },
+  "remoteGroup": "{{machine}} (autre machine)",
+  "received": {
+    "group": "Reçues de l'hôte",
+    "chip": "De {{host}}",
+    "cwd": "Dossier : {{cwd}}",
+    "hint": "L'hôte mène cette tâche. Son avancement et ses rapports vont sur le tableau de l'hôte."
   }
 }

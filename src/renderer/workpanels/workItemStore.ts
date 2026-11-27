@@ -56,6 +56,11 @@ interface WorkItemState {
    */
   applyInbox(requests: InboxRequest[]): InboxRequestResult[];
   edit(id: string, patch: Partial<WorkItemDraft>): void;
+  /**
+   * 머신 연동 클라이언트: 호스트가 보낸 업무를 같은 id의 받은 업무로 넣거나(있으면 내용을 바꾼다) 할 일로 되돌린다.
+   * 로드 전이면 false.
+   */
+  upsertReceived(entry: Pick<WorkItem, "id" | "title" | "body" | "assigneeAgentId" | "agent" | "received">): boolean;
   recordSend(id: string, result: { sessionId?: string; error?: string }): void;
   /** 루트 업무의 자동 진행 상태를 바꾸거나(undefined면) 지운다. */
   setAutoRun(id: string, autoRun: AutoRun | undefined): void;
@@ -280,6 +285,18 @@ export const useWorkItemStore = create<WorkItemState>((set, get) => ({
     set({ items: get().items.map((i) => i.id === id ? closeRunOfDone({ ...i, ...patch, order, updatedAt: at }, at) : i), dirty: true });
     changed();
   },
+  upsertReceived(entry) {
+    if (!get().loaded) return false;
+    const at = Date.now();
+    const existing = get().items.find((i) => i.id === entry.id);
+    const order = Math.max(-1, ...get().items.filter((i) => i.status === "todo").map((i) => i.order)) + 1;
+    const next: WorkItem = existing
+      ? { ...existing, ...entry, agent: entry.agent, status: "todo", order: existing.status === "todo" ? existing.order : order, lastError: undefined, updatedAt: at }
+      : { ...entry, status: "todo", order, sessionIds: [], createdAt: at, updatedAt: at };
+    set({ items: existing ? get().items.map((i) => i.id === entry.id ? next : i) : [...get().items, next], dirty: true });
+    changed();
+    return true;
+  },
   recordSend(id, result) {
     const item = get().items.find((i) => i.id === id);
     if (!get().loaded || !item) return;
@@ -318,6 +335,7 @@ export const useWorkItemStore = create<WorkItemState>((set, get) => ({
     const clones: WorkItem[] = sources.map((item) => ({
       id: ids.get(item.id)!, title: item.title, body: item.body, assigneeAgentId: item.assigneeAgentId, agent: item.agent,
       dependsOn: item.dependsOn?.map((d) => ids.get(d) ?? d), plan: item.plan, maxFollowUps: item.maxFollowUps, permissionWaitMinutes: item.permissionWaitMinutes,
+      ...(item.repo ? { repo: item.repo } : {}),
       scheduledFrom: templateId, status: "todo", order: order++, sessionIds: [], createdAt: at, updatedAt: at,
     }));
     // 단계를 루트보다 앞에 둬 패널의 플랜 순서와 같게 한다.

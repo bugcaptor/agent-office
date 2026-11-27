@@ -6,7 +6,7 @@ use crate::persistence::work_inbox::{forbidden_control, parse_after, schedule_at
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 
-const USAGE: &str = "usage: office-task [--to <name|id> | --unassigned] [--after <id>]... [--plan] [--at <when> | --every <rule>] <title> [body | -]
+const USAGE: &str = "usage: office-task [--host | --local] [--to <name|id> | --unassigned] [--after <id>]... [--plan] [--at <when> | --every <rule>] <title> [body | -]
        office-task --list [--all]
        office-task --show <id> [--json]
        office-task --edit <id> [--title <title>] [--body <body | ->] [--to <name|id> | --unassigned]
@@ -32,6 +32,9 @@ Schedules made here start turned off; a person turns them on in the app. Changin
 --show --json prints the stored task as JSON, including its auto-run state.
 --discuss creates a ready team discussion that a person starts in the app (office-task --discuss --help).
 --roles lists the discussion roles; --role-add, --role-edit and --role-delete change them (office-task --roles --help).
+--host first uses the board of the Agent Office host this machine is linked to (as a client); --local
+first uses this machine's board. In a session running a task received from the host, the host's board is
+the default.
 Outside an Agent Office session the default app data folder is used.
 ";
 
@@ -41,6 +44,8 @@ pub struct TaskEnv {
     pub work_inbox: Option<PathBuf>,
     pub app_data: Option<PathBuf>,
     pub agent_id: Option<String>,
+    /// 이 세션 id(`AGENT_OFFICE_SESSION`). 호스트에서 받은 업무를 실행하는 세션이면 호스트 보드를 쓴다.
+    pub session_id: Option<String>,
 }
 impl TaskEnv {
     fn from_process() -> Self {
@@ -51,7 +56,29 @@ impl TaskEnv {
             app_data: var("AGENT_OFFICE_APP_DATA").map(PathBuf::from)
                 .or_else(|| var("AGENT_OFFICE_WORK_INBOX").is_none().then(crate::control::client::default_app_data).flatten()),
             agent_id: var("AGENT_OFFICE_AGENT_ID").map(|v| v.to_string_lossy().into_owned()),
+            session_id: var("AGENT_OFFICE_SESSION").map(|v| v.to_string_lossy().into_owned()),
         }
+    }
+    /// 머신 연동 클라이언트의 호스트 보드(사본과 그 수신함). 호스트 보드를 받은 적이 없으면 None.
+    /// 담당 기본값(이 캐릭터)은 호스트가 아는 원격 id(`기기id:캐릭터id`)로 바꾼다.
+    fn host_board(&self) -> Option<TaskEnv> {
+        let app_data = self.app_data.clone().or_else(|| self.work_inbox.as_ref().and_then(|i| i.parent().map(Path::to_path_buf)))?;
+        let board = crate::link::work::host_board_dir(&app_data);
+        let info: serde_json::Value = serde_json::from_slice(&std::fs::read(board.join(crate::link::work::HOST_INFO_FILE)).ok()?).ok()?;
+        let device = info.get("deviceId").and_then(|v| v.as_str()).filter(|d| !d.is_empty())?;
+        Some(TaskEnv {
+            work_inbox: Some(crate::link::work::host_board_inbox(&app_data)),
+            agent_id: self.agent_id.as_ref().map(|a| format!("{device}:{a}")),
+            app_data: Some(board),
+            session_id: self.session_id.clone(),
+        })
+    }
+    /// 이 세션이 호스트에서 받은 업무를 실행하는가(`link-received.json`).
+    fn runs_received_task(&self) -> bool {
+        let (Some(session), Some(app_data)) = (self.session_id.as_deref(), self.app_data.clone().or_else(|| self.work_inbox.as_ref().and_then(|i| i.parent().map(Path::to_path_buf)))) else { return false };
+        std::fs::read(app_data.join(crate::link::work::RECEIVED_FILE)).ok()
+            .and_then(|b| serde_json::from_slice::<serde_json::Value>(&b).ok())
+            .is_some_and(|v| v.pointer(&format!("/sessions/{}", session.replace('~', "~0").replace('/', "~1"))).is_some())
     }
     fn inbox(&self) -> Option<PathBuf> {
         self.work_inbox.clone().or_else(|| self.app_data.as_ref().map(|dir| dir.join("work-inbox")))
@@ -77,6 +104,27 @@ pub fn run_with(
     err: &mut dyn Write,
     now: chrono::DateTime<chrono::Utc>,
 ) -> i32 {
+    // 보드 고르기: `--host`는 호스트 보드, `--local`은 이 머신 보드. 둘 다 없으면 호스트에서 받은 업무를
+    // 실행하는 세션만 호스트 보드를 쓴다. 토의·역할은 늘 이 머신 것이다.
+    let (choice, args) = match args.first().map(String::as_str) {
+        Some("--host") => (Some(true), &args[1..]),
+        Some("--local") => (Some(false), &args[1..]),
+        _ => (None, args),
+    };
+    let board_command = !matches!(args.first().map(String::as_str), Some("--discuss" | "--roles" | "--role-add" | "--role-edit" | "--role-delete"));
+    let host = match choice {
+        Some(true) => match env.host_board() {
+            Some(host) => Some(host),
+            None => return fail(err, "--host: this machine has no host board; link it to an Agent Office host as a client (Settings › Machine link) first"),
+        },
+        Some(false) => None,
+        None if board_command && env.runs_received_task() => env.host_board(),
+        None => None,
+    };
+    let env = match &host {
+        Some(host) if board_command => host,
+        _ => env,
+    };
     if matches!(args.first().map(String::as_str), Some("--list")) {
         return match &args[1..] {
             [] => list(env, false, out, err),
@@ -706,10 +754,10 @@ mod tests {
         (code, String::from_utf8(out).unwrap(), String::from_utf8(err).unwrap())
     }
     fn env(dir: &Path, agent: Option<&str>) -> TaskEnv {
-        TaskEnv { work_inbox: Some(dir.to_path_buf()), app_data: None, agent_id: agent.map(Into::into) }
+        TaskEnv { work_inbox: Some(dir.to_path_buf()), app_data: None, agent_id: agent.map(Into::into), session_id: None }
     }
     fn written(dir: &Path) -> Vec<(String, Parsed)> {
-        let mut files: Vec<_> = std::fs::read_dir(dir).unwrap().map(|e| e.unwrap().file_name().into_string().unwrap()).collect();
+        let mut files: Vec<_> = std::fs::read_dir(dir).unwrap().map(|e| e.unwrap()).filter(|e| e.path().is_file()).map(|e| e.file_name().into_string().unwrap()).collect();
         files.sort();
         files.into_iter().map(|name| { let bytes = std::fs::read(dir.join(&name)).unwrap(); let parsed = parse(&name, &bytes).unwrap(); (name, parsed) }).collect()
     }
@@ -728,6 +776,47 @@ mod tests {
         assert_eq!(call(&["--report", "../x", "hi"], &env, "").0, 2);
         assert_eq!(call(&["--report"], &env, "").0, 2);
         assert_eq!(call(&["--report", "t-1", "bad\u{7}"], &env, "").0, 1);
+    }
+
+    #[test]
+    fn host_flag_and_received_sessions_use_the_host_board_copy() {
+        let dir = tempfile::tempdir().unwrap();
+        let app = dir.path();
+        let env = TaskEnv { work_inbox: None, app_data: Some(app.into()), agent_id: Some("a1".into()), session_id: Some("s-recv".into()) };
+        // 호스트 보드를 받기 전에는 --host가 실패하고 아무것도 쓰지 않는다.
+        let (code, _, err) = call(&["--host", "Up"], &env, "");
+        assert_eq!(code, 1);
+        assert!(err.contains("host board"), "{err}");
+        crate::link::work::ClientWork::new(app.into()).write_board(&serde_json::json!({
+            "deviceId": "d-7", "hostName": "Studio",
+            "items": [{ "id": "t-host", "title": "On host", "body": "", "status": "todo", "order": 0, "sessionIds": [], "createdAt": 0, "updatedAt": 0 }],
+            "agents": [{ "id": "boss", "name": "Boss" }, { "id": "d-7:a1", "name": "Ada" }],
+        }));
+        let host_inbox = crate::link::work::host_board_inbox(app);
+        let local_inbox = app.join("work-inbox");
+        // --host: 호스트 보드 수신함에, 담당 기본값은 이 캐릭터의 원격 id.
+        let (code, out, err) = call(&["--host", "Up"], &env, "");
+        assert_eq!((code, err.as_str()), (0, ""));
+        let (_, parsed) = written(&host_inbox).into_iter().find(|(_, p)| p.id.as_deref() == Some(out.trim())).unwrap();
+        assert_eq!(parsed.assignee.as_deref(), Some("d-7:a1"));
+        assert!(!local_inbox.exists());
+        // 호스트 보드 사본으로 목록·대상 확인을 한다.
+        assert!(call(&["--host", "--list"], &env, "").1.contains("On host"));
+        assert_eq!(call(&["--host", "--done", "t-host"], &env, "").0, 0);
+        assert_eq!(call(&["--done", "t-host"], &env, "").0, 1, "이 머신 보드에는 없다");
+        // 받은 업무 세션이면 기본이 호스트 보드다. --local이면 이 머신 보드.
+        crate::link::work::ClientWork::new(app.into()).remember_session("s-recv", "t-host");
+        assert_eq!(call(&["--report", "t-host", "status: done"], &env, "").0, 0);
+        assert!(crate::auto_run::reports_dir(&host_inbox).join("t-host.md").exists());
+        assert!(!crate::auto_run::reports_dir(&local_inbox).join("t-host.md").exists());
+        let (code, out, _) = call(&["--local", "Here"], &env, "");
+        assert_eq!(code, 0);
+        let (_, parsed) = written(&local_inbox).into_iter().find(|(_, p)| p.id.as_deref() == Some(out.trim())).unwrap();
+        assert_eq!(parsed.assignee.as_deref(), Some("a1"));
+        // 다른 세션은 이 머신 보드.
+        let other = TaskEnv { session_id: Some("s-other".into()), ..TaskEnv { work_inbox: None, app_data: Some(app.into()), agent_id: Some("a1".into()), session_id: None } };
+        assert_eq!(call(&["--report", "t-x", "status: done"], &other, "").0, 0);
+        assert!(crate::auto_run::reports_dir(&local_inbox).join("t-x.md").exists());
     }
 
     #[test]
@@ -757,7 +846,7 @@ mod tests {
     #[test]
     fn inbox_falls_back_to_app_data_and_fails_without_either() {
         let dir = tempfile::tempdir().unwrap();
-        let env = TaskEnv { work_inbox: None, app_data: Some(dir.path().into()), agent_id: None };
+        let env = TaskEnv { work_inbox: None, app_data: Some(dir.path().into()), agent_id: None, session_id: None };
         assert_eq!(call(&["Task"], &env, "").0, 0);
         assert_eq!(written(&dir.path().join("work-inbox")).len(), 1);
         let (code, _, err) = call(&["Task"], &TaskEnv::default(), "");
@@ -855,7 +944,7 @@ mod tests {
             {"id":"w0","title":"Old","body":"","status":"done","order":0},
             {"id":"w3","title":"Ship","body":"","status":"review","order":0,"dependsOn":["w0"],"plan":true}
         ]"#).unwrap();
-        let env = TaskEnv { work_inbox: Some(dir.path().join("work-inbox")), app_data: None, agent_id: None };
+        let env = TaskEnv { work_inbox: Some(dir.path().join("work-inbox")), app_data: None, agent_id: None, session_id: None };
         assert_eq!(call(&["Pending"], &env, "").0, 0);
         let (code, out, _) = call(&["--list"], &env, "");
         assert_eq!(code, 0);
@@ -864,10 +953,10 @@ mod tests {
         assert_eq!(call(&["--list", "x"], &env, "").0, 2);
         let empty = tempfile::tempdir().unwrap();
         std::fs::write(empty.path().join("work-items.json"), r#"[{"id":"w1","title":"a\u001b]52;c;aGk=\u0007b\tc\u009b","body":"","status":"todo","order":0}]"#).unwrap();
-        let env = TaskEnv { work_inbox: None, app_data: Some(empty.path().into()), agent_id: None };
+        let env = TaskEnv { work_inbox: None, app_data: Some(empty.path().into()), agent_id: None, session_id: None };
         assert_eq!(call(&["--list"], &env, "").1, "w1  [todo]  @unassigned  a\\x1b]52;c;aGk=\\x07b\\x09c\\x9b\n");
         std::fs::remove_file(empty.path().join("work-items.json")).unwrap();
-        assert_eq!(call(&["--list"], &TaskEnv { work_inbox: None, app_data: Some(empty.path().into()), agent_id: None }, "").1, "(no tasks)\n");
+        assert_eq!(call(&["--list"], &TaskEnv { work_inbox: None, app_data: Some(empty.path().into()), agent_id: None, session_id: None }, "").1, "(no tasks)\n");
     }
 
     #[test]
@@ -875,7 +964,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         std::fs::write(dir.path().join("profiles.json"), r#"{"agents":[{"id":"p1","name":"하나"},{"id":"p2","name":"둘"},{"id":"p3","name":"둘"}]}"#).unwrap();
         std::fs::write(dir.path().join("work-items.json"), r#"[{"id":"w1","title":"A","body":"","status":"todo","order":0}]"#).unwrap();
-        let env = TaskEnv { work_inbox: Some(dir.path().join("work-inbox")), app_data: None, agent_id: Some("p1".into()) };
+        let env = TaskEnv { work_inbox: Some(dir.path().join("work-inbox")), app_data: None, agent_id: Some("p1".into()), session_id: None };
         let (_, pending, _) = call(&["Pending"], &env, "");
         // 아는 담당(id·유일한 이름)과 보드·수신함에 있는 선행은 조용하다. 기본 담당은 확인하지 않는다.
         for args in [vec!["--to", "p2", "x"], vec!["--to", " 하나 ", "x"], vec!["--after", &format!("w1,{}", pending.trim()), "x"], vec!["x"]] {
@@ -898,7 +987,7 @@ mod tests {
             {"id":"w1","title":"A","body":"","status":"in_progress","order":0},
             {"id":"w0","title":"Old","body":"","status":"done","order":0}
         ]"#).unwrap();
-        let env = TaskEnv { work_inbox: Some(dir.path().join("work-inbox")), app_data: None, agent_id: Some("a".into()) };
+        let env = TaskEnv { work_inbox: Some(dir.path().join("work-inbox")), app_data: None, agent_id: Some("a".into()), session_id: None };
         let (code, _, err) = call(&["--done", "w1", "nope"], &env, "");
         assert_eq!(code, 1);
         assert!(err.contains("no such task: nope"));
@@ -925,7 +1014,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         std::fs::write(dir.path().join("profiles.json"), r#"{"agents":[{"id":"a1","name":"하나"}]}"#).unwrap();
         std::fs::write(dir.path().join("work-items.json"), items).unwrap();
-        let env = TaskEnv { work_inbox: Some(dir.path().join("work-inbox")), app_data: None, agent_id: Some("a1".into()) };
+        let env = TaskEnv { work_inbox: Some(dir.path().join("work-inbox")), app_data: None, agent_id: Some("a1".into()), session_id: None };
         (dir, env)
     }
     fn requests(dir: &Path) -> Vec<Parsed> {

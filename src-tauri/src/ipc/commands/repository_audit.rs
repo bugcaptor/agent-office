@@ -142,7 +142,7 @@ fn audit_repositories(
     entries
 }
 
-fn event_cwds(root: &Path) -> BTreeMap<String, u64> {
+pub(crate) fn event_cwds(root: &Path) -> BTreeMap<String, u64> {
     let mut out = BTreeMap::new();
     let Ok(days) = fs::read_dir(root) else {
         return out;

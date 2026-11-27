@@ -1652,6 +1652,11 @@ pub struct WorkItem {
     #[serde(default, skip_serializing_if = "Option::is_none")] pub schedule: Option<serde_json::Value>,
     /// 반복 예약 회차로 복제된 업무의 원본 템플릿 id.
     #[serde(default, skip_serializing_if = "Option::is_none")] pub scheduled_from: Option<String>,
+    /// 다른 머신 캐릭터에게 맡길 때 작업 폴더를 정하는 저장소(`{url, subpath?, branch?, worktree?}`).
+    /// 렌더러가 소유하고 네이티브는 보존만 한다.
+    #[serde(default, skip_serializing_if = "Option::is_none")] pub repo: Option<serde_json::Value>,
+    /// 클라이언트: 호스트에서 받은 업무(`{hostName, cwd, receivedAt}`). 렌더러가 소유한다.
+    #[serde(default, skip_serializing_if = "Option::is_none")] pub received: Option<serde_json::Value>,
     pub created_at: u64,
     pub updated_at: u64,
 }

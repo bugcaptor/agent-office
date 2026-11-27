@@ -96,6 +96,35 @@ export interface RemoteMachine {
   /** 끊겼으면 false — 마지막으로 본 명단만 꺼진 모습으로 보인다. */
   online: boolean;
   characters: RemoteCharacter[];
+  /** 그 머신에 클론이 있는 저장소(정규화한 git 원격 주소, 예 `github.com/acme/app`). 끊겨도 마지막 목록. */
+  repos: string[];
+}
+
+/** 호스트가 원격 캐릭터 머신에 묻는 업무 일(`link_work`). */
+export type LinkWorkKind = "work-send" | "work-followup" | "work-reply" | "usage";
+
+/** 클라이언트가 올리는 받은 업무 하나의 진행 상태(`link_task_report`). 끊겨 있으면 쌓였다가 최신 하나가 간다. */
+export interface LinkTaskReport {
+  /** 호스트 보드의 업무 id(받은 업무도 같은 id). */
+  taskId: string;
+  status: "todo" | "in_progress" | "review" | "done";
+  /** 최신 세션(그 머신의 세션 id). */
+  sessionId?: string;
+  /** 그 세션의 지금 단계. */
+  phase?: "working" | "waiting" | "review" | "ended";
+  /** 단계가 턴 전이(프롬프트·턴 끝)인가. */
+  transition?: boolean;
+  /** 보내기 실패 이유 코드. */
+  error?: string;
+  /** 호스트가 붙인 보내기 번호. 어느 보내기의 결과인지 가른다. */
+  sendSeq?: number;
+}
+
+/** 호스트 `link-task` 이벤트. */
+export interface LinkTaskEvent extends LinkTaskReport {
+  deviceId: string;
+  /** 호스트가 받은 시각(호스트 시계, epoch ms). */
+  receivedAt: number;
 }
 
 /** `link_remote` 응답·`link-remote` 이벤트(호스트 모드에서만 채워진다). */
