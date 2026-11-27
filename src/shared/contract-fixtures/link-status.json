@@ -1,0 +1,41 @@
+{
+  "config": { "mode": "host", "hostAddress": "https://192.168.0.5:7788" },
+  "protocol": 1,
+  "appVersion": "0.7.2",
+  "machineId": "6f1c2a9e-0000-4000-8000-000000000001",
+  "host": {
+    "pairing": { "code": "ABCDEFGH", "expiresAt": 1795000300000 },
+    "devices": [
+      {
+        "id": "d-1a2b3c4d",
+        "name": "studio-pc",
+        "machineId": "6f1c2a9e-0000-4000-8000-000000000002",
+        "pairedAt": 1795000000000,
+        "lastSeenAt": 1795000200000,
+        "appVersion": "0.7.2",
+        "connected": true,
+        "connectedAt": 1795000100000,
+        "address": "192.168.0.9"
+      },
+      {
+        "id": "d-5e6f7a8b",
+        "name": "laptop",
+        "machineId": "6f1c2a9e-0000-4000-8000-000000000003",
+        "pairedAt": 1795000000000,
+        "connected": false
+      }
+    ]
+  },
+  "client": {
+    "state": "rejected",
+    "paired": true,
+    "hostName": "host-mac",
+    "deviceId": "d-1a2b3c4d",
+    "address": "https://192.168.0.5:7788",
+    "pinnedFingerprint": "AB:CD",
+    "error": "link-protocol-mismatch",
+    "hostProtocol": 2,
+    "hostAppVersion": "0.9.0",
+    "pending": 3
+  }
+}

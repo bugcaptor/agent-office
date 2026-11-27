@@ -39,7 +39,12 @@ tokio = { version = "1", features = [
     "io-util",
     "signal",
 ] }
-axum = "0.7" # hook HTTP 서버 + ctl control 서버
+axum = { version = "0.7", features = ["ws"] } # hook HTTP 서버 + ctl control 서버, 머신 연동 WebSocket(link/)
+# 머신 연동 클라이언트(link/client.rs): 호스트 웹 상태판에 WebSocket 하나를 유지한다. axum ws와 같은 0.24.
+# TLS는 직접 만든 rustls 설정(LAN CA 고정·공인 루트)을 넘기므로 루트 묶음 feature는 켜지 않는다.
+tokio-tungstenite = { version = "0.24", default-features = false, features = ["connect", "__rustls-tls"] }
+futures-util = { version = "0.3", default-features = false, features = ["sink", "std"] }
+webpki-roots = "1" # tailnet 호스트(공인 인증서) 검증. reqwest가 이미 끌어온 것과 같다.
 # 웹 상태판 tailnet HTTPS(webdash/tls.rs). 버전은 axum·reqwest가 이미 끌어온 것과 같다.
 rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12", "logging"] }
 tokio-rustls = { version = "0.26", default-features = false, features = ["ring", "tls12"] }

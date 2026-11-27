@@ -702,3 +702,62 @@ fn web_dash_status_serializes_to_fixture() {
     let config: WebDashConfig = serde_json::from_value(serde_json::from_str::<Value>(fixture).unwrap()["config"].clone()).unwrap();
     assert_eq!(config, status.config);
 }
+
+#[test]
+fn link_status_serializes_to_fixture() {
+    use agent_office_lib::link::{
+        LinkClientState, LinkClientStatus, LinkConfig, LinkDevice, LinkHostStatus, LinkMode, LinkPairing, LinkStatus,
+    };
+    let fixture = include_str!("../../src/shared/contract-fixtures/link-status.json");
+    let status = LinkStatus {
+        config: LinkConfig { mode: LinkMode::Host, host_address: "https://192.168.0.5:7788".into() },
+        protocol: 1,
+        app_version: "0.7.2".into(),
+        machine_id: "6f1c2a9e-0000-4000-8000-000000000001".into(),
+        host: Some(LinkHostStatus {
+            pairing: Some(LinkPairing { code: "ABCDEFGH".into(), expires_at: 1795000300000 }),
+            devices: vec![
+                LinkDevice {
+                    id: "d-1a2b3c4d".into(),
+                    name: "studio-pc".into(),
+                    machine_id: "6f1c2a9e-0000-4000-8000-000000000002".into(),
+                    paired_at: 1795000000000,
+                    last_seen_at: Some(1795000200000),
+                    app_version: Some("0.7.2".into()),
+                    connected: true,
+                    connected_at: Some(1795000100000),
+                    address: Some("192.168.0.9".into()),
+                },
+                LinkDevice {
+                    id: "d-5e6f7a8b".into(),
+                    name: "laptop".into(),
+                    machine_id: "6f1c2a9e-0000-4000-8000-000000000003".into(),
+                    paired_at: 1795000000000,
+                    last_seen_at: None,
+                    app_version: None,
+                    connected: false,
+                    connected_at: None,
+                    address: None,
+                },
+            ],
+        }),
+        client: Some(LinkClientStatus {
+            state: LinkClientState::Rejected,
+            paired: true,
+            host_name: Some("host-mac".into()),
+            device_id: Some("d-1a2b3c4d".into()),
+            address: Some("https://192.168.0.5:7788".into()),
+            pinned_fingerprint: Some("AB:CD".into()),
+            error: Some("link-protocol-mismatch".into()),
+            host_protocol: Some(2),
+            host_app_version: Some("0.9.0".into()),
+            retry_at: None,
+            connected_at: None,
+            pending: 3,
+        }),
+    };
+    assert_value_eq(fixture, serde_json::to_value(&status).unwrap());
+    // 설정은 렌더러 -> 백엔드로도 오간다(link_configure).
+    let config: LinkConfig = serde_json::from_value(serde_json::from_str::<Value>(fixture).unwrap()["config"].clone()).unwrap();
+    assert_eq!(config, status.config);
+}

@@ -13,7 +13,8 @@
     "tabShortcuts": "ショートカット",
     "tabSystem": "システム",
     "tabControl": "制御",
-    "tabShell": "シェルキャラクター"
+    "tabShell": "シェルキャラクター",
+    "tabLink": "マシン連携"
   },
   "keys": {
     "present": "あり",
@@ -251,5 +252,83 @@
     "save": "保存",
     "saving": "保存中…",
     "saved": "保存しました"
+  },
+  "link": {
+    "title": "マシン連携 (tailnet・LAN)",
+    "help": "同じ tailnet や LAN にある他のコンピューターの Agent Office とホスト・クライアントで接続します。ホスト1台がタスクボードと進行を担い、クライアントは1台のホストにだけ接続します。自動検出はないので、ホストのアドレスを直接入力します。",
+    "mode": "役割",
+    "modes": {
+      "off": "オフ",
+      "host": "ホスト",
+      "client": "クライアント"
+    },
+    "modeHelp": {
+      "off": "他のコンピューターと接続しません。",
+      "host": "他のコンピューターがこのコンピューターに接続します。ホストは別のホストに接続できません。",
+      "client": "このコンピューターが1台のホストに接続します。"
+    },
+    "version": "連携プロトコル v{{protocol}} · アプリ {{app}} — 両方のプロトコルバージョンが同じ必要があります。",
+    "cancel": "キャンセル",
+    "host": {
+      "needsWebDash": "クライアントはこのコンピューターの Web ダッシュボードサーバーに接続します。制御タブで Web ダッシュボードをオンにしてください。",
+      "addresses": "クライアントに入力するアドレス:",
+      "newCode": "ペアリングコードを作成",
+      "codeIntro": "クライアントでこのコードを入力してください:",
+      "code": "ペアリングコード",
+      "codeRemaining": "残り {{minutes}}:{{seconds}} · 1回のみ使用可",
+      "cancelCode": "コードを破棄",
+      "devices": "ペアリング済みデバイス",
+      "noDevices": "ペアリング済みのデバイスはまだありません。",
+      "connected": "接続中 {{address}}",
+      "lastSeen": "最終接続 {{when}}",
+      "neverSeen": "未接続",
+      "revoke": "解除",
+      "revokeConfirm": "解除する"
+    },
+    "client": {
+      "address": "ホストアドレス",
+      "addressHelp": "ホストの 設定 › マシン連携 に表示されるアドレス(例: https://192.168.0.5:7788)を入力します。LAN アドレスはペアリング時にホスト証明書を固定し、以後も同じホストか確認します。",
+      "code": "ペアリングコード",
+      "pair": "ペアリング",
+      "pairing": "ペアリング中…",
+      "repair": "再ペアリング",
+      "forget": "ペアリングを削除",
+      "forgetHelp": "ここで削除してもホストの一覧には残ります。ホスト側でもこのデバイスを解除してください。",
+      "pending": "送信待ち {{count}} 件",
+      "pinned": "固定したホスト CA フィンガープリント:",
+      "updateThis": "ホスト(v{{host}})と連携プロトコルが異なるため接続が拒否されました。このコンピューターの Agent Office(v{{mine}})を更新してください。",
+      "updateHost": "ホスト(v{{host}})と連携プロトコルが異なるため接続が拒否されました。ホストの Agent Office を更新してください(このコンピューターは v{{mine}})。",
+      "states": {
+        "idle": "接続しない",
+        "connecting": "接続中…",
+        "connected": "接続済み",
+        "waiting": "切断 · {{seconds}}秒後に再接続",
+        "rejected": "接続拒否"
+      }
+    },
+    "errors": {
+      "link-address-invalid": "ホストアドレスを読み取れません。例: https://192.168.0.5:7788",
+      "link-address-insecure": "LAN アドレスは HTTPS のみです(http はこのコンピューターと tailnet IP のみ)。",
+      "link-not-host": "相手のコンピューターがホストモードではありません。",
+      "link-not-client": "ペアリングはクライアントモードでのみ行えます。",
+      "link-pair-code-invalid": "コードが違います。何度も間違えるとホストがコードを破棄します。",
+      "link-pair-no-code": "ホストに有効なコードがありません。ホストで新しいコードを作成してください。",
+      "link-pair-bad-request": "ペアリング要求が正しくありません。",
+      "link-pair-bad-response": "ホストの応答を読み取れません。",
+      "link-pair-host-unverified": "相手がコードを証明できませんでした。正しいホストのアドレスか確認してください。",
+      "link-self": "このコンピューター自身には接続できません。",
+      "link-tls-pin-mismatch": "ホスト証明書が想定と異なります。中間者の可能性があるため中止しました。",
+      "link-tls-failed": "ホスト証明書を確認できません。tailnet では IP ではなく .ts.net の名前を使ってください。",
+      "link-tls-not-pinned": "このアドレスには固定した証明書がありません。このアドレスで再ペアリングしてください。",
+      "link-unreachable": "ホストに到達できません。",
+      "link-host-off": "ホストがホストモードをオフにしたか、連携を受け付けていません。",
+      "link-unauthorized": "ホストでこのデバイスが解除されました。再ペアリングしてください。",
+      "link-protocol-mismatch": "連携プロトコルのバージョンが異なるため接続が拒否されました。古い方のアプリを更新してください。",
+      "link-host-changed": "このアドレスのホストはペアリングしたホストと異なります。再ペアリングしてください。",
+      "link-disconnected": "切断されました。",
+      "link-handshake-failed": "ホストとのハンドシェイクを完了できませんでした。",
+      "link-device-offline": "デバイスが接続されていません。",
+      "link-http": "ホストが HTTP {{code}} を返しました。"
+    }
   }
 }

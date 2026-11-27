@@ -13,7 +13,8 @@
     "tabShortcuts": "快捷鍵",
     "tabSystem": "系統",
     "tabControl": "控制",
-    "tabShell": "Shell 角色"
+    "tabShell": "Shell 角色",
+    "tabLink": "機器連動"
   },
   "keys": {
     "present": "已設定",
@@ -251,5 +252,83 @@
     "save": "儲存",
     "saving": "儲存中…",
     "saved": "已儲存"
+  },
+  "link": {
+    "title": "機器連動(tailnet·區域網路)",
+    "help": "以主機-用戶端方式連接同一 tailnet 或區域網路中其他電腦上的 Agent Office。由一台主機負責任務板與編排,用戶端只連接一台主機。沒有自動探索,請手動輸入主機位址。",
+    "mode": "角色",
+    "modes": {
+      "off": "關閉",
+      "host": "主機",
+      "client": "用戶端"
+    },
+    "modeHelp": {
+      "off": "不與其他電腦連接。",
+      "host": "其他電腦連到這台電腦。主機不能連到其他主機。",
+      "client": "這台電腦連到一台主機。"
+    },
+    "version": "連動協定 v{{protocol}} · 應用程式 {{app}} — 兩台電腦的協定版本必須相同。",
+    "cancel": "取消",
+    "host": {
+      "needsWebDash": "用戶端透過這台電腦的網頁狀態板伺服器連線。請在控制分頁開啟網頁狀態板。",
+      "addresses": "在用戶端輸入的位址:",
+      "newCode": "產生配對碼",
+      "codeIntro": "請在用戶端輸入此配對碼:",
+      "code": "配對碼",
+      "codeRemaining": "剩餘 {{minutes}}:{{seconds}} · 只能使用一次",
+      "cancelCode": "作廢配對碼",
+      "devices": "已配對裝置",
+      "noDevices": "尚無已配對的裝置。",
+      "connected": "已連線 {{address}}",
+      "lastSeen": "上次連線 {{when}}",
+      "neverSeen": "從未連線",
+      "revoke": "解除",
+      "revokeConfirm": "確認解除"
+    },
+    "client": {
+      "address": "主機位址",
+      "addressHelp": "輸入主機 設定 › 機器連動 中顯示的位址(例如 https://192.168.0.5:7788)。區域網路位址會在配對時固定主機憑證,之後用來確認是同一台主機。",
+      "code": "配對碼",
+      "pair": "配對",
+      "pairing": "配對中…",
+      "repair": "重新配對",
+      "forget": "刪除配對",
+      "forgetHelp": "在這裡刪除後,主機清單仍會保留此裝置。請也在主機上解除。",
+      "pending": "待傳送 {{count}} 項",
+      "pinned": "已固定的主機 CA 指紋:",
+      "updateThis": "與主機(v{{host}})的連動協定不同,連線遭拒。請更新這台電腦的 Agent Office(v{{mine}})。",
+      "updateHost": "與主機(v{{host}})的連動協定不同,連線遭拒。請更新主機上的 Agent Office(這台電腦為 v{{mine}})。",
+      "states": {
+        "idle": "未連線",
+        "connecting": "連線中…",
+        "connected": "已連線",
+        "waiting": "已中斷 · {{seconds}} 秒後重新連線",
+        "rejected": "連線遭拒"
+      }
+    },
+    "errors": {
+      "link-address-invalid": "無法辨識主機位址。例如:https://192.168.0.5:7788",
+      "link-address-insecure": "區域網路位址只能用 HTTPS(http 僅限本機與 tailnet IP)。",
+      "link-not-host": "對方電腦不是主機模式。",
+      "link-not-client": "只能在用戶端模式下配對。",
+      "link-pair-code-invalid": "配對碼不正確。多次錯誤後主機會作廢配對碼。",
+      "link-pair-no-code": "主機沒有有效的配對碼。請在主機上重新產生。",
+      "link-pair-bad-request": "配對請求無效。",
+      "link-pair-bad-response": "無法讀取主機的回應。",
+      "link-pair-host-unverified": "對方無法證明配對碼。請確認位址是正確的主機。",
+      "link-self": "不能連到這台電腦自己。",
+      "link-tls-pin-mismatch": "主機憑證與預期不符,可能有人在中間攔截,已停止配對。",
+      "link-tls-failed": "無法驗證主機憑證。在 tailnet 中請使用 .ts.net 名稱而非 IP。",
+      "link-tls-not-pinned": "此位址沒有已固定的憑證。請用此位址重新配對。",
+      "link-unreachable": "無法連到主機。",
+      "link-host-off": "主機已關閉主機模式或不接受連動。",
+      "link-unauthorized": "主機已解除此裝置。請重新配對。",
+      "link-protocol-mismatch": "連動協定版本不同,連線遭拒。請更新較舊的一方。",
+      "link-host-changed": "此位址的主機不是配對過的主機。請重新配對。",
+      "link-disconnected": "連線已中斷。",
+      "link-handshake-failed": "未能完成與主機的交握。",
+      "link-device-offline": "裝置未連線。",
+      "link-http": "主機回應 HTTP {{code}}。"
+    }
   }
 }

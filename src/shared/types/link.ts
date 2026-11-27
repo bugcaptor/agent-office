@@ -1,0 +1,74 @@
+// src/shared/types/link.ts
+//
+// 머신 연동(tailnet·LAN 안의 앱끼리 호스트-클라이언트). Rust `link::*` 미러.
+
+/** 끔·호스트·클라이언트 중 하나. 클라이언트는 호스트 하나에만 붙고, 호스트는 다른 호스트에 붙지 못한다. */
+export type LinkMode = "off" | "host" | "client";
+
+/** `link.json`. */
+export interface LinkConfig {
+  mode: LinkMode;
+  /** 클라이언트가 붙을 호스트 주소(정리한 모양, 예 `https://192.168.0.5:7788`). 비면 붙지 않는다. */
+  hostAddress: string;
+}
+
+/** 호스트에 페어링된 기기 하나. */
+export interface LinkDevice {
+  id: string;
+  name: string;
+  machineId: string;
+  /** epoch ms. */
+  pairedAt: number;
+  lastSeenAt?: number;
+  appVersion?: string;
+  connected: boolean;
+  connectedAt?: number;
+  /** 붙어 있는 연결의 상대 주소. */
+  address?: string;
+}
+
+/** 호스트가 띄운 페어링 코드. */
+export interface LinkPairing {
+  code: string;
+  /** 만료(epoch ms). */
+  expiresAt: number;
+}
+
+export interface LinkHostStatus {
+  pairing?: LinkPairing;
+  devices: LinkDevice[];
+}
+
+export type LinkClientState = "idle" | "connecting" | "connected" | "waiting" | "rejected";
+
+export interface LinkClientStatus {
+  state: LinkClientState;
+  paired: boolean;
+  hostName?: string;
+  deviceId?: string;
+  address?: string;
+  /** LAN 주소로 페어링했다면 고정한 호스트 CA 지문. */
+  pinnedFingerprint?: string;
+  /** 이유 코드(`link-unauthorized`·`link-protocol-mismatch`·`link-unreachable: …` 등). */
+  error?: string;
+  hostProtocol?: number;
+  hostAppVersion?: string;
+  /** 다시 붙어 볼 때(epoch ms, waiting일 때만). */
+  retryAt?: number;
+  connectedAt?: number;
+  /** 아직 호스트가 받지 않은 이벤트·보고 수. */
+  pending: number;
+}
+
+/** `link_status` 응답·`link-status` 이벤트. */
+export interface LinkStatus {
+  config: LinkConfig;
+  /** 이 앱의 연동 프로토콜 버전(앱 버전과 별개, 같아야 붙는다). */
+  protocol: number;
+  appVersion: string;
+  machineId: string;
+  /** 호스트 모드일 때만. */
+  host?: LinkHostStatus;
+  /** 클라이언트 모드일 때만. */
+  client?: LinkClientStatus;
+}

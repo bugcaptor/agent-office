@@ -105,5 +105,10 @@
       "other": "🌐 網頁:{{op}}",
       "shell-run": "🌐 網頁:在 {{name}} 的 shell 中執行 — {{detail}}"
     }
+  },
+  "link": {
+    "devices": "🔗 連動裝置 {{count}}",
+    "hostOnline": "🔗 已連線 {{name}}",
+    "hostOffline": "🔗 {{name}} 已中斷"
   }
 }

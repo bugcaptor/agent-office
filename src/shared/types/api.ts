@@ -36,6 +36,7 @@ import type {
 } from './settings';
 import type { ApiKeyStatus } from './apiKeys';
 import type { ShellAssistConfig, ShellAssistEndpoint, ShellSuggestion } from './shellAssist';
+import type { LinkConfig, LinkStatus } from './link';
 import type { AwardRecord, AwardSpeech, AwardsFile } from './awards';
 import type { DiaryEntry, WorkLogItem } from './diary';
 import type { MemoSheet, MemoSheetMeta } from './memo';
@@ -256,6 +257,19 @@ export interface AgentOfficeApi {
   webDashPublishLabels(labels: Record<string, WebDashLabel>): Promise<void>;
   /** 웹 명령(`web-dash-control` 이벤트)에 답한다. `error`가 있으면 거절이다. */
   webDashControlReply(requestId: string, error?: string, data?: unknown): Promise<boolean>;
+  /** 머신 연동 상태. */
+  linkStatus(): Promise<LinkStatus>;
+  /** 모드·호스트 주소를 저장하고 건다. 주소가 잘못되면 이유 코드로 거절한다. */
+  linkConfigure(config: LinkConfig): Promise<LinkStatus>;
+  /** 호스트: 새 페어링 코드를 띄운다(5분). */
+  linkStartPairing(): Promise<LinkStatus>;
+  linkCancelPairing(): Promise<LinkStatus>;
+  /** 호스트: 페어링된 기기 하나를 해제한다(붙어 있으면 끊긴다). */
+  linkRevokeDevice(deviceId: string): Promise<LinkStatus>;
+  /** 클라이언트: 호스트 주소와 호스트가 띄운 코드로 페어링한다. */
+  linkPair(address: string, code: string): Promise<LinkStatus>;
+  /** 클라이언트: 이 기기의 페어링을 지운다. */
+  linkForgetHost(): Promise<LinkStatus>;
   /** 셸 캐릭터 LLM 설정(`shell-assist.json`). */
   shellAssistGetConfig(): Promise<ShellAssistConfig>;
   /** 저장하고 다듬은 값을 돌려준다. */

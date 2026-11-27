@@ -105,5 +105,10 @@
       "other": "🌐 网页:{{op}}",
       "shell-run": "🌐 网页:在 {{name}} 的 shell 中执行 — {{detail}}"
     }
+  },
+  "link": {
+    "devices": "🔗 联动设备 {{count}}",
+    "hostOnline": "🔗 已连接 {{name}}",
+    "hostOffline": "🔗 {{name}} 已断开"
   }
 }

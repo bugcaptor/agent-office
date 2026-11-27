@@ -122,5 +122,10 @@
       "other": "🌐 웹: {{op}}",
       "shell-run": "🌐 웹: {{name}} 셸에서 실행 — {{detail}}"
     }
+  },
+  "link": {
+    "devices": "🔗 연동 기기 {{count}}",
+    "hostOnline": "🔗 {{name}}에 연결됨",
+    "hostOffline": "🔗 {{name}} 연결 끊김"
   }
 }

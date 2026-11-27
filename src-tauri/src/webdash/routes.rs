@@ -112,7 +112,11 @@ fn router(ctx: Arc<Dash>) -> Router {
         .route("/shell/:agent/run", post(shell_run))
         .route("/office-agent/:op", post(office_agent_command))
         .layer(axum::middleware::from_fn_with_state(ctx.clone(), auth));
-    Router::new()
+    let link = ctx.dash.link_host().map(|host| {
+        let dash = Arc::downgrade(&ctx.dash);
+        crate::link::host::router(host, Arc::new(move || dash.upgrade().and_then(|d| d.lan_fingerprint())))
+    });
+    let router = Router::new()
         .route("/", get(page))
         .route("/dash.css", get(style_asset))
         .route("/dash.js", get(app_js_asset))
@@ -120,7 +124,11 @@ fn router(ctx: Arc<Dash>) -> Router {
         .route("/shell.js", get(shell_js_asset))
         .route("/ca.crt", get(lan_ca))
         .nest("/api", api)
-        .with_state(ctx)
+        .with_state(ctx);
+    match link {
+        Some(link) => router.merge(link),
+        None => router,
+    }
 }
 
 // ── 인증 ─────────────────────────────────────────────────────────────

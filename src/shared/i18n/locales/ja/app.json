@@ -105,5 +105,10 @@
       "other": "🌐 Web: {{op}}",
       "shell-run": "🌐 Web: {{name}} のシェルで実行 — {{detail}}"
     }
+  },
+  "link": {
+    "devices": "🔗 連携デバイス {{count}}",
+    "hostOnline": "🔗 {{name}} に接続中",
+    "hostOffline": "🔗 {{name}} 切断"
   }
 }

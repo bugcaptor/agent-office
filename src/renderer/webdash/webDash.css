@@ -42,3 +42,14 @@
   white-space: nowrap;
   font-size: 11px;
 }
+
+/* 머신 연동(설정 › 머신 연동, 표시기). */
+.link-offline { color: var(--accent-warn); }
+.link-error { font-size: 12px; color: var(--accent-warn); }
+.link-pairing { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.link-code { font-size: 20px; letter-spacing: 0.15em; padding: 2px 8px; border: 1px solid var(--border-lite); user-select: text; }
+.link-devices { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.link-device, .link-client-state { display: flex; gap: 8px; align-items: center; }
+.link-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--text-dim); flex: 0 0 auto; }
+.link-dot-on { background: var(--accent); }
+.link-pair-form { display: flex; flex-direction: column; gap: 8px; }

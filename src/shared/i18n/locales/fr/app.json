@@ -105,5 +105,10 @@
       "other": "🌐 Web : {{op}}",
       "shell-run": "🌐 Web : exécuté dans le shell de {{name}} — {{detail}}"
     }
+  },
+  "link": {
+    "devices": "🔗 Appareils liés {{count}}",
+    "hostOnline": "🔗 Connecté à {{name}}",
+    "hostOffline": "🔗 {{name}} déconnecté"
   }
 }

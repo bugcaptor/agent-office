@@ -13,7 +13,8 @@
     "tabShortcuts": "단축키",
     "tabSystem": "시스템",
     "tabControl": "제어",
-    "tabShell": "셸 캐릭터"
+    "tabShell": "셸 캐릭터",
+    "tabLink": "머신 연동"
   },
   "keys": {
     "present": "있음",
@@ -251,5 +252,83 @@
     "save": "저장",
     "saving": "저장 중…",
     "saved": "저장했습니다"
+  },
+  "link": {
+    "title": "머신 연동 (tailnet·LAN)",
+    "help": "같은 tailnet이나 LAN에 있는 다른 컴퓨터의 Agent Office와 호스트-클라이언트로 연결합니다. 호스트 하나가 작업보드와 진행을 맡고, 클라이언트는 호스트 하나에만 붙습니다. 자동으로 찾지 않으니 호스트 주소를 직접 넣습니다.",
+    "mode": "역할",
+    "modes": {
+      "off": "끔",
+      "host": "호스트",
+      "client": "클라이언트"
+    },
+    "modeHelp": {
+      "off": "다른 컴퓨터와 연결하지 않습니다.",
+      "host": "다른 컴퓨터가 이 컴퓨터에 붙습니다. 호스트는 다른 호스트에 붙지 못합니다.",
+      "client": "이 컴퓨터가 호스트 하나에 붙습니다."
+    },
+    "version": "연동 프로토콜 v{{protocol}} · 앱 {{app}} — 두 컴퓨터의 프로토콜 버전이 같아야 붙습니다.",
+    "cancel": "취소",
+    "host": {
+      "needsWebDash": "클라이언트는 이 컴퓨터의 웹 상태판 서버로 붙습니다. 제어 탭에서 웹 상태판을 켜세요.",
+      "addresses": "클라이언트에 넣을 주소:",
+      "newCode": "페어링 코드 만들기",
+      "codeIntro": "클라이언트에서 이 코드를 넣으세요:",
+      "code": "페어링 코드",
+      "codeRemaining": "{{minutes}}:{{seconds}} 남음 · 한 번만 쓸 수 있습니다",
+      "cancelCode": "코드 버리기",
+      "devices": "페어링된 기기",
+      "noDevices": "아직 페어링된 기기가 없습니다.",
+      "connected": "연결됨 {{address}}",
+      "lastSeen": "마지막 연결 {{when}}",
+      "neverSeen": "아직 연결한 적 없음",
+      "revoke": "해제",
+      "revokeConfirm": "해제하기"
+    },
+    "client": {
+      "address": "호스트 주소",
+      "addressHelp": "호스트 설정 › 머신 연동에 보이는 주소(예: https://192.168.0.5:7788)를 넣습니다. LAN 주소는 페어링 때 호스트 인증서를 고정해 이후에도 같은 호스트인지 확인합니다.",
+      "code": "페어링 코드",
+      "pair": "페어링",
+      "pairing": "페어링 중…",
+      "repair": "다시 페어링",
+      "forget": "페어링 지우기",
+      "forgetHelp": "페어링을 지워도 호스트 목록에는 남습니다. 호스트에서도 이 기기를 해제하세요.",
+      "pending": "보낼 것 {{count}}개 대기",
+      "pinned": "고정한 호스트 CA 지문:",
+      "updateThis": "호스트(v{{host}})와 연동 프로토콜이 달라 연결이 거부됐습니다. 이 컴퓨터의 Agent Office(v{{mine}})를 업데이트하세요.",
+      "updateHost": "호스트(v{{host}})와 연동 프로토콜이 달라 연결이 거부됐습니다. 호스트의 Agent Office를 업데이트하세요(이 컴퓨터 v{{mine}}).",
+      "states": {
+        "idle": "연결 안 함",
+        "connecting": "연결 중…",
+        "connected": "연결됨",
+        "waiting": "끊김 · {{seconds}}초 뒤 다시 연결",
+        "rejected": "연결 거부됨"
+      }
+    },
+    "errors": {
+      "link-address-invalid": "호스트 주소를 읽지 못했습니다. 예: https://192.168.0.5:7788",
+      "link-address-insecure": "LAN 주소는 HTTPS로만 붙습니다(http는 이 컴퓨터와 tailnet IP만).",
+      "link-not-host": "상대 컴퓨터가 호스트 모드가 아닙니다.",
+      "link-not-client": "클라이언트 모드에서만 페어링합니다.",
+      "link-pair-code-invalid": "코드가 맞지 않습니다. 여러 번 틀리면 호스트가 코드를 버립니다.",
+      "link-pair-no-code": "호스트에 유효한 코드가 없습니다. 호스트에서 코드를 새로 만드세요.",
+      "link-pair-bad-request": "페어링 요청이 올바르지 않습니다.",
+      "link-pair-bad-response": "호스트 응답을 읽지 못했습니다.",
+      "link-pair-host-unverified": "상대가 코드를 증명하지 못했습니다. 주소가 맞는 호스트인지 확인하세요.",
+      "link-self": "이 컴퓨터 자신에게는 붙을 수 없습니다.",
+      "link-tls-pin-mismatch": "호스트 인증서가 예상과 다릅니다. 가운데서 누가 끼어들었을 수 있어 멈췄습니다.",
+      "link-tls-failed": "호스트 인증서를 확인하지 못했습니다. tailnet은 IP 대신 .ts.net 이름 주소를 쓰세요.",
+      "link-tls-not-pinned": "이 주소로는 고정한 인증서가 없습니다. 이 주소로 다시 페어링하세요.",
+      "link-unreachable": "호스트에 닿지 못했습니다.",
+      "link-host-off": "호스트가 호스트 모드를 껐거나 연동을 받지 않습니다.",
+      "link-unauthorized": "호스트에서 이 기기를 해제했습니다. 다시 페어링하세요.",
+      "link-protocol-mismatch": "연동 프로토콜 버전이 달라 연결이 거부됐습니다. 오래된 쪽 앱을 업데이트하세요.",
+      "link-host-changed": "이 주소의 호스트가 페어링한 호스트와 다릅니다. 다시 페어링하세요.",
+      "link-disconnected": "연결이 끊겼습니다.",
+      "link-handshake-failed": "호스트와 인사를 마치지 못했습니다.",
+      "link-device-offline": "기기가 연결돼 있지 않습니다.",
+      "link-http": "호스트가 HTTP {{code}}로 답했습니다."
+    }
   }
 }

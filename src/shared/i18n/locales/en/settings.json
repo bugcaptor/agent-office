@@ -13,7 +13,8 @@
     "tabShortcuts": "Shortcuts",
     "tabSystem": "System",
     "tabControl": "Control",
-    "tabShell": "Shell characters"
+    "tabShell": "Shell characters",
+    "tabLink": "Machines"
   },
   "keys": {
     "present": "set",
@@ -251,5 +252,83 @@
     "save": "Save",
     "saving": "Saving…",
     "saved": "Saved"
+  },
+  "link": {
+    "title": "Machine link (tailnet / LAN)",
+    "help": "Connect Agent Office on other computers in the same tailnet or LAN as host and clients. One host owns the task board and orchestration; a client attaches to a single host. There is no discovery — enter the host address yourself.",
+    "mode": "Role",
+    "modes": {
+      "off": "Off",
+      "host": "Host",
+      "client": "Client"
+    },
+    "modeHelp": {
+      "off": "Don't connect to other computers.",
+      "host": "Other computers attach to this one. A host can't attach to another host.",
+      "client": "This computer attaches to one host."
+    },
+    "version": "Link protocol v{{protocol}} · app {{app}} — both computers need the same protocol version.",
+    "cancel": "Cancel",
+    "host": {
+      "needsWebDash": "Clients connect through this computer's web dashboard server. Turn on the web dashboard in the Control tab.",
+      "addresses": "Address to enter on the client:",
+      "newCode": "Create pairing code",
+      "codeIntro": "Enter this code on the client:",
+      "code": "Pairing code",
+      "codeRemaining": "{{minutes}}:{{seconds}} left · single use",
+      "cancelCode": "Discard code",
+      "devices": "Paired devices",
+      "noDevices": "No paired devices yet.",
+      "connected": "Connected {{address}}",
+      "lastSeen": "Last connected {{when}}",
+      "neverSeen": "Never connected",
+      "revoke": "Unpair",
+      "revokeConfirm": "Unpair now"
+    },
+    "client": {
+      "address": "Host address",
+      "addressHelp": "Enter the address shown in the host's Settings › Machines (e.g. https://192.168.0.5:7788). For LAN addresses the host certificate is pinned at pairing so later connections can check it is the same host.",
+      "code": "Pairing code",
+      "pair": "Pair",
+      "pairing": "Pairing…",
+      "repair": "Pair again",
+      "forget": "Forget pairing",
+      "forgetHelp": "Forgetting here leaves this device in the host's list. Unpair it on the host too.",
+      "pending": "{{count}} waiting to send",
+      "pinned": "Pinned host CA fingerprint:",
+      "updateThis": "The host (v{{host}}) speaks a different link protocol and refused the connection. Update Agent Office on this computer (v{{mine}}).",
+      "updateHost": "The host (v{{host}}) speaks a different link protocol and refused the connection. Update Agent Office on the host (this computer is v{{mine}}).",
+      "states": {
+        "idle": "Not connecting",
+        "connecting": "Connecting…",
+        "connected": "Connected",
+        "waiting": "Disconnected · retrying in {{seconds}}s",
+        "rejected": "Connection refused"
+      }
+    },
+    "errors": {
+      "link-address-invalid": "Couldn't read the host address. Example: https://192.168.0.5:7788",
+      "link-address-insecure": "LAN addresses need HTTPS (plain http only for this computer and tailnet IPs).",
+      "link-not-host": "The other computer isn't in host mode.",
+      "link-not-client": "Pairing is only available in client mode.",
+      "link-pair-code-invalid": "Wrong code. After several wrong tries the host discards the code.",
+      "link-pair-no-code": "The host has no valid code. Create a new code on the host.",
+      "link-pair-bad-request": "The pairing request was invalid.",
+      "link-pair-bad-response": "Couldn't read the host's reply.",
+      "link-pair-host-unverified": "The other side couldn't prove the code. Check that the address is the right host.",
+      "link-self": "This computer can't attach to itself.",
+      "link-tls-pin-mismatch": "The host certificate isn't the expected one. Someone may be in the middle, so pairing stopped.",
+      "link-tls-failed": "Couldn't verify the host certificate. On a tailnet, use the .ts.net name instead of the IP.",
+      "link-tls-not-pinned": "No pinned certificate for this address. Pair again using this address.",
+      "link-unreachable": "Couldn't reach the host.",
+      "link-host-off": "The host turned host mode off or isn't accepting links.",
+      "link-unauthorized": "The host unpaired this device. Pair again.",
+      "link-protocol-mismatch": "Different link protocol versions; the connection was refused. Update the older app.",
+      "link-host-changed": "The host at this address isn't the one you paired with. Pair again.",
+      "link-disconnected": "Disconnected.",
+      "link-handshake-failed": "Couldn't finish the handshake with the host.",
+      "link-device-offline": "The device isn't connected.",
+      "link-http": "The host answered HTTP {{code}}."
+    }
   }
 }

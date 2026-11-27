@@ -69,6 +69,7 @@ pub mod types;
 pub mod usage;
 mod editor;
 pub mod webdash;
+pub mod link;
 // pub: contract 테스트가 `agent_office_lib::workdir::{GitStatusResult, ...}`에
 // 닿아야 한다(model.rs가 이미 `pub use model::*`로 재수출). 로직 변경 없음 —
 // 가시성만 승격.
@@ -787,6 +788,15 @@ pub fn run() {
                 },
                 Arc::new(crate::webdash::TauriDashEvents(handle.clone())),
             ));
+            // 머신 연동(`link.json`): 호스트면 웹 상태판 서버에 `/link/*`를 붙이고, 클라이언트면 호스트에 붙는다.
+            // 서버 라우터를 만들기 전에 걸어야 한다.
+            let link = crate::link::LinkState::new(
+                Some(data_dir.clone()),
+                Arc::new(crate::webdash::computer_name),
+                Arc::new(crate::link::TauriLinkEvents(handle.clone())),
+            );
+            web_dash.set_link_host(link.host.clone());
+            link.start();
             if web_dash.config().enabled {
                 tauri::async_runtime::block_on(web_dash.reconcile(control_ctx.clone(), web_dash.clone()));
             }
@@ -842,6 +852,7 @@ pub fn run() {
                 key_store,
                 run_recipes,
                 web_dash,
+                link,
             });
             Ok(())
         })
@@ -944,6 +955,13 @@ pub fn run() {
             ipc::commands::web_dash_rotate_token,
             ipc::commands::web_dash_publish_labels,
             ipc::commands::web_dash_control_reply,
+            ipc::commands::link_status,
+            ipc::commands::link_configure,
+            ipc::commands::link_start_pairing,
+            ipc::commands::link_cancel_pairing,
+            ipc::commands::link_revoke_device,
+            ipc::commands::link_pair,
+            ipc::commands::link_forget_host,
             ipc::commands::scan_discussion_inbox,
             ipc::commands::auto_run_judge,
             ipc::commands::load_work_items,

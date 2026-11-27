@@ -105,5 +105,10 @@
       "other": "🌐 Web: {{op}}",
       "shell-run": "🌐 Web: ran in {{name}} shell — {{detail}}"
     }
+  },
+  "link": {
+    "devices": "🔗 Linked devices {{count}}",
+    "hostOnline": "🔗 Connected to {{name}}",
+    "hostOffline": "🔗 {{name}} disconnected"
   }
 }

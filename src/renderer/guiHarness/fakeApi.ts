@@ -25,6 +25,7 @@ import type {
   DiscussionSessionRequest,
   UsageSnapshot,
   WebDashStatus,
+  LinkStatus,
   WorkItem,
   ChatLogItem,
   PendingAsk,
@@ -32,6 +33,7 @@ import type {
 } from "@shared/types";
 import memoFixture from "@shared/contract-fixtures/memo-sheet.current.json";
 import webDashStatusFixture from "@shared/contract-fixtures/web-dash-status.json";
+import linkStatusFixture from "@shared/contract-fixtures/link-status.json";
 import { emitTauriEvent } from "./tauriStub";
 import { loadScenario } from "./scenarios";
 import { sameWorkValue } from "../workpanels/workItemSync";
@@ -335,6 +337,11 @@ const impl: Partial<AgentOfficeApi> = {
     return status;
   },
   async webDashPublishLabels() {},
+  async linkStatus() {
+    // 호스트 모드 화면: 붙은 기기 하나·끊긴 기기 하나·떠 있는 코드. 코드는 지금부터 5분.
+    const { client: _client, ...status } = linkStatusFixture as LinkStatus;
+    return { ...status, host: status.host && { ...status.host, pairing: { code: "ABCDEFGH", expiresAt: Date.now() + 5 * 60_000 } } };
+  },
   async shellAssistGetConfig() {
     return {
       endpoints: [{ label: "4090 PC", baseUrl: "http://pc.tailnet:11434", model: "qwen2.5-coder:14b", apiKey: "", enabled: true }],

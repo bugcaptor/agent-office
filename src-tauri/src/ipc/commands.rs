@@ -41,6 +41,8 @@ mod doc_view;
 // 웹 상태판 설정·다리.
 mod chat_view;
 mod web_dash;
+// 머신 연동 설정·페어링.
+mod link;
 // 셸 캐릭터 LLM 설정·명령 제안.
 mod shell_assist;
 
@@ -68,6 +70,7 @@ pub(crate) use usage::*;
 pub(crate) use doc_view::*;
 pub(crate) use chat_view::*;
 pub(crate) use web_dash::*;
+pub(crate) use link::*;
 pub(crate) use shell_assist::*;
 
 #[cfg(test)]

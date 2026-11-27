@@ -23,13 +23,13 @@
 // 앱 화면에는 명령마다 `web-dash-activity`로 짧은 알림을 띄운다.
 
 mod files;
-mod lan_tls;
+pub(crate) mod lan_tls;
 pub mod log;
 mod markdown;
 pub mod net;
 mod routes;
 mod work_progress;
-mod tls;
+pub(crate) mod tls;
 pub(crate) use routes::foreground_cli;
 
 use std::collections::HashMap;
@@ -178,6 +178,8 @@ pub struct WebDashState {
     pub app_logs: log::LogCache,
     pub bridge: Arc<AutoRunBridge>,
     events: Arc<dyn WebDashEvents>,
+    /// 머신 연동 호스트(`crate::link`). 걸려 있으면 `/link/pair`·`/link/ws`를 같은 서버에서 받는다.
+    link: std::sync::OnceLock<Arc<crate::link::LinkHost>>,
 }
 
 impl WebDashState {
@@ -215,7 +217,22 @@ impl WebDashState {
             app_logs,
             bridge,
             events,
+            link: std::sync::OnceLock::new(),
         }
+    }
+
+    /// 머신 연동 호스트를 건다(앱 시작 때 한 번, 서버를 띄우기 전에).
+    pub fn set_link_host(&self, host: Arc<crate::link::LinkHost>) {
+        let _ = self.link.set(host);
+    }
+
+    pub fn link_host(&self) -> Option<Arc<crate::link::LinkHost>> {
+        self.link.get().cloned()
+    }
+
+    /// LAN 자체 서명 HTTPS의 CA 지문(열지 않았으면 None). 연동 페어링이 클라이언트가 본 지문과 맞춰 본다.
+    pub fn lan_fingerprint(&self) -> Option<String> {
+        self.lan.lock().unwrap().as_ref().map(|l| l.fingerprint.clone())
     }
 
     pub fn config(&self) -> WebDashConfig {
@@ -490,6 +507,10 @@ impl WebDashState {
         if let Some(installed) = self.installed.lock().unwrap().take() {
             for s in installed.shutdowns {
                 let _ = s.send(());
+            }
+            // 업그레이드된 연동 WebSocket은 리스너와 따로 돈다.
+            if let Some(link) = self.link_host() {
+                link.disconnect_all();
             }
         }
     }

@@ -13,7 +13,8 @@
     "tabShortcuts": "快捷键",
     "tabSystem": "系统",
     "tabControl": "控制",
-    "tabShell": "Shell 角色"
+    "tabShell": "Shell 角色",
+    "tabLink": "机器联动"
   },
   "keys": {
     "present": "已设置",
@@ -251,5 +252,83 @@
     "save": "保存",
     "saving": "保存中…",
     "saved": "已保存"
+  },
+  "link": {
+    "title": "机器联动(tailnet·局域网)",
+    "help": "以主机-客户端方式连接同一 tailnet 或局域网中其他电脑上的 Agent Office。由一台主机负责任务板和编排,客户端只连接一台主机。没有自动发现,请手动输入主机地址。",
+    "mode": "角色",
+    "modes": {
+      "off": "关闭",
+      "host": "主机",
+      "client": "客户端"
+    },
+    "modeHelp": {
+      "off": "不与其他电脑连接。",
+      "host": "其他电脑连接到本机。主机不能连接其他主机。",
+      "client": "本机连接到一台主机。"
+    },
+    "version": "联动协议 v{{protocol}} · 应用 {{app}} — 两台电脑的协议版本必须相同。",
+    "cancel": "取消",
+    "host": {
+      "needsWebDash": "客户端通过本机的网页状态板服务器连接。请在控制标签页中开启网页状态板。",
+      "addresses": "在客户端输入的地址:",
+      "newCode": "生成配对码",
+      "codeIntro": "请在客户端输入此配对码:",
+      "code": "配对码",
+      "codeRemaining": "剩余 {{minutes}}:{{seconds}} · 仅可使用一次",
+      "cancelCode": "作废配对码",
+      "devices": "已配对设备",
+      "noDevices": "还没有已配对的设备。",
+      "connected": "已连接 {{address}}",
+      "lastSeen": "上次连接 {{when}}",
+      "neverSeen": "从未连接",
+      "revoke": "解除",
+      "revokeConfirm": "确认解除"
+    },
+    "client": {
+      "address": "主机地址",
+      "addressHelp": "输入主机 设置 › 机器联动 中显示的地址(例如 https://192.168.0.5:7788)。局域网地址会在配对时固定主机证书,之后用来确认是同一台主机。",
+      "code": "配对码",
+      "pair": "配对",
+      "pairing": "配对中…",
+      "repair": "重新配对",
+      "forget": "删除配对",
+      "forgetHelp": "在这里删除后,主机列表中仍会保留本设备。请也在主机上解除。",
+      "pending": "待发送 {{count}} 项",
+      "pinned": "已固定的主机 CA 指纹:",
+      "updateThis": "与主机(v{{host}})的联动协议不同,连接被拒绝。请更新本机的 Agent Office(v{{mine}})。",
+      "updateHost": "与主机(v{{host}})的联动协议不同,连接被拒绝。请更新主机上的 Agent Office(本机为 v{{mine}})。",
+      "states": {
+        "idle": "未连接",
+        "connecting": "连接中…",
+        "connected": "已连接",
+        "waiting": "已断开 · {{seconds}} 秒后重连",
+        "rejected": "连接被拒绝"
+      }
+    },
+    "errors": {
+      "link-address-invalid": "无法识别主机地址。例如:https://192.168.0.5:7788",
+      "link-address-insecure": "局域网地址只能用 HTTPS(http 仅限本机和 tailnet IP)。",
+      "link-not-host": "对方电脑不是主机模式。",
+      "link-not-client": "只能在客户端模式下配对。",
+      "link-pair-code-invalid": "配对码不正确。多次错误后主机会作废配对码。",
+      "link-pair-no-code": "主机没有有效的配对码。请在主机上重新生成。",
+      "link-pair-bad-request": "配对请求无效。",
+      "link-pair-bad-response": "无法读取主机的响应。",
+      "link-pair-host-unverified": "对方无法证明配对码。请确认地址是正确的主机。",
+      "link-self": "不能连接本机自己。",
+      "link-tls-pin-mismatch": "主机证书与预期不符,可能有人在中间拦截,已停止配对。",
+      "link-tls-failed": "无法验证主机证书。在 tailnet 中请使用 .ts.net 名称而不是 IP。",
+      "link-tls-not-pinned": "此地址没有已固定的证书。请用此地址重新配对。",
+      "link-unreachable": "无法连接到主机。",
+      "link-host-off": "主机已关闭主机模式或不接受联动。",
+      "link-unauthorized": "主机已解除本设备。请重新配对。",
+      "link-protocol-mismatch": "联动协议版本不同,连接被拒绝。请更新较旧的一方。",
+      "link-host-changed": "此地址的主机不是配对过的主机。请重新配对。",
+      "link-disconnected": "连接已断开。",
+      "link-handshake-failed": "未能完成与主机的握手。",
+      "link-device-offline": "设备未连接。",
+      "link-http": "主机返回 HTTP {{code}}。"
+    }
   }
 }

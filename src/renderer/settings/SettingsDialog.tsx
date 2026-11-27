@@ -21,8 +21,9 @@ import { ControlSection } from "./ControlSection";
 import { WebDashSection } from "./WebDashSection";
 import { ShortcutsTab } from "./ShortcutsTab";
 import { ShellAssistSection } from "./ShellAssistSection";
+import { LinkSection } from "./LinkSection";
 
-type SettingsTabId = "general" | "sound" | "shortcuts" | "system" | "control" | "shell";
+type SettingsTabId = "general" | "sound" | "shortcuts" | "system" | "control" | "link" | "shell";
 
 /** 화면 순서 = 이 배열 순서. 첫 항목이 열 때마다의 기본 탭이다.
  *  모듈 최상위라 `t()`를 부를 수 없어 라벨이 아니라 **키**를 담는다 —
@@ -33,6 +34,7 @@ const SETTINGS_TABS: { id: SettingsTabId; labelKey: string }[] = [
   { id: "shortcuts", labelKey: "dialog.tabShortcuts" },
   { id: "system", labelKey: "dialog.tabSystem" },
   { id: "control", labelKey: "dialog.tabControl" },
+  { id: "link", labelKey: "dialog.tabLink" },
   { id: "shell", labelKey: "dialog.tabShell" },
 ];
 
@@ -92,6 +94,7 @@ function SettingsDialogBody({ initialTab = "general" }: { initialTab?: SettingsT
               <WebDashSection />
             </>
           )}
+          {tab === "link" && <LinkSection />}
           {tab === "shell" && <ShellAssistSection />}
         </div>
 

@@ -13,7 +13,8 @@
     "tabShortcuts": "Raccourcis",
     "tabSystem": "Système",
     "tabControl": "Contrôle",
-    "tabShell": "Personnages shell"
+    "tabShell": "Personnages shell",
+    "tabLink": "Machines"
   },
   "keys": {
     "present": "définie",
@@ -251,5 +252,83 @@
     "save": "Enregistrer",
     "saving": "Enregistrement…",
     "saved": "Enregistré"
+  },
+  "link": {
+    "title": "Liaison de machines (tailnet / LAN)",
+    "help": "Reliez Agent Office sur d'autres ordinateurs du même tailnet ou LAN en hôte et clients. Un hôte gère le tableau des tâches et l'orchestration ; un client se connecte à un seul hôte. Pas de découverte automatique : saisissez l'adresse de l'hôte.",
+    "mode": "Rôle",
+    "modes": {
+      "off": "Désactivé",
+      "host": "Hôte",
+      "client": "Client"
+    },
+    "modeHelp": {
+      "off": "Ne pas se connecter à d'autres ordinateurs.",
+      "host": "D'autres ordinateurs se connectent à celui-ci. Un hôte ne peut pas se connecter à un autre hôte.",
+      "client": "Cet ordinateur se connecte à un hôte."
+    },
+    "version": "Protocole de liaison v{{protocol}} · app {{app}} — les deux ordinateurs doivent avoir la même version de protocole.",
+    "cancel": "Annuler",
+    "host": {
+      "needsWebDash": "Les clients se connectent via le serveur du tableau de bord web de cet ordinateur. Activez le tableau de bord web dans l'onglet Contrôle.",
+      "addresses": "Adresse à saisir sur le client :",
+      "newCode": "Créer un code d'appairage",
+      "codeIntro": "Saisissez ce code sur le client :",
+      "code": "Code d'appairage",
+      "codeRemaining": "{{minutes}}:{{seconds}} restantes · usage unique",
+      "cancelCode": "Abandonner le code",
+      "devices": "Appareils appairés",
+      "noDevices": "Aucun appareil appairé pour l'instant.",
+      "connected": "Connecté {{address}}",
+      "lastSeen": "Dernière connexion {{when}}",
+      "neverSeen": "Jamais connecté",
+      "revoke": "Dissocier",
+      "revokeConfirm": "Dissocier maintenant"
+    },
+    "client": {
+      "address": "Adresse de l'hôte",
+      "addressHelp": "Saisissez l'adresse affichée dans Réglages › Machines de l'hôte (ex. https://192.168.0.5:7788). Pour une adresse LAN, le certificat de l'hôte est épinglé à l'appairage afin de vérifier ensuite qu'il s'agit du même hôte.",
+      "code": "Code d'appairage",
+      "pair": "Appairer",
+      "pairing": "Appairage…",
+      "repair": "Appairer à nouveau",
+      "forget": "Oublier l'appairage",
+      "forgetHelp": "L'oublier ici laisse cet appareil dans la liste de l'hôte. Dissociez-le aussi sur l'hôte.",
+      "pending": "{{count}} en attente d'envoi",
+      "pinned": "Empreinte de l'AC de l'hôte épinglée :",
+      "updateThis": "L'hôte (v{{host}}) utilise un autre protocole de liaison et a refusé la connexion. Mettez à jour Agent Office sur cet ordinateur (v{{mine}}).",
+      "updateHost": "L'hôte (v{{host}}) utilise un autre protocole de liaison et a refusé la connexion. Mettez à jour Agent Office sur l'hôte (cet ordinateur est en v{{mine}}).",
+      "states": {
+        "idle": "Pas de connexion",
+        "connecting": "Connexion…",
+        "connected": "Connecté",
+        "waiting": "Déconnecté · nouvel essai dans {{seconds}} s",
+        "rejected": "Connexion refusée"
+      }
+    },
+    "errors": {
+      "link-address-invalid": "Adresse de l'hôte illisible. Exemple : https://192.168.0.5:7788",
+      "link-address-insecure": "Les adresses LAN exigent HTTPS (http seulement pour cet ordinateur et les IP tailnet).",
+      "link-not-host": "L'autre ordinateur n'est pas en mode hôte.",
+      "link-not-client": "L'appairage n'est possible qu'en mode client.",
+      "link-pair-code-invalid": "Code incorrect. Après plusieurs erreurs, l'hôte abandonne le code.",
+      "link-pair-no-code": "L'hôte n'a pas de code valide. Créez un nouveau code sur l'hôte.",
+      "link-pair-bad-request": "Demande d'appairage invalide.",
+      "link-pair-bad-response": "Réponse de l'hôte illisible.",
+      "link-pair-host-unverified": "L'autre côté n'a pas pu prouver le code. Vérifiez que l'adresse est le bon hôte.",
+      "link-self": "Cet ordinateur ne peut pas se connecter à lui-même.",
+      "link-tls-pin-mismatch": "Le certificat de l'hôte n'est pas celui attendu. Quelqu'un est peut-être au milieu ; l'appairage est arrêté.",
+      "link-tls-failed": "Impossible de vérifier le certificat de l'hôte. Sur un tailnet, utilisez le nom .ts.net plutôt que l'IP.",
+      "link-tls-not-pinned": "Aucun certificat épinglé pour cette adresse. Appairez à nouveau avec cette adresse.",
+      "link-unreachable": "Hôte injoignable.",
+      "link-host-off": "L'hôte a désactivé le mode hôte ou n'accepte pas de liaison.",
+      "link-unauthorized": "L'hôte a dissocié cet appareil. Appairez à nouveau.",
+      "link-protocol-mismatch": "Versions de protocole différentes ; connexion refusée. Mettez à jour l'application la plus ancienne.",
+      "link-host-changed": "L'hôte à cette adresse n'est pas celui appairé. Appairez à nouveau.",
+      "link-disconnected": "Déconnecté.",
+      "link-handshake-failed": "Impossible de terminer la poignée de main avec l'hôte.",
+      "link-device-offline": "L'appareil n'est pas connecté.",
+      "link-http": "L'hôte a répondu HTTP {{code}}."
+    }
   }
 }

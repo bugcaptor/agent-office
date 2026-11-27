@@ -33,6 +33,13 @@ export const Commands = {
   webDashRotateToken: "web_dash_rotate_token",
   webDashPublishLabels: "web_dash_publish_labels",
   webDashControlReply: "web_dash_control_reply",
+  linkStatus: "link_status",
+  linkConfigure: "link_configure",
+  linkStartPairing: "link_start_pairing",
+  linkCancelPairing: "link_cancel_pairing",
+  linkRevokeDevice: "link_revoke_device",
+  linkPair: "link_pair",
+  linkForgetHost: "link_forget_host",
   shellAssistGetConfig: "shell_assist_get_config",
   shellAssistSetConfig: "shell_assist_set_config",
   shellAssistListModels: "shell_assist_list_models",
@@ -243,4 +250,6 @@ export const Events = {
   webDashStatus: "web-dash-status",
   // 웹에서 명령이 들어왔다(앱 화면 알림).
   webDashActivity: "web-dash-activity",
+  // 머신 연동 상태(모드·기기·연결)가 바뀌었다.
+  linkStatus: "link-status",
 } as const;

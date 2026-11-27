@@ -384,6 +384,7 @@
                 Arc::new(crate::control::autorun::AutoRunBridge::new(|_: &serde_json::Value| Ok(()))),
                 Arc::new(crate::webdash::fake::RecordingDashEvents::default()),
             )),
+            link: crate::link::LinkState::new(None, Arc::new(|| "test".to_string()), Arc::new(crate::link::fake::NoLinkEvents)),
         };
         (state, ctl, observer_dir, profile_dir)
     }
