@@ -29,7 +29,7 @@ const S = {
     cost: (tokens, cost, turns) => `이 세션 추정 사용량 · 토큰 ${tokens} · ${cost} · ${turns}턴`, costHint: "공개 API 요율로 환산한 추정치입니다. 구독제 실제 청구액과 다릅니다. CH(…)는 캐시 포함 전체 토큰.",
     live: { thinking: (t) => `생각 중… ${t}`, tool: (tool, t) => `${tool} 실행 중… ${t}`, stalled: (t) => `작업 중이지만 ${t}째 화면 출력이 없습니다 — 멈췄을 수 있습니다`, human: "답을 기다리는 중 — 멈춘 게 아닙니다", idle: "턴이 끝났습니다 · 입력을 기다림", off: "CLI가 돌고 있지 않습니다", sec: (s) => `${s}초`, minSec: (m, s) => `${m}분 ${s}초` },
     stalled: "응답 없음", shellChip: "셸 캐릭터",
-    machineLocal: (name) => name ? `이 머신 · ${name}` : "이 머신", machineOff: "끊김", machineCount: (n) => `캐릭터 ${n}`,
+    machineLocal: (name) => name ? `이 머신 · ${name}` : "이 머신", machineOff: "끊김", machineCount: (n) => `캐릭터 ${n}`, machineFold: "눌러서 이 머신 캐릭터를 접거나 펼칩니다", machineWaiting: (n) => `답 기다림 ${n}`,
     remoteNote: (m) => `${m}의 캐릭터입니다. 메시지·권한 응답·세션 조작은 그 머신에 넘깁니다(업무 보내기는 아직 이 머신 캐릭터만).`,
     remoteOffNote: (m) => `${m}이(가) 끊겼습니다. 마지막으로 본 명단만 보이고, 다시 붙을 때까지 조작할 수 없습니다.`,
     remoteShellNote: "셸 캐릭터 화면은 그 머신의 웹 상태판에서 쓰세요.",
@@ -85,7 +85,7 @@ const S = {
     cost: (tokens, cost, turns) => `Estimated session usage · ${tokens} tokens · ${cost} · ${turns} ${turns === 1 ? "turn" : "turns"}`, costHint: "Estimated at public API rates; not your subscription bill. CH(…) is the total including cache.",
     live: { thinking: (t) => `Thinking… ${t}`, tool: (tool, t) => `Running ${tool}… ${t}`, stalled: (t) => `Working, but no terminal output for ${t} — it may be stuck`, human: "Waiting for an answer — not stuck", idle: "Turn finished · waiting for input", off: "No CLI is running", sec: (s) => `${s}s`, minSec: (m, s) => `${m}m ${s}s` },
     stalled: "No response", shellChip: "Shell",
-    machineLocal: (name) => name ? `This machine · ${name}` : "This machine", machineOff: "Offline", machineCount: (n) => `${n} ${n === 1 ? "character" : "characters"}`,
+    machineLocal: (name) => name ? `This machine · ${name}` : "This machine", machineOff: "Offline", machineCount: (n) => `${n} ${n === 1 ? "character" : "characters"}`, machineFold: "Click to collapse or expand this machine's characters", machineWaiting: (n) => `${n} waiting`,
     remoteNote: (m) => `A character on ${m}. Messages, permission answers and session controls go to that machine (sending tasks is for this machine's characters only, for now).`,
     remoteOffNote: (m) => `${m} is offline. Showing the last roster seen; controls come back when it reconnects.`,
     remoteShellNote: "Use the shell character screen on that machine's web dashboard.",
@@ -272,6 +272,14 @@ let tasksData = null, tasksRev = null;
 let officeData = null, folders = [], homeDir = "";
 // 머신 연동 호스트: 붙은 머신들(`[{id, name, online, count}]`)과 이 머신 이름.
 let machines = [], hostName = "";
+// 접어 둔 머신 구역(이 머신은 "local", 다른 머신은 기기 id). 목록·곁 목록이 함께 쓰고 이 브라우저에 남긴다.
+const MACHINE_FOLD_KEY = "agent-office-web-dash-folded-machines";
+const foldedMachines = new Set((() => { try { return JSON.parse(load(MACHINE_FOLD_KEY) || "[]"); } catch (_) { return []; } })());
+function toggleMachineFold(id) {
+  foldedMachines.has(id) ? foldedMachines.delete(id) : foldedMachines.add(id);
+  store(MACHINE_FOLD_KEY, foldedMachines.size ? JSON.stringify([...foldedMachines]) : null);
+  render();
+}
 const OFFICE = "office-agent";
 const logs = new Map();
 let outputAt = {}, serverNow = 0, serverNowAt = 0, stalledKey = "";
@@ -468,20 +476,30 @@ function charCard(c) {
     wait && el("div", { class: "wait", text: wait }),
     previewSlot(c));
 }
-function machineHead(name, online, count) {
-  return el("div", { class: "machine-h" + (online ? "" : " off") },
+/** 머신 구역 머리 — 눌러서 접고 편다. 접혀 있으면 답을 기다리는 캐릭터 수를 머리에 보인다. */
+function machineHead(id, name, online, list) {
+  const folded = foldedMachines.has(id);
+  const waiting = folded ? list.filter((c) => phaseOf(c)[0] === "human").length : 0;
+  return el("button", { type: "button", class: "machine-h" + (online ? "" : " off") + (folded ? " folded" : ""), title: S.machineFold,
+    "aria-expanded": folded ? "false" : "true", onclick: () => toggleMachineFold(id) },
+    el("span", { class: "machine-caret", text: folded ? "▸" : "▾" }),
     el("span", { class: "machine-dot" + (online ? " on" : "") }), el("b", { text: name }),
-    el("span", { class: "sub", text: online ? S.machineCount(count) : S.machineOff }));
+    waiting > 0 && el("span", { class: "chip human", text: S.machineWaiting(waiting) }),
+    el("span", { class: "sub", text: online ? S.machineCount(list.length) : S.machineOff }));
+}
+/** 머신 구역 하나: 머리와(펼쳐 있으면) 카드들. */
+function machineSection(id, name, online, list, card, lead) {
+  return [machineHead(id, name, online, list), ...(foldedMachines.has(id) ? [] : [...(lead || []), ...list.map(card)])];
 }
 function renderChars() {
   if (!chars) return [el("div", { class: "empty", text: "…" })];
   // 머신 연동 호스트: 이 머신 캐릭터 뒤에 붙은 머신마다 구역을 둔다(`machines`, 이름 순).
   if (machines.length) {
     const mine = sortedChars().filter((c) => !c.remote);
-    const out = [renderListBar(), machineHead(S.machineLocal(hostName), true, mine.length), renderOfficeCard(), ...mine.map(charCard)];
+    const out = [renderListBar(), ...machineSection("local", S.machineLocal(hostName), true, mine, charCard, [renderOfficeCard()])];
     for (const m of machines) {
       const list = sortedChars().filter((c) => c.remote && c.machine && c.machine.id === m.id);
-      out.push(machineHead(m.name, m.online, list.length), ...list.map(charCard));
+      out.push(...machineSection(m.id, m.name, m.online, list, charCard));
     }
     return out;
   }
@@ -646,10 +664,10 @@ function sideCards(others) {
   if (!machines.length) return others.map(sideCard);
   const out = [];
   const mine = others.filter((c) => !c.remote);
-  if (mine.length) out.push(machineHead(S.machineLocal(hostName), true, mine.length), ...mine.map(sideCard));
+  if (mine.length) out.push(...machineSection("local", S.machineLocal(hostName), true, mine, sideCard));
   for (const m of machines) {
     const list = others.filter((c) => c.remote && c.machine && c.machine.id === m.id);
-    if (list.length) out.push(machineHead(m.name, m.online, list.length), ...list.map(sideCard));
+    if (list.length) out.push(...machineSection(m.id, m.name, m.online, list, sideCard));
   }
   return out;
 }

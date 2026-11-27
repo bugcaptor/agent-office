@@ -522,6 +522,17 @@ assert.equal(await p.locator(".card.offline", { hasText: "Cleo" }).count(), 1);
 assert.equal(await p.locator(".card", { hasText: "Ada" }).locator(".sub").first().textContent(), "api ⎇ main");
 assert.equal(await p.locator(".card", { hasText: "studio-pc" }).count(), 0, "카드에 머신 이름을 다시 싣지 않는다");
 await p.screenshot({ path: `${outDir}/list-machines.png`, fullPage: true });
+// 머신 구역은 머리를 눌러 접고 편다. 접힌 구역은 답 기다리는 수를 머리에 보이고, 접힘은 새로 불러도 남는다.
+await p.locator(".machine-h", { hasText: "studio-pc" }).click();
+await p.locator(".machine-h.folded", { hasText: "studio-pc" }).waitFor();
+assert.equal(await p.locator(".card", { hasText: "Ada" }).count(), 0, "접힌 머신의 카드는 숨긴다");
+assert.equal(await p.locator(".machine-h", { hasText: "studio-pc" }).locator(".chip.human").textContent(), "답 기다림 1");
+assert.equal(await p.locator(".card.offline", { hasText: "Cleo" }).count(), 1, "다른 머신 구역은 그대로");
+await p.screenshot({ path: `${outDir}/list-machines-folded.png`, fullPage: true });
+await p.reload();
+await p.locator(".machine-h.folded", { hasText: "studio-pc" }).waitFor();
+await p.locator(".machine-h", { hasText: "studio-pc" }).click();
+await p.locator(".card", { hasText: "Ada" }).first().waitFor();
 await p.locator(".card", { hasText: "Ada" }).filter({ hasText: "api" }).click();
 await p.locator(".ask").waitFor();
 // 다른 머신 캐릭터: 메시지·권한 응답·세션 조작을 그 머신에 넘긴다(호스트가 원격 id로 받는다).
