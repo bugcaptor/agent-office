@@ -27,7 +27,8 @@
           "agentId": "agent-a",
           "name": "Ada",
           "role": "backend",
-          "appearance": { "archetype": "human", "seed": "ada-seed", "colors": { "hair": "#aa3311" } },
+          "appearance": { "archetype": "human", "seed": "ada-seed", "colors": { "hair": "#aa3311" }, "spriteUpdatedAt": 1700000000001, "minimiUpdatedAt": null },
+          "portrait": 1700000000002,
           "sessionState": "running",
           "needsHuman": true,
           "clockedOut": false

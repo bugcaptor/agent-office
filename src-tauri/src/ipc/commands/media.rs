@@ -10,6 +10,19 @@ use tauri::State;
 
 use crate::state::AppState;
 
+/// 머신 연동 호스트: 다른 머신 캐릭터(`기기id:캐릭터id`)면 그 머신에 물은 그림(base64). 이 머신 캐릭터면 None.
+async fn load_remote(app_state: &AppState, agent_id: &str, kind: &'static str) -> Option<Result<Option<String>, String>> {
+    use base64::Engine as _;
+    let remote = app_state.link.remote.clone();
+    let (device, agent) = remote.resolve(agent_id)?;
+    Some(
+        remote
+            .image(&device, &agent, kind)
+            .await
+            .map(|png| png.map(|png| base64::engine::general_purpose::STANDARD.encode(png.as_slice()))),
+    )
+}
+
 #[tauri::command(rename_all = "camelCase")]
 pub async fn save_portrait(
     app_state: State<'_, AppState>,
@@ -34,6 +47,9 @@ pub async fn load_portrait(
     app_state: State<'_, AppState>,
     agent_id: String,
 ) -> Result<Option<String>, String> {
+    if let Some(found) = load_remote(&app_state, &agent_id, "portrait").await {
+        return found;
+    }
     app_state
         .portrait_store
         .load(&agent_id)
@@ -75,6 +91,9 @@ pub async fn load_sprite(
     app_state: State<'_, AppState>,
     agent_id: String,
 ) -> Result<Option<String>, String> {
+    if let Some(found) = load_remote(&app_state, &agent_id, "sprite").await {
+        return found;
+    }
     app_state
         .sprite_store
         .load(&agent_id)
@@ -113,6 +132,9 @@ pub async fn load_minimi(
     app_state: State<'_, AppState>,
     agent_id: String,
 ) -> Result<Option<String>, String> {
+    if let Some(found) = load_remote(&app_state, &agent_id, "minimi").await {
+        return found;
+    }
     app_state
         .minimi_store
         .load(&agent_id)

@@ -518,8 +518,11 @@ await p.getByRole("button", { name: "캐릭터" }).click();
 await p.locator(".machine-h", { hasText: "studio-pc" }).waitFor();
 assert.equal(await p.locator(".machine-h").count(), 3, "이 머신 + 붙은 머신 + 끊긴 머신");
 assert.equal(await p.locator(".card.offline", { hasText: "Cleo" }).count(), 1);
+// 머신은 구역 머리에만 — 카드 아랫줄 그 자리는 폴더 말단 이름(·브랜치)이다.
+assert.equal(await p.locator(".card", { hasText: "Ada" }).locator(".sub").first().textContent(), "api ⎇ main");
+assert.equal(await p.locator(".card", { hasText: "studio-pc" }).count(), 0, "카드에 머신 이름을 다시 싣지 않는다");
 await p.screenshot({ path: `${outDir}/list-machines.png`, fullPage: true });
-await p.locator(".card", { hasText: "Ada" }).filter({ hasText: "studio-pc" }).click();
+await p.locator(".card", { hasText: "Ada" }).filter({ hasText: "api" }).click();
 await p.locator(".ask").waitFor();
 // 다른 머신 캐릭터: 메시지·권한 응답·세션 조작을 그 머신에 넘긴다(호스트가 원격 id로 받는다).
 assert.equal(await p.locator("#msgform").count(), 1, "붙은 머신 캐릭터에는 직접 입력이 있다");

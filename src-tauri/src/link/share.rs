@@ -2,7 +2,7 @@
 //
 // 클라이언트 쪽: 호스트에 붙어 있는 동안 이 앱 캐릭터들의 지금 모습(웹 상태판 `/api/state`의
 // `characters`와 같은 것 + 오피스 씬용 외형)을 몇 초마다 올리고(`Up::Live` 종류 `agents`, 바뀌었을 때나
-// 다시 붙었을 때, 아니면 가끔), 호스트가 묻는 대화 로그·초상·이미지·파일에 답한다.
+// 다시 붙었을 때, 아니면 가끔), 호스트가 묻는 대화 로그·초상·커스텀 시트·미니미·이미지·파일에 답한다.
 //
 // 터미널 화면(PTY)은 보내지 않는다 — 대화 보기 수준(전사·권한 요청·대기열·상태)까지만이다.
 // 호스트가 시키는 조작도 같은 물음(`Request`)으로 온다: `op`(웹 상태판 `/api/agents/:agent/:op`와 같은 일 —
@@ -88,8 +88,19 @@ async fn snapshot(ctl: &Arc<ControlContext>, dash: &Arc<WebDashState>) -> Value 
         .into_iter()
         .map(|mut c| {
             let id = c["agentId"].as_str().unwrap_or("").to_string();
+            // 시작 폴더를 비워 둔 캐릭터는 세션이 홈에서 뜬다 — 호스트가 폴더 말단 이름을 보이게 홈을 싣는다.
+            if c["cwd"].as_str().is_none_or(|s| s.trim().is_empty()) {
+                c["cwd"] = json!(crate::session::manager::home_dir());
+            }
             if let Some(p) = profiles.iter().find(|p| p.id == id) {
-                c["appearance"] = json!({ "archetype": p.archetype, "seed": p.seed, "colors": p.colors });
+                // 커스텀 시트·미니미 판(epoch ms). 호스트가 판이 바뀔 때만 `sprite`·`minimi`로 다시 묻는다.
+                c["appearance"] = json!({
+                    "archetype": p.archetype,
+                    "seed": p.seed,
+                    "colors": p.colors,
+                    "spriteUpdatedAt": p.sprite_updated_at,
+                    "minimiUpdatedAt": p.minimi_updated_at,
+                });
             }
             c
         })
@@ -138,8 +149,18 @@ async fn answer(ctl: &Arc<ControlContext>, dash: &Arc<WebDashState>, kind: &str,
             };
             serde_json::to_value(page).map_err(|e| e.to_string())
         }
-        "portrait" => {
-            let encoded = ctl.portrait_store.load(&agent).map_err(|e| e.to_string())?.ok_or("not-found")?;
+        "portrait" | "sprite" | "minimi" => {
+            let found = match kind {
+                "portrait" => ctl.portrait_store.load(&agent),
+                "sprite" => ctl.sprite_store.load(&agent),
+                // 미니미 저장소는 제어 문맥에 없다 — 같은 폴더를 읽기만 한다(상한은 저장 때만 쓰인다).
+                _ => crate::persistence::png_store::PngStore::new(
+                    ctl.app_data_dir.join("minimis"),
+                    crate::persistence::png_store::MAX_MINIMI_BYTES,
+                )
+                .load(&agent),
+            };
+            let encoded = found.map_err(|e| e.to_string())?.ok_or("not-found")?;
             Ok(json!({ "data": encoded }))
         }
         "image" => {

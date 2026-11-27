@@ -44,7 +44,13 @@ export function RemoteFloorBar() {
   );
 }
 
-/** 다른 층 캐릭터에 올린 포인터 옆의 이름·머신·상태. */
+/** 경로의 마지막 이름(`/`·`\\` 어느 쪽이든). */
+export function folderLeaf(path: string | undefined): string {
+  const parts = (path ?? "").split(/[\\/]+/).filter(Boolean);
+  return parts.length ? parts[parts.length - 1] : "";
+}
+
+/** 다른 층 캐릭터에 올린 포인터 옆의 이름·시작 폴더·상태. */
 export function RemoteHoverCard() {
   const { t } = useTranslation("office");
   const hover = useRemoteFloors((s) => s.hover);
@@ -64,7 +70,8 @@ export function RemoteHoverCard() {
   return (
     <div className="remote-hover-card pixel-panel" style={{ left: hover.x + 12, top: hover.y + 12 }}>
       <div className="remote-hover-name">{c.name}</div>
-      <div className="remote-hover-sub">{[machine.name, c.role].filter(Boolean).join(" · ")}</div>
+      {/* 층이 곧 머신이라 머신 이름 대신 그 캐릭터의 시작 폴더 말단 이름을 보인다. */}
+      <div className="remote-hover-sub" title={c.cwd}>{[folderLeaf(c.cwd), c.role].filter(Boolean).join(" · ")}</div>
       <div className={`remote-hover-state ${state}`}>{t(`floors.state.${state}`)}</div>
       <div className="remote-hover-hint">{t("floors.openChat")}</div>
     </div>

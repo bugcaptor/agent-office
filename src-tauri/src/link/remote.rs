@@ -7,7 +7,8 @@
 // 다시 페어링해도 그대로라 머신마다 겹치지 않는다. 캐릭터 이름은 머신끼리 겹쳐도 그대로 두고 머신 이름으로 가른다.
 //
 // 끊긴 머신은 마지막으로 본 명단(`link-remote.json`)만 꺼진 모습으로 보인다 — 세션·턴·권한 요청은 비운다.
-// 대화 로그·초상·이미지는 들고 있지 않고 볼 때 그 머신에 묻는다(`request`).
+// 대화 로그·이미지는 들고 있지 않고 볼 때 그 머신에 묻는다(`request`). 초상·커스텀 시트·미니미는 판(epoch ms)이
+// 같은 동안 한 번 받은 것을 들고 있는다(`image`).
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex, RwLock};
@@ -38,8 +39,15 @@ pub struct RemoteCharacter {
     pub agent_id: String,
     pub name: String,
     pub role: String,
-    /// 외형(`archetype`·`seed`·`colors`). 커스텀 시트는 싣지 않는다(절차 생성 모습으로 보인다).
+    /// 그 머신에서의 시작 폴더(그 머신 경로). 오피스 hover 카드에 말단 이름을 보인다.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cwd: Option<String>,
+    /// 외형(`archetype`·`seed`·`colors`·`spriteUpdatedAt`·`minimiUpdatedAt`). 커스텀 시트·미니미는 판만 싣고
+    /// 그림은 `load_sprite`·`load_minimi`(원격 id)로 그 머신에 묻는다.
     pub appearance: Value,
+    /// 초상 판(epoch ms). 없으면 초상 없음. 그림은 `load_portrait`(원격 id)로 묻는다.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub portrait: Option<u64>,
     /// 세션 상태(`starting`·`running`·`exited`). 세션이 없거나 끊긴 머신이면 None.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub session_state: Option<String>,
@@ -102,8 +110,8 @@ pub struct RemoteView {
     machines: Mutex<HashMap<String, Machine>>,
     listener: RwLock<Option<OfficeListener>>,
     last_office: Mutex<Option<RemoteOffice>>,
-    /// 초상 캐시((기기, 캐릭터) → (초상 판, PNG)).
-    portraits: Mutex<HashMap<(String, String), (Value, Arc<Vec<u8>>)>>,
+    /// 그림 캐시((기기, 캐릭터, 종류) → (판, PNG)). 종류는 `portrait`·`sprite`·`minimi`.
+    images: Mutex<HashMap<(String, String, &'static str), (Value, Arc<Vec<u8>>)>>,
 }
 
 fn str_of<'a>(v: &'a Value, key: &str) -> &'a str {
@@ -157,7 +165,9 @@ fn office_character(device_id: &str, online: bool, c: &Value) -> RemoteCharacter
         agent_id,
         name: str_of(c, "name").to_string(),
         role: str_of(c, "role").to_string(),
+        cwd: c.get("cwd").and_then(Value::as_str).filter(|s| !s.trim().is_empty()).map(str::to_string),
         appearance: c.get("appearance").cloned().unwrap_or(Value::Null),
+        portrait: c.get("portrait").and_then(Value::as_u64),
         needs_human: online && session_state.is_some() && (asks || waiting),
         session_state,
         clocked_out: c.get("clockedOut").and_then(Value::as_bool).unwrap_or(false),
@@ -208,7 +218,7 @@ impl RemoteView {
             machines: Mutex::new(machines),
             listener: RwLock::new(None),
             last_office: Mutex::new(None),
-            portraits: Mutex::new(HashMap::new()),
+            images: Mutex::new(HashMap::new()),
         }
     }
 
@@ -325,7 +335,7 @@ impl RemoteView {
         }
         if removed {
             self.save_roster(&machines);
-            self.portraits.lock().unwrap().retain(|(d, _), _| machines.contains_key(d));
+            self.images.lock().unwrap().retain(|(d, _, _), _| machines.contains_key(d));
         }
     }
 
@@ -431,24 +441,50 @@ impl RemoteView {
 
     /// 원격 캐릭터 초상(PNG). 같은 판이면 다시 묻지 않는다.
     pub async fn portrait(&self, device_id: &str, agent_id: &str) -> Option<Arc<Vec<u8>>> {
+        self.image(device_id, agent_id, "portrait").await.ok().flatten()
+    }
+
+    /// 원격 캐릭터 그림(PNG): `portrait`(초상)·`sprite`(커스텀 시트)·`minimi`(미니미). 같은 판이면 다시 묻지 않는다.
+    /// 그 캐릭터에 그 그림이 없으면(판이 없거나 그 머신에 파일이 없거나 그 머신 앱이 그 종류를 모르면) `Ok(None)`,
+    /// 물을 수 없으면(끊김·제한 시간) `Err`.
+    pub async fn image(&self, device_id: &str, agent_id: &str, kind: &'static str) -> Result<Option<Arc<Vec<u8>>>, String> {
         let version = {
             let machines = self.machines.lock().unwrap();
-            let m = machines.get(device_id)?;
+            let Some(m) = machines.get(device_id) else { return Ok(None) };
             let list = m.characters.as_deref().unwrap_or(&m.roster);
-            list.iter().find(|c| str_of(c, "agentId") == agent_id)?.get("portrait").cloned().unwrap_or(Value::Null)
+            let Some(c) = list.iter().find(|c| str_of(c, "agentId") == agent_id) else { return Ok(None) };
+            image_version(c, kind)
         };
-        let key = (device_id.to_string(), agent_id.to_string());
-        if let Some((v, png)) = self.portraits.lock().unwrap().get(&key) {
+        if version.is_null() {
+            return Ok(None);
+        }
+        let key = (device_id.to_string(), agent_id.to_string(), kind);
+        if let Some((v, png)) = self.images.lock().unwrap().get(&key) {
             if *v == version {
-                return Some(png.clone());
+                return Ok(Some(png.clone()));
             }
         }
-        let answer = self.request(device_id, "portrait", json!({ "agentId": agent_id })).await.ok()?;
-        let png = decode_blob(&answer)?;
+        let answer = match self.request(device_id, kind, json!({ "agentId": agent_id })).await {
+            Ok(answer) => answer,
+            Err(e) if e == "not-found" || e == "link-unsupported" => return Ok(None),
+            Err(e) => return Err(e),
+        };
+        let Some(png) = decode_blob(&answer) else { return Ok(None) };
         let png = Arc::new(png);
-        self.portraits.lock().unwrap().insert(key, (version, png.clone()));
-        Some(png)
+        self.images.lock().unwrap().insert(key, (version, png.clone()));
+        Ok(Some(png))
     }
+}
+
+/// 그 캐릭터 그림의 판(없으면 Null).
+fn image_version(c: &Value, kind: &str) -> Value {
+    let v = match kind {
+        "portrait" => c.get("portrait"),
+        "sprite" => c.get("appearance").and_then(|a| a.get("spriteUpdatedAt")),
+        "minimi" => c.get("appearance").and_then(|a| a.get("minimiUpdatedAt")),
+        _ => None,
+    };
+    v.cloned().unwrap_or(Value::Null)
 }
 
 /// `{data: base64}` 답의 바이트.
@@ -474,8 +510,8 @@ mod tests {
             "now": now_ms(),
             "outputAt": { "a1": now_ms() },
             "characters": [{
-                "agentId": "a1", "name": "Ada", "role": "dev", "portrait": 5,
-                "appearance": { "seed": "s1", "archetype": "human" },
+                "agentId": "a1", "name": "Ada", "role": "dev", "portrait": 5, "cwd": "/Users/ada/dev/app",
+                "appearance": { "seed": "s1", "archetype": "human", "spriteUpdatedAt": 7 },
                 "session": { "sessionId": "s", "state": "running" },
                 "turn": { "phase": "needs-human" },
                 "asks": [{ "id": "k1" }],
@@ -515,6 +551,12 @@ mod tests {
         assert_eq!(oc.session_state, None);
         assert!(!oc.needs_human);
         assert_eq!(oc.appearance["seed"], json!("s1"));
+        // 끊긴 동안에도 초상·커스텀 시트 판과 시작 폴더는 명단에 남는다(받아 둔 그림·폴더 이름을 보인다).
+        assert_eq!(oc.portrait, Some(5));
+        assert_eq!(oc.appearance["spriteUpdatedAt"], json!(7));
+        assert_eq!(oc.cwd.as_deref(), Some("/Users/ada/dev/app"));
+        assert_eq!(image_version(&snapshot()["characters"][0], "sprite"), json!(7));
+        assert!(image_version(&snapshot()["characters"][0], "minimi").is_null());
     }
 
     #[test]

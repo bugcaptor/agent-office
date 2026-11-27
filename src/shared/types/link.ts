@@ -81,8 +81,19 @@ export interface RemoteCharacter {
   agentId: string;
   name: string;
   role: string;
-  /** 외형(`archetype`·`seed`·`colors`). 커스텀 시트는 오지 않는다(절차 생성 모습). 없으면 null. */
-  appearance: { archetype?: string | null; seed?: string; colors?: Record<string, string> | null } | null;
+  /** 그 머신에서의 시작 폴더(그 머신 경로). 없으면 없다. */
+  cwd?: string;
+  /** 외형(`archetype`·`seed`·`colors`, 커스텀 시트·미니미 판). 판이 있으면 그림은 `load_sprite`·`load_minimi`에
+   *  이 `id`를 넘겨 그 머신에 묻는다(`link/remoteImages.ts`). 없으면 null. */
+  appearance: {
+    archetype?: string | null;
+    seed?: string;
+    colors?: Record<string, string> | null;
+    spriteUpdatedAt?: number | null;
+    minimiUpdatedAt?: number | null;
+  } | null;
+  /** 초상 판(epoch ms). 없으면 초상 없음. 그림은 `load_portrait`에 이 `id`를 넘겨 묻는다. */
+  portrait?: number;
   /** 세션 상태. 세션이 없거나 머신이 끊겼으면 없다. */
   sessionState?: "starting" | "running" | "exited" | "disposed";
   /** 권한 요청이 걸렸거나 턴이 사람을 기다림. */

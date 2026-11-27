@@ -128,9 +128,12 @@ function App() {
   // 머신 연동 호스트: 지금 보는 다른 머신 층(없으면 이 머신). 스냅숏이 바뀔 때만 새 참조가 된다.
   const remoteOffice = useRemoteFloors((s) => s.office);
   const floor = useRemoteFloors((s) => s.floor);
+  // 원격 커스텀 시트·미니미가 도착하면 같은 스냅숏이라도 층을 다시 맞춰 외형을 바꾼다.
+  const remoteImagesRev = useRemoteFloors((s) => s.imagesRev);
   const remoteFloor = useMemo(
     () => ({ view: remoteFloorView(remoteOffice, floor), onClick: openRemoteChat, onHover: setRemoteHover }),
-    [remoteOffice, floor],
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- imagesRev는 새 view 참조를 만들기 위한 신호다.
+    [remoteOffice, floor, remoteImagesRev],
   );
 
   return (

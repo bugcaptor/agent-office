@@ -15,7 +15,7 @@ import {
 const office = fixture as RemoteOffice;
 
 describe("remoteFloors", () => {
-  beforeEach(() => useRemoteFloors.setState({ office: { machines: [] }, floor: null, chat: null, hover: null }));
+  beforeEach(() => useRemoteFloors.setState({ office: { machines: [] }, floor: null, chat: null, hover: null, imagesRev: 0 }));
 
   it("this machine's floor has no remote view; another floor maps characters to scene agents", () => {
     expect(remoteFloorView(office, null)).toBeNull();

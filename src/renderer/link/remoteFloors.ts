@@ -19,11 +19,13 @@ interface RemoteFloorsState {
   chat: string | null;
   /** 다른 층 캐릭터 hover(창 좌표). */
   hover: { id: string; x: number; y: number } | null;
+  /** 원격 캐릭터 그림(커스텀 시트·미니미)을 받을 때마다 오른다 — 씬이 그 층을 다시 맞추게(`remoteImages.ts`). */
+  imagesRev: number;
 }
 
 const EMPTY: RemoteOffice = { machines: [] };
 
-export const useRemoteFloors = create<RemoteFloorsState>(() => ({ office: EMPTY, floor: null, chat: null, hover: null }));
+export const useRemoteFloors = create<RemoteFloorsState>(() => ({ office: EMPTY, floor: null, chat: null, hover: null, imagesRev: 0 }));
 
 export function setRemoteOffice(office: RemoteOffice): void {
   useRemoteFloors.setState((s) => {
@@ -55,7 +57,8 @@ export function findRemote(office: RemoteOffice, id: string): { machine: RemoteM
   return null;
 }
 
-/** 원격 캐릭터 → 오피스 씬 프로필(절차 생성 외형). */
+/** 원격 캐릭터 → 오피스 씬 프로필. 커스텀 시트·미니미·초상 판을 실어, 그림이 오면(`remoteImages.ts`가 원격 id로
+ *  덮어쓰기·미리보기를 채운다) 이 머신 캐릭터와 같은 길로 그려진다. 그림이 아직 없으면 절차 생성 모습. */
 export function remoteProfile(c: RemoteCharacter): AgentProfile {
   const a = c.appearance ?? {};
   return {
@@ -65,6 +68,9 @@ export function remoteProfile(c: RemoteCharacter): AgentProfile {
     seed: a.seed || c.id,
     ...(a.archetype ? { archetype: a.archetype } : {}),
     ...(a.colors ? { colors: a.colors } : {}),
+    ...(a.spriteUpdatedAt != null ? { spriteUpdatedAt: a.spriteUpdatedAt } : {}),
+    ...(a.minimiUpdatedAt != null ? { minimiUpdatedAt: a.minimiUpdatedAt } : {}),
+    ...(c.portrait != null ? { portraitUpdatedAt: c.portrait } : {}),
   };
 }
 

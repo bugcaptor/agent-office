@@ -321,9 +321,14 @@ function leaf(path) {
   const parts = (path || "").split(/[\\/]+/).filter(Boolean);
   return parts.length ? parts[parts.length - 1] : path || "";
 }
+// 머신은 따로 모아 보인다(목록·곁 목록의 머신 구역, 분할 칸 머리의 머신 표). 이 줄은 폴더 말단 이름·브랜치만.
 function placeOf(c) {
   const branch = c.label && c.label.branch;
-  return [c.remote && c.machine && "💻 " + c.machine.name, leaf(cwdOf(c)), branch && "⎇ " + branch].filter(Boolean).join(" ");
+  return [leaf(cwdOf(c)), branch && "⎇ " + branch].filter(Boolean).join(" ");
+}
+/** 다른 머신 캐릭터의 머신 표(구역 밖에서 보일 때 — 분할 칸 머리). */
+function machineTag(c) {
+  return c.remote && c.machine ? el("span", { class: "machine-tag" + (c.machine.online ? "" : " off"), text: "💻 " + c.machine.name }) : null;
 }
 const USAGE_KEYS = ["claude", "codex", "antigravity", "opencode"];
 const USAGE_NAMES = { claude: "Claude", codex: "Codex", antigravity: "Antigravity", opencode: "Opencode" };
@@ -628,10 +633,25 @@ function renderSide() {
   return el("aside", { class: "side", id: "side" },
     el("div", { class: "side-h" }, el("span", { text: S.others(others.length) }),
       el("button", { type: "button", text: WIDE.matches ? S.sideHide : S.close, onclick: toggleSide })),
-    ...others.map((c) => el("div", { class: "card clickable", onclick: () => openAgent(c.agentId) },
-      el("div", { class: "row" }, avatar(c),
-        el("div", { class: "grow" }, el("div", { class: "name", text: c.name }), el("div", { class: "sub", title: cwdOf(c), text: c.office ? S.officeSub : placeOf(c) })),
-        chips(c)), workBox(c, true))));
+    ...sideCards(others));
+}
+function sideCard(c) {
+  return el("div", { class: "card clickable" + (c.remote && c.machine && !c.machine.online ? " offline" : ""), onclick: () => openAgent(c.agentId) },
+    el("div", { class: "row" }, avatar(c),
+      el("div", { class: "grow" }, el("div", { class: "name", text: c.name }), el("div", { class: "sub", title: cwdOf(c), text: c.office ? S.officeSub : placeOf(c) })),
+      chips(c)), workBox(c, true));
+}
+// 머신 연동 호스트: 곁 목록도 이 머신 캐릭터 뒤에 머신마다 구역을 둔다(목록과 같은 순서).
+function sideCards(others) {
+  if (!machines.length) return others.map(sideCard);
+  const out = [];
+  const mine = others.filter((c) => !c.remote);
+  if (mine.length) out.push(machineHead(S.machineLocal(hostName), true, mine.length), ...mine.map(sideCard));
+  for (const m of machines) {
+    const list = others.filter((c) => c.remote && c.machine && c.machine.id === m.id);
+    if (list.length) out.push(machineHead(m.name, m.online, list.length), ...list.map(sideCard));
+  }
+  return out;
 }
 function renderPaneHead(c) {
   const [cls] = phaseOf(c);
@@ -640,7 +660,7 @@ function renderPaneHead(c) {
   return el("div", { class: "pane-head" },
     el("div", { class: "row" },
       el("div", { class: "row grow clickable", onclick: () => openAgent(c.agentId) }, avatar(c),
-        el("div", { class: "grow" }, el("div", { class: "name", text: c.name }), el("div", { class: "sub", title: cwdOf(c), text: sub.filter(Boolean).join(" · ") }))),
+        el("div", { class: "grow" }, el("div", { class: "name" }, c.name, machineTag(c)), el("div", { class: "sub", title: cwdOf(c), text: sub.filter(Boolean).join(" · ") }))),
       chips(c),
       el("button", { class: "b", type: "button", title: S.paneDoneHint, text: S.paneDone, onclick: () => dismissPane(c.agentId) })),
     !c.office && goalOf(c) && el("div", { class: "goal", title: goalOf(c), text: goalOf(c) }),
