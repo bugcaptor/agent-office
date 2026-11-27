@@ -109,6 +109,39 @@ struct ResumeWatch {
     fired: bool,
 }
 
+// ── 터미널에서 답한 권한 요청 알아채기 ────────────────────────────────
+//
+// Claude는 터미널 대화상자로 답해도 PermissionRequest 훅을 끝내지 않고, PreToolUse는 대화상자
+// 앞에서 돈다. 그래서 답한 뒤 도구가 끝날 때(PostToolUse)까지는 훅 신호가 없다. 대화상자가
+// 떠 있는 동안 화면은 멈춰 있고(실측 0바이트), 답하면 도구 스피너가 초당 약 1KB씩 그린다.
+// 키 입력·창 크기 변경 직후의 출력은 그 반응일 수 있어 빼고, 입력 없이 출력이 몇 초
+// 이어지면 답한 것으로 본다.
+/// 요청이 뜬 직후 이 시간 안의 출력은 대화상자 자체를 그리는 것으로 본다.
+const ANSWER_GRACE: Duration = Duration::from_millis(1500);
+/// 키 입력·크기 변경 뒤 이 시간 안의 출력은 그 반응으로 본다.
+const ANSWER_INPUT_ECHO: Duration = Duration::from_secs(1);
+/// 출력 사이가 이만큼 비면 이어지는 출력으로 보지 않는다.
+const ANSWER_MAX_GAP: Duration = Duration::from_secs(1);
+/// 입력 없는 출력이 이만큼 이어지고
+const ANSWER_SUSTAIN: Duration = Duration::from_millis(2500);
+/// 그동안 이 바이트를 넘으면 답한 것으로 본다.
+const ANSWER_MIN_BYTES: usize = 1024;
+
+/// 권한 요청 하나가 떠 있는 세션의 출력 감시.
+struct AnswerWatch {
+    /// 요청이 뜬 시각.
+    opened_at: Instant,
+    /// 마지막 키 입력·크기 변경 시각.
+    last_input: Option<Instant>,
+    /// 입력 없이 이어지는 출력의 시작과 마지막 시각, 그동안의 바이트.
+    run_start: Option<Instant>,
+    last_output: Option<Instant>,
+    run_bytes: usize,
+}
+
+/// 터미널에서 답한 것으로 보았을 때 부르는 곳(웹 상태판 권한 대기열 정리).
+pub type AnswerListener = Arc<dyn Fn(&str) + Send + Sync>;
+
 /// 주입 가능한 시계. dedup 윈도우(Instant) + at 타임스탬프(epoch ms).
 pub trait Clock: Send + Sync {
     fn now(&self) -> Instant;
@@ -144,6 +177,11 @@ pub struct NotificationHub {
     /// 기본 알림 문구의 언어. hold_duration과 같은 경로로 주입된다(lib.rs 부팅
     /// + apply_settings_effects) — 허브는 설정을 직접 보지 않는다.
     lang: Mutex<crate::i18n::Lang>,
+    /// 권한 요청이 떠 있는 세션의 출력 감시(터미널에서 답했는지).
+    answer_watch: Mutex<HashMap<SessionId, AnswerWatch>>,
+    /// 출력만 보고 답한 것으로 친 세션. 다음 훅 신호가 확인할 때까지 남는다.
+    answer_inferred: Mutex<std::collections::HashSet<SessionId>>,
+    answer_listener: Mutex<Option<AnswerListener>>,
 }
 
 impl NotificationHub {
@@ -171,7 +209,68 @@ impl NotificationHub {
             // 기본 ko: 기존 테스트가 한국어 폴백 문구를 기대한다. 실제 값은
             // lib.rs가 설정 로드 직후 set_lang으로 주입한다.
             lang: Mutex::new(crate::i18n::Lang::Ko),
+            answer_watch: Mutex::new(HashMap::new()),
+            answer_inferred: Mutex::new(std::collections::HashSet::new()),
+            answer_listener: Mutex::new(None),
         }
+    }
+
+    /// 터미널에서 답한 것으로 보았을 때 부를 곳을 단다(옵저버가 권한 대기열을 쥔다).
+    pub fn set_answer_listener(&self, listener: AnswerListener) {
+        *self.answer_listener.lock().unwrap() = Some(listener);
+    }
+
+    /// 권한 요청(질문 포함)이 떴다. 터미널에서 답하는지 출력을 지켜본다.
+    pub fn watch_answer(&self, session_id: &str) {
+        self.answer_watch.lock().unwrap().insert(
+            session_id.to_string(),
+            AnswerWatch { opened_at: self.clock.now(), last_input: None, run_start: None, last_output: None, run_bytes: 0 },
+        );
+    }
+
+    /// 출력만 보고 답한 것으로 친 뒤 아직 훅 신호로 확인되지 않았다. 이때는 대화상자가
+    /// 아직 떠 있을 수도 있어 메시지를 바로 끼워 넣지 않는다.
+    pub fn answer_inferred(&self, session_id: &str) -> bool {
+        self.answer_inferred.lock().unwrap().contains(session_id)
+    }
+
+    /// 앱이 PTY에 키 입력을 쓰거나 크기를 바꿨다. 바로 뒤 출력은 그 반응이다.
+    pub fn on_input(&self, session_id: &str) {
+        if let Some(w) = self.answer_watch.lock().unwrap().get_mut(session_id) {
+            w.last_input = Some(self.clock.now());
+            w.run_start = None;
+            w.run_bytes = 0;
+        }
+    }
+
+    /// 훅이 세션 상태를 직접 알려 왔다. 출력 감시와 추정은 그만둔다.
+    fn end_answer_watch(&self, session_id: &str) {
+        self.answer_watch.lock().unwrap().remove(session_id);
+        self.answer_inferred.lock().unwrap().remove(session_id);
+    }
+
+    /// 입력 없는 출력이 이어지면 true(한 번만).
+    fn answer_seen(&self, session_id: &str, byte_len: usize, now: Instant) -> bool {
+        let mut watches = self.answer_watch.lock().unwrap();
+        let Some(w) = watches.get_mut(session_id) else {
+            return false;
+        };
+        if now.duration_since(w.opened_at) < ANSWER_GRACE
+            || w.last_input.is_some_and(|t| now.duration_since(t) < ANSWER_INPUT_ECHO)
+        {
+            return false;
+        }
+        if w.last_output.is_none_or(|t| now.duration_since(t) > ANSWER_MAX_GAP) || w.run_start.is_none() {
+            w.run_start = Some(now);
+            w.run_bytes = 0;
+        }
+        w.last_output = Some(now);
+        w.run_bytes = w.run_bytes.saturating_add(byte_len);
+        let done = w.run_start.is_some_and(|t| now.duration_since(t) >= ANSWER_SUSTAIN) && w.run_bytes >= ANSWER_MIN_BYTES;
+        if done {
+            watches.remove(session_id);
+        }
+        done
     }
 
     /// Hook 알림 보류 시간을 주입한다(이슈 #41). 설정 로드/변경 시 lib.rs·
@@ -270,6 +369,7 @@ impl NotificationHub {
                 // 이슈 #41: 턴이 종료되면(자동답변 후 케이스 포함) 보류 중인 질문
                 // 알림을 폐기한다 — 질문+완료 이중 알림 방지. running 값과 무관.
                 self.held.lock().unwrap().remove(session_id);
+                self.end_answer_watch(session_id);
                 // 사용량은 알림(running==0 게이트)·dedup과 완전히 독립된 채널로
                 // 먼저 방출한다 — 백그라운드 서브에이전트가 남아 아래 running==0
                 // 게이트가 알림을 억제해도, 그 턴이 쓴 토큰만은 유실되지 않는다
@@ -314,6 +414,11 @@ impl NotificationHub {
             ActivityKind::Prompt | ActivityKind::Tool | ActivityKind::SubStart
         ) {
             self.held.lock().unwrap().remove(session_id);
+        }
+        // 턴이 이어지거나 새로 시작했다는 훅 신호다. 웹에서 답한 경우(Resume)도 확실하다.
+        // 출력으로 낸 Resume은 아래 on_output이 이 뒤에 추정 표시를 단다.
+        if matches!(kind, ActivityKind::Prompt | ActivityKind::Tool | ActivityKind::Resume) {
+            self.end_answer_watch(session_id);
         }
         let Some(agent_id) = self.registry.resolve_agent(session_id) else {
             return;
@@ -524,6 +629,17 @@ impl NotificationHub {
             }
         }
 
+        if self.answer_seen(session_id, byte_len, now) {
+            // 늦게 방출될 질문 알림도 버린다 — 이미 답했다.
+            self.held.lock().unwrap().remove(session_id);
+            let listener = self.answer_listener.lock().unwrap().clone();
+            if let Some(listener) = listener {
+                listener(session_id);
+            }
+            self.ingest_activity(session_id, ActivityKind::Resume);
+            self.answer_inferred.lock().unwrap().insert(session_id.to_string());
+        }
+
         let should_resume = {
             let mut watches = self.resume_watch.lock().unwrap();
             let Some(watch) = watches.get_mut(session_id) else {
@@ -625,6 +741,7 @@ impl NotificationHub {
         self.resume_watch.lock().unwrap().remove(session_id);
         // 이슈 #41: 세션 정리 시 보류 중인 질문도 함께 버린다(flush 전 잔류 방지).
         self.held.lock().unwrap().remove(session_id);
+        self.end_answer_watch(session_id);
     }
 }
 

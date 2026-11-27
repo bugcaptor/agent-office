@@ -176,6 +176,11 @@ impl ChatQueue {
     /// 지금 작업 중에도 바로 넣어도 되는가(포그라운드를 새로 본다).
     async fn steer_now(&self, ctx: &ControlContext, agent_id: &str, session_id: &str) -> bool {
         let turn = ctx.turns.get(session_id);
+        // 터미널에서 답한 것을 출력으로만 짐작했으면 대화상자가 아직 떠 있을 수 있다. 끼워 넣은
+        // 글이 선택지 키로 읽히지 않게, 훅이 확인할 때까지는 쌓아 둔다.
+        if ctx.hub.answer_inferred(session_id) {
+            return false;
+        }
         if !steerable(turn.as_ref(), true, !ctx.observer.permissions().list(session_id).is_empty()) {
             return false;
         }

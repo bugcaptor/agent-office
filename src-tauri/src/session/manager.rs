@@ -987,6 +987,7 @@ impl SessionManager {
                 // 실패해도 IPC 계약상 돌려줄 곳이 없다(반환값 없음). 그래도
                 // 조용히 삼키면 "키를 눌렀는데 아무 일도 없다"가 되므로 최소한
                 // 로그는 남긴다 -- 세션이 방금 죽었거나 PTY가 닫힌 경우다.
+                self.hub.on_input(&s.session_id);
                 if let Err(error) = s.writer.lock().write_all(data.as_bytes()) {
                     eprintln!(
                         "agent-office: input write failed for {}: {error}",
@@ -1004,6 +1005,7 @@ impl SessionManager {
         if session.session_id != session_id || *session.state.lock() != SessionState::Running {
             return false;
         }
+        self.hub.on_input(&session.session_id);
         let written = match session.writer.lock().write_all(data.as_bytes()) {
             Ok(()) => true,
             Err(error) => {
@@ -1126,6 +1128,8 @@ impl SessionManager {
     pub fn resize(&self, agent_id: &str, cols: u16, rows: u16) {
         if let Some(s) = self.find(agent_id) {
             if *s.state.lock() == SessionState::Running {
+                // 크기를 바꾸면 화면을 다시 그린다. 그 출력은 작업 신호가 아니다.
+                self.hub.on_input(&s.session_id);
                 if let Err(error) = s.control.resize(cols, rows) {
                     eprintln!("agent-office: resize failed for {}: {error}", s.session_id);
                 }

@@ -117,6 +117,8 @@ async fn handle_permission(
         return empty();
     };
     let _withdraw = Withdraw(relay, id);
+    // 터미널에서 답해도 Claude는 이 훅을 끝내지 않는다. 답했는지는 출력으로 본다.
+    runtime.hub.watch_answer(&query.session);
     match tokio::time::timeout(PERMISSION_MAX_WAIT, rx).await {
         Ok(Ok(decision)) => {
             // 웹에서 허용·거부했으면 Claude는 바로 이어 간다. 다음 도구가 끝날 때(PostToolUse)까지

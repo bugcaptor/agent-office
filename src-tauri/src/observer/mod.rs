@@ -128,6 +128,10 @@ impl ObserverRuntime {
     }
 
     pub fn new(hub: Arc<NotificationHub>, adapters: Vec<Arc<dyn ObserverAdapter>>) -> Self {
+        let permissions = Arc::new(permission::PermissionRelay::new());
+        // 터미널에서 답한 것으로 보이면 웹 대기열의 요청도 내린다.
+        let relay = permissions.clone();
+        hub.set_answer_listener(Arc::new(move |session_id: &str| relay.settle_session(session_id)));
         Self {
             hub,
             adapters,
@@ -135,7 +139,7 @@ impl ObserverRuntime {
             agy_session_sink: None,
             stop_reply_sink: None,
             agy_usage_watermark: Mutex::new(HashMap::new()),
-            permissions: Arc::new(permission::PermissionRelay::new()),
+            permissions,
         }
     }
 

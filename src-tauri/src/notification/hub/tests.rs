@@ -1221,3 +1221,101 @@
         assert_eq!(notified.len(), 1);
         assert_eq!(notified[0].message, ATTENTION_FALLBACK_EN);
     }
+
+mod answer_watch {
+    use super::super::fake::FakeClock;
+    use super::super::NotificationHub;
+    use crate::state::fake::RecordingEvents;
+    use crate::state::SessionRegistry;
+    use crate::types::*;
+    use std::sync::{Arc, Mutex};
+    use std::time::Duration;
+
+    fn fixture() -> (Arc<NotificationHub>, Arc<RecordingEvents>, Arc<FakeClock>, Arc<Mutex<Vec<String>>>) {
+        let registry = Arc::new(SessionRegistry::new());
+        registry.insert("s1", "a1", SessionState::Running);
+        let events = Arc::new(RecordingEvents::default());
+        let clock = Arc::new(FakeClock::new());
+        let hub = Arc::new(NotificationHub::new(registry, events.clone(), clock.clone(), Duration::from_millis(3000)));
+        let settled = Arc::new(Mutex::new(Vec::new()));
+        let sink = settled.clone();
+        hub.set_answer_listener(Arc::new(move |sid: &str| sink.lock().unwrap().push(sid.to_string())));
+        (hub, events, clock, settled)
+    }
+
+    fn resumes(events: &RecordingEvents) -> usize {
+        events.activities().iter().filter(|a| a.kind == ActivityKind::Resume).count()
+    }
+
+    /// 스피너처럼 100ms마다 100바이트씩 `ms` 동안 낸다.
+    fn spin(hub: &NotificationHub, clock: &FakeClock, ms: u64) {
+        for _ in 0..ms / 100 {
+            clock.advance(100);
+            hub.on_output("s1", 100);
+        }
+    }
+
+    #[test]
+    fn steady_output_without_input_means_the_terminal_answered() {
+        let (hub, events, clock, settled) = fixture();
+        hub.watch_answer("s1");
+        // 대화상자를 그리는 출력은 센다고 치지 않는다.
+        hub.on_output("s1", 50_000);
+        clock.advance(10_000); // 기다리는 동안 화면은 멈춰 있다.
+        // 사용자가 터미널에서 Enter → 키 입력 반응은 빼고, 이어지는 스피너만 센다.
+        hub.on_input("s1");
+        spin(&hub, &clock, 3_000);
+        assert_eq!(resumes(&events), 0, "입력 반응(1초) 뒤 2.5초가 아직 안 찼다");
+        spin(&hub, &clock, 1_000);
+        assert_eq!(resumes(&events), 1);
+        assert_eq!(*settled.lock().unwrap(), vec!["s1".to_string()]);
+        assert!(hub.answer_inferred("s1"));
+        // 한 번만 낸다.
+        spin(&hub, &clock, 5_000);
+        assert_eq!(resumes(&events), 1);
+        // 도구 훅이 오면 확인된 것이다.
+        hub.ingest_activity("s1", ActivityKind::Tool);
+        assert!(!hub.answer_inferred("s1"));
+    }
+
+    #[test]
+    fn typing_in_the_dialog_and_lone_redraws_are_not_an_answer() {
+        let (hub, events, clock, settled) = fixture();
+        hub.watch_answer("s1");
+        clock.advance(2_000);
+        // 거부 사유를 치는 동안: 키마다 화면이 바뀐다.
+        for _ in 0..40 {
+            hub.on_input("s1");
+            clock.advance(200);
+            hub.on_output("s1", 300);
+        }
+        // 창 크기 변경 한 번, 그리고 1초 넘게 떨어진 짧은 출력들.
+        hub.on_input("s1");
+        hub.on_output("s1", 20_000);
+        for _ in 0..5 {
+            clock.advance(1_500);
+            hub.on_output("s1", 2_000);
+        }
+        assert_eq!(resumes(&events), 0);
+        assert!(settled.lock().unwrap().is_empty());
+        assert!(!hub.answer_inferred("s1"));
+    }
+
+    #[test]
+    fn hook_signals_end_the_watch() {
+        let (hub, events, clock, _settled) = fixture();
+        hub.watch_answer("s1");
+        // 웹에서 답했다(확실한 Resume) → 감시를 접는다.
+        hub.ingest_activity("s1", ActivityKind::Resume);
+        clock.advance(2_000);
+        spin(&hub, &clock, 5_000);
+        assert_eq!(resumes(&events), 1, "웹 답 Resume 하나뿐");
+        assert!(!hub.answer_inferred("s1"));
+        // 감시가 없으면 출력은 아무 뜻이 없다.
+        hub.watch_answer("s1");
+        hub.purge_session("s1");
+        clock.advance(2_000);
+        spin(&hub, &clock, 5_000);
+        assert_eq!(resumes(&events), 1);
+    }
+}
