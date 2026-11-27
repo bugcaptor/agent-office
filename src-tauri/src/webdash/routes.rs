@@ -31,6 +31,7 @@ const PAGE: &str = include_str!("../../web/dash.html");
 const STYLE: &str = include_str!("../../web/dash.css");
 const APP_JS: &str = include_str!("../../web/dash.js");
 const TASKS_JS: &str = include_str!("../../web/tasks.js");
+const SHELL_JS: &str = include_str!("../../web/shell.js");
 /// 토의 발언을 웹으로 보낼 때의 글자 상한.
 const BODY_CHARS: usize = 4000;
 /// 업무 본문 바이트 상한(수신함 `.md` 상한 64 KiB와 맞춤).
@@ -106,6 +107,9 @@ fn router(ctx: Arc<Dash>) -> Router {
         .route("/discussions/:id/answer", post(answer_discussion))
         .route("/agents/:agent/:op", post(agent_command))
         .route("/office-agent", post(office_agent_send))
+        .route("/shell/:agent", get(shell_state))
+        .route("/shell/:agent/suggest", post(shell_suggest))
+        .route("/shell/:agent/run", post(shell_run))
         .route("/office-agent/:op", post(office_agent_command))
         .layer(axum::middleware::from_fn_with_state(ctx.clone(), auth));
     Router::new()
@@ -113,6 +117,7 @@ fn router(ctx: Arc<Dash>) -> Router {
         .route("/dash.css", get(style_asset))
         .route("/dash.js", get(app_js_asset))
         .route("/tasks.js", get(tasks_js_asset))
+        .route("/shell.js", get(shell_js_asset))
         .route("/ca.crt", get(lan_ca))
         .nest("/api", api)
         .with_state(ctx)
@@ -201,6 +206,10 @@ async fn app_js_asset() -> Response {
 
 async fn tasks_js_asset() -> Response {
     static_asset(TASKS_JS, "text/javascript; charset=utf-8")
+}
+
+async fn shell_js_asset() -> Response {
+    static_asset(SHELL_JS, "text/javascript; charset=utf-8")
 }
 
 // ── 읽기 ─────────────────────────────────────────────────────────────
@@ -324,6 +333,7 @@ async fn state(State(ctx): Ctx) -> Json<Value> {
                 "label": ctx.dash.label(&a.id),
                 "cli": probe.cli,
                 "atPrompt": probe.at_prompt,
+                "shellAssist": a.shell_assist == Some(true),
             })
         })
         .collect();
@@ -1345,6 +1355,64 @@ async fn answer_ask(State(ctx): Ctx, Path(id): Path<String>, Json(a): Json<AskAn
                 activity(&ctx, op, agent.as_deref(), tool.as_deref());
             }
             ok(json!({}))
+        }
+        Err(e) => fail(e),
+    }
+}
+
+// ── 셸 캐릭터 ────────────────────────────────────────────────────────
+
+#[derive(Deserialize)]
+struct ShellQuery {
+    rev: Option<u64>,
+}
+
+fn shell_profile(ctx: &Dash, agent: &str) -> Result<AgentProfile, String> {
+    let p = profile(ctx, agent).ok_or("unknown-agent")?;
+    if p.shell_assist != Some(true) {
+        return Err("shell-not-enabled".into());
+    }
+    Ok(p)
+}
+
+/// 명령 블록 목록·지금 단계. 내용이 그대로면 `{same:true}`.
+async fn shell_state(State(ctx): Ctx, Path(agent): Path<String>, Query(q): Query<ShellQuery>) -> Json<Value> {
+    if let Err(e) = shell_profile(&ctx, &agent) {
+        return fail(e);
+    }
+    ok(crate::shell_assist::snapshot(&agent, q.rev))
+}
+
+#[derive(Deserialize)]
+struct ShellSuggestBody {
+    text: String,
+}
+
+/// 말 → 명령 제안(실행하지 않는다). 로컬 모델이 느릴 수 있어 끝날 때까지 기다린다.
+async fn shell_suggest(State(ctx): Ctx, Path(agent): Path<String>, Json(b): Json<ShellSuggestBody>) -> Json<Value> {
+    if let Err(e) = shell_profile(&ctx, &agent) {
+        return fail(e);
+    }
+    match crate::shell_assist::suggest(&agent, &b.text).await {
+        Ok(s) => ok(json!(s)),
+        Err(e) => fail(e),
+    }
+}
+
+#[derive(Deserialize)]
+struct ShellRunBody {
+    command: String,
+}
+
+/// 사람이 고른(또는 직접 친) 명령을 셸에 넣고 Enter.
+async fn shell_run(State(ctx): Ctx, Path(agent): Path<String>, Json(b): Json<ShellRunBody>) -> Json<Value> {
+    if let Err(e) = shell_profile(&ctx, &agent) {
+        return fail(e);
+    }
+    match crate::shell_assist::run(&agent, &b.command) {
+        Ok(()) => {
+            activity(&ctx, "shell-run", Some(&agent), Some(&first_line(&b.command)));
+            ok(Value::Null)
         }
         Err(e) => fail(e),
     }

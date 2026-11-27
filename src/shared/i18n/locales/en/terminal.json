@@ -145,5 +145,18 @@
     },
     "toChat": "Switch to conversation view (the CLI keeps running)",
     "toTerminal": "Switch to terminal view"
+  },
+  "shellAssist": {
+    "placeholder": "Ask in words — e.g. the 10 largest files here (fills the input line; you press Enter)",
+    "make": "Make command",
+    "making": "Making…",
+    "filled": "Filled the input line. Check it and press Enter.",
+    "risky": "⚠ This may be hard to undo.",
+    "interactive": "(full-screen or interactive command)",
+    "multiline": "Not filled because it spans several lines. Rewrite it as one line:",
+    "errorNone": "No LLM is available (Settings › Shell characters)",
+    "errorFailed": "The LLM call failed",
+    "errorNotEnabled": "Not a shell character",
+    "errorNotReady": "The app isn't ready yet"
   }
 }

@@ -23,6 +23,7 @@ import { useDiscussionSessionStore } from "../discussion/discussionSessionStore"
 import { useOfficeAgentStore } from "../officeAgent/officeAgentStore";
 import { useChatViewStore } from "../chatView/chatViewStore";
 import { ChatView } from "../chatView/ChatView";
+import { ShellAssistBar } from "./ShellAssistBar";
 
 const RESIZE_DEBOUNCE_MS = 120;
 
@@ -73,6 +74,8 @@ function TerminalMount({ agentId, chat = false, discussion = false, office = fal
   // 대화 보기: xterm은 그대로 두고 그 위를 덮는다(keep-alive 불변식 유지).
   const chatView = useChatViewStore((s) => !!s.on[agentId]);
   const setChatView = useChatViewStore((s) => s.set);
+  // 셸 캐릭터: 터미널 위에 말 → 명령 입력줄을 둔다.
+  const shellAssist = useAppStore((s) => !chat && s.agents[agentId]?.shellAssist === true);
 
   // First mount only: attach the (keep-alive) registry container. Never
   // detaches/destroys on unmount — only `removeAgent` -> registry.destroy()
@@ -118,10 +121,11 @@ function TerminalMount({ agentId, chat = false, discussion = false, office = fal
 
   return (
     <div
-      className="terminal-mount"
-      style={{ display: isActive ? "block" : "none" }}
+      className={shellAssist ? "terminal-mount has-shell-assist" : "terminal-mount"}
+      style={{ display: isActive ? (shellAssist ? "flex" : "block") : "none" }}
       data-agent-id={agentId}
     >
+      {shellAssist && <ShellAssistBar agentId={agentId} />}
       <div ref={hostRef} className="terminal-mount-host" />
       {chatView && (
         <ChatView

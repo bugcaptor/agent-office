@@ -720,6 +720,7 @@ impl SessionManager {
         env.insert(1, ("TERM".into(), "xterm-256color".into()));
         env.extend(resolved.extra_env.iter().cloned());
         let actual_shell = resolved.program.clone();
+        let marks_shell = actual_shell.clone();
         let actual_cwd = cwd.clone();
 
         let spawned = match self.factory.spawn(PtySpawnOptions {
@@ -781,6 +782,15 @@ impl SessionManager {
             };
             if let Err(error) = session.writer.lock().write_all(line.as_bytes()) {
                 eprintln!("agent-office: autostart write failed for {session_id}: {error}");
+            }
+        }
+
+        // 셸 캐릭터: 명령 경계 표식을 찍는 셸 훅을 읽힌다(시작 명령보다 먼저).
+        if started && !crate::types::is_side_session_id(&req.agent_id) {
+            if let Some(line) = crate::shell_assist::session_started(&req.agent_id, &session_id, &marks_shell) {
+                if let Err(error) = session.writer.lock().write_all(line.as_bytes()) {
+                    eprintln!("agent-office: shell marks write failed for {session_id}: {error}");
+                }
             }
         }
 

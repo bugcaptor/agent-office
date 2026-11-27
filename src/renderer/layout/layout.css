@@ -720,3 +720,17 @@ body {
   color: var(--accent);
 }
 .combo-picker-empty { padding: 6px 8px; font-size: 0.78rem; color: var(--text-dim); }
+
+/* ── 셸 캐릭터 설정(ShellAssistSection) ─────────────────────────────── */
+.shell-assist-endpoint {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0;
+  padding: 10px;
+  border: 1px solid var(--border-dark);
+}
+.shell-assist-endpoint legend { padding: 0 4px; }
+.shell-assist-endpoint input[type="password"] { width: 100%; box-sizing: border-box; }
+.shell-assist-actions { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.shell-assist-error { color: var(--accent-error); opacity: 1; }

@@ -35,6 +35,7 @@ import type {
   WebDashStatus,
 } from './settings';
 import type { ApiKeyStatus } from './apiKeys';
+import type { ShellAssistConfig, ShellAssistEndpoint, ShellSuggestion } from './shellAssist';
 import type { AwardRecord, AwardSpeech, AwardsFile } from './awards';
 import type { DiaryEntry, WorkLogItem } from './diary';
 import type { MemoSheet, MemoSheetMeta } from './memo';
@@ -255,6 +256,14 @@ export interface AgentOfficeApi {
   webDashPublishLabels(labels: Record<string, WebDashLabel>): Promise<void>;
   /** 웹 명령(`web-dash-control` 이벤트)에 답한다. `error`가 있으면 거절이다. */
   webDashControlReply(requestId: string, error?: string, data?: unknown): Promise<boolean>;
+  /** 셸 캐릭터 LLM 설정(`shell-assist.json`). */
+  shellAssistGetConfig(): Promise<ShellAssistConfig>;
+  /** 저장하고 다듬은 값을 돌려준다. */
+  shellAssistSetConfig(config: ShellAssistConfig): Promise<ShellAssistConfig>;
+  /** 연결 확인: 그 엔드포인트의 모델 목록(`/v1/models`). */
+  shellAssistListModels(endpoint: ShellAssistEndpoint): Promise<string[]>;
+  /** 셸 캐릭터에게 말로 시킨 것 → 명령 하나(실행하지 않는다). */
+  shellAssistSuggest(agentId: AgentId, text: string): Promise<ShellSuggestion>;
   /** 사용 가능한 셸 목록. Windows 외 플랫폼은 빈 배열. */
   listAvailableShells(): Promise<AvailableShell[]>;
   /** 디렉터리를 Visual Studio Code로 연다. VS Code 미설치/경로 부재 시 reject. */

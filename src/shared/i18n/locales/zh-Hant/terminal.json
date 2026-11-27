@@ -145,5 +145,18 @@
     },
     "toChat": "切換到對話檢視(CLI 繼續執行)",
     "toTerminal": "切換到終端機檢視"
+  },
+  "shellAssist": {
+    "placeholder": "用語言吩咐 — 例如:這個資料夾裡最大的 10 個檔案(填入輸入列,Enter 由你按)",
+    "make": "產生命令",
+    "making": "產生中…",
+    "filled": "已填入輸入列。確認後按 Enter。",
+    "risky": "⚠ 這可能是難以復原的命令。",
+    "interactive": "(全螢幕或互動式命令)",
+    "multiline": "多行命令未填入。請改成一行:",
+    "errorNone": "沒有可用的 LLM(設定 › Shell 角色)",
+    "errorFailed": "LLM 呼叫失敗",
+    "errorNotEnabled": "不是 Shell 角色",
+    "errorNotReady": "應用程式尚未就緒"
   }
 }

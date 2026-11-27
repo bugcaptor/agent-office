@@ -28,7 +28,7 @@ const S = {
     others: (n) => `다른 캐릭터 ${n}`, close: "닫기", sideHide: "◀ 접기",
     cost: (tokens, cost, turns) => `이 세션 추정 사용량 · 토큰 ${tokens} · ${cost} · ${turns}턴`, costHint: "공개 API 요율로 환산한 추정치입니다. 구독제 실제 청구액과 다릅니다. CH(…)는 캐시 포함 전체 토큰.",
     live: { thinking: (t) => `생각 중… ${t}`, tool: (tool, t) => `${tool} 실행 중… ${t}`, stalled: (t) => `작업 중이지만 ${t}째 화면 출력이 없습니다 — 멈췄을 수 있습니다`, human: "답을 기다리는 중 — 멈춘 게 아닙니다", idle: "턴이 끝났습니다 · 입력을 기다림", off: "CLI가 돌고 있지 않습니다", sec: (s) => `${s}초`, minSec: (m, s) => `${m}분 ${s}초` },
-    stalled: "응답 없음",
+    stalled: "응답 없음", shellChip: "셸 캐릭터",
     askPermission: (tool) => `권한 요청 · ${tool}`, askQuestion: "질문에 답해 주세요", askPlan: "계획 승인 요청",
     askNote: "터미널에도 같은 대화상자가 떠 있습니다. 먼저 답한 쪽이 반영되고, 터미널에서 답하면 이 카드는 잠시 뒤 사라집니다.",
     allow: "허용", allowAlways: "허용하고 다시 묻지 않기", deny: "거부", dismiss: "웹에서 닫기", denyPh: "거부 사유(선택, 에이전트에게 전함)",
@@ -79,7 +79,7 @@ const S = {
     others: (n) => `Other characters ${n}`, close: "Close", sideHide: "◀ Hide",
     cost: (tokens, cost, turns) => `Estimated session usage · ${tokens} tokens · ${cost} · ${turns} ${turns === 1 ? "turn" : "turns"}`, costHint: "Estimated at public API rates; not your subscription bill. CH(…) is the total including cache.",
     live: { thinking: (t) => `Thinking… ${t}`, tool: (tool, t) => `Running ${tool}… ${t}`, stalled: (t) => `Working, but no terminal output for ${t} — it may be stuck`, human: "Waiting for an answer — not stuck", idle: "Turn finished · waiting for input", off: "No CLI is running", sec: (s) => `${s}s`, minSec: (m, s) => `${m}m ${s}s` },
-    stalled: "No response",
+    stalled: "No response", shellChip: "Shell",
     askPermission: (tool) => `Permission request · ${tool}`, askQuestion: "Please answer", askPlan: "Plan approval",
     askNote: "The same dialog is open in the terminal. Whichever answers first wins; if you answer in the terminal, this card goes away shortly.",
     allow: "Allow", allowAlways: "Allow and don't ask again", deny: "Deny", dismiss: "Close here", denyPh: "Reason (optional, sent to the agent)",
@@ -325,7 +325,8 @@ function chips(c) {
   return el("div", { class: "chips" },
     el("span", { class: "chip " + cls, text: label }),
     live && live.kind === "stalled" && el("span", { class: "chip stalled", text: S.stalled }),
-    c.cli && c.session && c.session.state === "running" && el("span", { class: "chip cli working", text: S.cliRunning(CLI_NAMES[c.cli] || c.cli) }));
+    c.cli && c.session && c.session.state === "running" && el("span", { class: "chip cli working", text: S.cliRunning(CLI_NAMES[c.cli] || c.cli) }),
+    c.shellAssist && el("span", { class: "chip cli", text: S.shellChip }));
 }
 
 // 지금 진행 중인 Agent Office 업무와 플랜 진행도(서버 `work`). 누르면 업무 탭의 그 업무로 간다.
@@ -462,7 +463,8 @@ const PV_TAIL = 30;
 const FOLD_KEY = "agent-office-web-dash-folded";
 const folds = sload(FOLD_KEY) || {};
 function sessionKey(c) { return c && c.session ? String(c.session.sessionId || "-") : null; }
-function isActive(c) { const p = phaseOf(c)[0]; return p === "working" || p === "human"; }
+// 셸 캐릭터는 대화 로그가 없어 미리보기·스플릿 칸에 올리지 않는다.
+function isActive(c) { if (c.shellAssist) return false; const p = phaseOf(c)[0]; return p === "working" || p === "human"; }
 function isFolded(c) { return folds[c.agentId] != null && folds[c.agentId] === sessionKey(c); }
 function setFolded(c, on) {
   if (on) folds[c.agentId] = sessionKey(c); else delete folds[c.agentId];
@@ -668,6 +670,7 @@ function renderAgent() {
   const c = currentChar();
   if (!c) return [back];
   if (c.office) return [back, renderHead(c), renderAsks(c), renderOfficeForm(c), renderCost(c), renderLive(c), renderLog(c.agentId)];
+  if (c.shellAssist && window.Dash.shell) return [back, renderHead(c), window.Dash.shell.render(c)];
   return [back, renderHead(c), renderAsks(c), renderSent(c), renderMsgForm(c), renderTaskForm(c), renderCost(c), renderLive(c), renderLog(c.agentId)];
 }
 
@@ -830,13 +833,14 @@ function renderHead(c) {
     goalOf(c) && el("div", { class: "goal", text: goalOf(c) }),
     workBox(c),
     wait && el("div", { class: "wait", text: wait }),
-    el("div", { class: "btns" },
+    // 셸 캐릭터는 CLI를 띄우지 않는다 — 끊기(Ctrl-C)는 셸 화면의 실행 중 칸에 있다.
+    !c.shellAssist && el("div", { class: "btns" },
       el("button", { class: "b", disabled: !running, text: S.interrupt, onclick: () => act(`/agents/${id}/interrupt`) }),
       el("button", { class: "b", disabled: !running, text: S.ctrlc, onclick: () => act(`/agents/${id}/ctrl-c`) }),
       renderLaunch(c, running)),
     el("div", { class: "btns" },
       confirmBtn(S.restart, () => act(`/agents/${id}/restart`), "b"),
-      confirmBtn(S.resume, () => act(`/agents/${id}/resume`), "b"),
+      !c.shellAssist && confirmBtn(S.resume, () => act(`/agents/${id}/resume`), "b"),
       running && confirmBtn(S.terminate, () => act(`/agents/${id}/terminate`))));
 }
 
@@ -1466,7 +1470,12 @@ async function tick() {
     const usageChanged = await refreshUsage().catch(() => false);
     if (view.tab === "chars" || view.tab === "tasks" || hostShown == null) changed = await refreshChars();
     if (view.tab === "chars" && syncPanes()) changed = true;
-    if (view.tab === "chars" && view.agent) {
+    if (view.tab === "chars" && view.agent && window.Dash.shell && (charOf(view.agent) || {}).shellAssist) {
+      const agentId = view.agent;
+      keepLogs(splitOn ? [...panes.keys()] : []);
+      await window.Dash.shell.refresh(agentId).catch((e) => console.warn(e));
+      if (view.agent === agentId) updateShellView(changed);
+    } else if (view.tab === "chars" && view.agent) {
       const agentId = view.agent;
       keepLogs([agentId, ...(splitOn ? panes.keys() : [])]);
       const logMode = await refreshLog(agentId);
@@ -1506,6 +1515,12 @@ async function tick() {
   } catch (e) {
     if (!unauthorized) console.warn(e);
   } finally { busy = false; }
+}
+function updateShellView(changed) {
+  const c = currentChar();
+  const head = document.getElementById("head");
+  if (!c || !head || !document.getElementById("shell")) { if (changed) render(); return; }
+  if (changed) { head.replaceWith(renderHead(c)); window.Dash.shell.update(c); }
 }
 function updateAgentView(changed, logMode) {
   const c = currentChar();
@@ -1549,7 +1564,7 @@ function boot() {
 window.Dash = {
   L, S, el, errText, toast, copyText, api, act, confirmBtn, fmtTime, firstLine,
   store, load, sstore, sload, avatar, phaseOf, waitingMessage, busyShell,
-  leaf, cwdOf, placeOf, CLI_NAMES, WIDE, view, openAgent, openTask, render,
+  leaf, cwdOf, placeOf, CLI_NAMES, WIDE, view, openAgent, openTask, render, nowMs, tildePath,
   refreshNow, setHeaderVar, boot, previewSlot,
   getChars: () => chars,
   charOf,

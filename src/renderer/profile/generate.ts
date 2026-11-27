@@ -39,6 +39,8 @@ export interface DraftProfile {
   defaultAgent?: WorkAgent;
   /** 토의 기본 역할 id. 빈 문자열 = 없음. */
   defaultRoleId?: string;
+  /** 셸 캐릭터인가. */
+  shellAssist?: boolean;
 }
 
 /**
@@ -129,6 +131,7 @@ export function draftToProfile(d: DraftProfile, deskIndex: number): AgentProfile
     ...(keyboardSound ? { keyboardSound } : {}),
     ...(d.defaultAgent ? { defaultAgent: normalizeWorkAgent(d.defaultAgent) } : {}),
     ...(d.defaultRoleId ? { defaultRoleId: d.defaultRoleId } : {}),
+    ...(d.shellAssist ? { shellAssist: true } : {}),
   };
 }
 

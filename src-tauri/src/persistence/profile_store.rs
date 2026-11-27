@@ -207,6 +207,7 @@ mod tests {
                 clocked_out: None,
             keyboard_sound: None,
             default_role_id: None,
+            shell_assist: None,
             default_agent: None,
             }],
             version: 1,

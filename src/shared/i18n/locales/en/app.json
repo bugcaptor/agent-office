@@ -102,7 +102,8 @@
       "message": "🌐 Web: message to {{name}} — {{detail}}",
       "message-queued": "🌐 Web: queued for {{name}} — {{detail}}",
       "office-agent-queued": "🌐 Web: queued for the general agent — {{detail}}",
-      "other": "🌐 Web: {{op}}"
+      "other": "🌐 Web: {{op}}",
+      "shell-run": "🌐 Web: ran in {{name}} shell — {{detail}}"
     }
   }
 }

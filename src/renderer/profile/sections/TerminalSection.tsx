@@ -56,7 +56,20 @@ export function TerminalSection({
         </label>
         <p className="form-hint">{t("terminal.startupCommandHint")}</p>
       </div>
-      <div className="form-field"><WorkAgentFields profile value={draft.defaultAgent} onChange={(defaultAgent) => setDraft((d) => ({ ...d, defaultAgent }))} /></div>
+      <div className="form-field form-check">
+        <label>
+          <input
+            type="checkbox"
+            checked={draft.shellAssist === true}
+            onChange={(e) => setDraft((d) => ({ ...d, shellAssist: e.target.checked }))}
+          />
+          <span>{t("terminal.shellAssist")}</span>
+        </label>
+        <p className="form-hint">{t("terminal.shellAssistHint")}</p>
+      </div>
+      {!draft.shellAssist && (
+        <div className="form-field"><WorkAgentFields profile value={draft.defaultAgent} onChange={(defaultAgent) => setDraft((d) => ({ ...d, defaultAgent }))} /></div>
+      )}
       <div className="form-field">
         <label>
           <span className="form-label-text">{t("terminal.keyboardSound")}</span>

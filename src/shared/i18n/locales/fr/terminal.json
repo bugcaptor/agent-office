@@ -145,5 +145,18 @@
     },
     "toChat": "Passer à la vue conversation (la CLI continue de tourner)",
     "toTerminal": "Passer à la vue terminal"
+  },
+  "shellAssist": {
+    "placeholder": "Demandez avec des mots — ex. les 10 plus gros fichiers ici (remplit la ligne ; vous appuyez sur Entrée)",
+    "make": "Créer la commande",
+    "making": "Création…",
+    "filled": "Ligne remplie. Vérifiez puis appuyez sur Entrée.",
+    "risky": "⚠ Commande peut-être difficile à annuler.",
+    "interactive": "(commande plein écran ou interactive)",
+    "multiline": "Non remplie car sur plusieurs lignes. Réécrivez-la sur une ligne :",
+    "errorNone": "Aucun LLM disponible (Réglages › Personnages shell)",
+    "errorFailed": "L'appel au LLM a échoué",
+    "errorNotEnabled": "Ce n'est pas un personnage shell",
+    "errorNotReady": "L'application n'est pas encore prête"
   }
 }

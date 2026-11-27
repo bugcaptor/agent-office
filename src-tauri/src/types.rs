@@ -751,6 +751,10 @@ pub struct AgentProfile {
     /// 역할 없음으로 본다. TS `defaultRoleId?: string` 미러.
     #[serde(skip_serializing_if = "Option::is_none", default)]
     pub default_role_id: Option<String>,
+    /// 셸 캐릭터: CLI 없이 셸만 두고 웹·앱에서 말로 시키면 LLM이 명령을 제안한다
+    /// (`crate::shell_assist`). 부재/false = 일반 캐릭터. TS `shellAssist?: boolean` 미러.
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub shell_assist: Option<bool>,
 }
 
 /// 영속 상태. version은 리터럴 1.
@@ -1167,6 +1171,7 @@ mod tests {
             personality_prompt: None,
         keyboard_sound: None,
         default_role_id: None,
+        shell_assist: None,
         default_agent: None,
         };
         let json = serde_json::to_string(&profile).unwrap();
@@ -1212,6 +1217,7 @@ mod tests {
             personality_prompt: None,
         keyboard_sound: None,
         default_role_id: None,
+        shell_assist: None,
         default_agent: None,
         };
         let json = serde_json::to_string(&profile).unwrap();
@@ -1265,6 +1271,7 @@ mod tests {
             personality_prompt: None,
         keyboard_sound: None,
         default_role_id: None,
+        shell_assist: None,
         default_agent: None,
         };
         let json = serde_json::to_string(&profile).unwrap();
@@ -1295,6 +1302,7 @@ mod tests {
             personality_prompt: None,
                        keyboard_sound: Some("topre-hhkb".into()),
                        default_role_id: None,
+                       shell_assist: None,
                        default_agent: None,
         };
         let json = serde_json::to_string(&profile).unwrap();
@@ -1323,6 +1331,7 @@ mod tests {
             personality_prompt: None,
         keyboard_sound: None,
         default_role_id: None,
+        shell_assist: None,
         default_agent: None,
         };
         let json = serde_json::to_string(&profile).unwrap();
@@ -1351,6 +1360,7 @@ mod tests {
             personality_prompt: None,
         keyboard_sound: None,
         default_role_id: None,
+        shell_assist: None,
         default_agent: None,
         };
         let json = serde_json::to_string(&profile).unwrap();

@@ -93,7 +93,9 @@
     "keyboardSoundHint": "The sound this agent makes while typing. Picking one plays a preview.",
     "shell": "Shell",
     "shellAuto": "Auto (default)",
-    "shellNoHooks": "{{label}} (no time tracking)"
+    "shellNoHooks": "{{label}} (no time tracking)",
+    "shellAssist": "Shell character (words → command, local LLM)",
+    "shellAssistHint": "Keeps a plain shell with no CLI. Ask in words on the web dashboard or the bar above the terminal; the LLM proposes one command and you run it yourself. Set the LLM in Settings › Shell characters. Restart the terminal after changing this."
   },
   "io": {
     "export": "Export",

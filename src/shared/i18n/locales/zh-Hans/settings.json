@@ -12,7 +12,8 @@
     "tabSound": "声音",
     "tabShortcuts": "快捷键",
     "tabSystem": "系统",
-    "tabControl": "控制"
+    "tabControl": "控制",
+    "tabShell": "Shell 角色"
   },
   "keys": {
     "present": "已设置",
@@ -214,5 +215,41 @@
       "web-dash-https-failed": "未能获取 Tailscale 证书,因此 tailnet 地址以 HTTP 开放。10 分钟后重试。"
     },
     "lanTls": "局域网地址使用本机生成的证书以 HTTPS 开放。首次打开浏览器会警告,请确认证书信息中 CA 的 SHA-256 指纹与下方一致后继续。若不想看到警告,请在该设备上打开局域网地址后加 /ca.crt 并安装 CA 证书(iOS 安装后需在 设置 › 通用 › 关于本机 › 证书信任设置 中开启)。"
+  },
+  "shellAssist": {
+    "intro": "用语言吩咐 Shell 角色(在 资料 › 终端 中开启),这里设置的 LLM 就会生成一条命令。按从上到下的顺序尝试,关闭或无响应时跳到下一个。命令结束后,同一个 LLM 会用一两句话解释结果。",
+    "examples": "任何 OpenAI 兼容地址都可以。例如 Ollama http://localhost:11434 · LM Studio http://localhost:1234/v1 · 另一台电脑(如 4090 的 Windows)用 tailnet 地址 http://<电脑名>.<tailnet>.ts.net:11434(Ollama 需用 OLLAMA_HOST=0.0.0.0 启动才能接受外部连接)。只是生成一条命令,14B 级的代码模型就足够了。",
+    "endpointN": "LLM {{n}}",
+    "enabled": "使用",
+    "label": "名称",
+    "labelPlaceholder": "例如:4090 PC",
+    "baseUrl": "地址",
+    "baseUrlHelp": "http://host:port、…/v1、…/v1/chat/completions 都可以。",
+    "model": "模型",
+    "modelHelp": "服务器上已加载的模型名。点“检查连接”后可从列表中选择。",
+    "apiKey": "API 密钥(可选)",
+    "apiKeyHelp": "大多数本地服务器留空即可。填写后以 Bearer 发送。",
+    "probe": "检查连接",
+    "probing": "检查中…",
+    "up": "上移",
+    "down": "下移",
+    "remove": "删除",
+    "add": "+ 添加 LLM",
+    "probeOk": "已连接 · {{count}} 个模型:{{models}}",
+    "probeEmpty": "已连接,但模型列表为空。",
+    "modelMissing": "填写的模型不在列表中。",
+    "probeFailed": "连接失败:{{error}}",
+    "explain": "解释命令结果",
+    "explainHelp": "每条命令结束后用一两句话解释输出。没有输出时不调用 LLM。",
+    "fallback": "本地不可用时回退到云端",
+    "fallbackHelp": "所有本地 LLM 都失败时,用下面的 provider 重试。此时请求和最近的命令输出会发送到云端。",
+    "fallbackProvider": "回退 provider",
+    "fallbackModel": "回退模型(可选)",
+    "fallbackModelHelp": "留空则使用该 provider 标签摘要的默认模型。",
+    "openrouterKey": "OpenRouter 密钥在“常规”选项卡的摘要设置中填写。",
+    "profileHint": "开启或关闭 Shell 角色后,需要重启该角色的终端才会开始记录命令。",
+    "save": "保存",
+    "saving": "保存中…",
+    "saved": "已保存"
   }
 }

@@ -40,7 +40,7 @@ export const SUMMARY_DEFAULT_COMMANDS: Record<SummaryProvider, string | null> = 
 };
 
 /** 서비스 이름은 고유명사라 번역하지 않는다 — 모듈 최상위 상수로 남겨도 된다. */
-const SUMMARY_PROVIDER_LABEL: Record<SummaryProvider, string> = {
+export const SUMMARY_PROVIDER_LABEL: Record<SummaryProvider, string> = {
   claude: "Claude",
   codex: "Codex",
   agy: "Antigravity (agy)",

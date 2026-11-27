@@ -12,7 +12,8 @@
     "tabSound": "Sound",
     "tabShortcuts": "Shortcuts",
     "tabSystem": "System",
-    "tabControl": "Control"
+    "tabControl": "Control",
+    "tabShell": "Shell characters"
   },
   "keys": {
     "present": "set",
@@ -214,5 +215,41 @@
       "web-dash-https-failed": "Could not get a Tailscale certificate, so the tailnet address is served over HTTP. It retries in 10 minutes."
     },
     "lanTls": "LAN addresses use HTTPS with a certificate made by this computer. Browsers warn the first time: check that the CA's SHA-256 fingerprint in the certificate details matches the one below, then continue. To skip the warning, open /ca.crt after the LAN address on that device and install the CA certificate (on iOS, then turn it on in Settings › General › About › Certificate Trust Settings)."
+  },
+  "shellAssist": {
+    "intro": "Tell a shell character (turn it on in Profile › Terminal) what you want, and the LLM set here makes one command for it. They are tried top to bottom; one that is off or not answering is skipped. When a command finishes, the same LLM explains the result in a sentence or two.",
+    "examples": "Any OpenAI-compatible address works. E.g. Ollama http://localhost:11434 · LM Studio http://localhost:1234/v1 · another PC (e.g. a 4090 Windows box) by its tailnet address http://<pc>.<tailnet>.ts.net:11434 (start Ollama with OLLAMA_HOST=0.0.0.0 to accept outside connections). Making one command is easy work; a 14B coder model is plenty.",
+    "endpointN": "LLM {{n}}",
+    "enabled": "Use",
+    "label": "Name",
+    "labelPlaceholder": "e.g. 4090 PC",
+    "baseUrl": "Address",
+    "baseUrlHelp": "http://host:port, …/v1 or …/v1/chat/completions all work.",
+    "model": "Model",
+    "modelHelp": "A model loaded on that server. Press Check connection to pick from its list.",
+    "apiKey": "API key (optional)",
+    "apiKeyHelp": "Most local servers need none. If set, it is sent as Bearer.",
+    "probe": "Check connection",
+    "probing": "Checking…",
+    "up": "Move up",
+    "down": "Move down",
+    "remove": "Remove",
+    "add": "+ Add LLM",
+    "probeOk": "Connected · {{count}} models: {{models}}",
+    "probeEmpty": "Connected, but the model list is empty.",
+    "modelMissing": "The model you entered is not in the list.",
+    "probeFailed": "Connection failed: {{error}}",
+    "explain": "Explain command results",
+    "explainHelp": "Explains the output in a sentence or two after each command. Commands with no output skip the LLM.",
+    "fallback": "Fall back to the cloud when local fails",
+    "fallbackHelp": "If every local LLM fails, try again with the provider below. The request and recent command output then go to the cloud.",
+    "fallbackProvider": "Fallback provider",
+    "fallbackModel": "Fallback model (optional)",
+    "fallbackModelHelp": "Leave empty for that provider's default label-summary model.",
+    "openrouterKey": "Set the OpenRouter key in the summarizer settings on the General tab.",
+    "profileHint": "After turning a shell character on or off, restart that character's terminal to start recording commands.",
+    "save": "Save",
+    "saving": "Saving…",
+    "saved": "Saved"
   }
 }

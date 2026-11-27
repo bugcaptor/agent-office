@@ -52,6 +52,8 @@ pub mod session_events;
 // pub: 세션 로그 전사 필터/저장소를 contract·통합 테스트가 직접 부른다.
 pub mod session_log;
 mod shell_export;
+// 셸 캐릭터: 말 → 명령 제안(로컬 LLM), 명령별 출력 블록, 결과 설명.
+mod shell_assist;
 #[cfg(unix)]
 mod sessiond;
 mod state;
@@ -767,6 +769,7 @@ pub fn run() {
                 agent_session_lookup: claude_resume_store.clone(),
             });
             crate::chat_queue::ChatQueue::spawn(control_ctx.chat_queue.clone(), control_ctx.clone());
+            crate::shell_assist::install(control_ctx.clone(), &data_dir);
             if settings_cache.read().unwrap().cli_enabled {
                 let _ = tauri::async_runtime::block_on(control_server.ensure(control_ctx.clone()));
             }
@@ -844,6 +847,10 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             ipc::commands::create_session,
+            ipc::commands::shell_assist_get_config,
+            ipc::commands::shell_assist_set_config,
+            ipc::commands::shell_assist_list_models,
+            ipc::commands::shell_assist_suggest,
             ipc::commands::list_available_shells,
             ipc::commands::dispose_session,
             ipc::commands::handoff_supported,

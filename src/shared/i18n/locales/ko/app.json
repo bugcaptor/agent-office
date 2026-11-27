@@ -119,7 +119,8 @@
       "message": "🌐 웹: {{name}}에게 직접 입력 — {{detail}}",
       "message-queued": "🌐 웹: {{name}} 대기열에 넣음 — {{detail}}",
       "office-agent-queued": "🌐 웹: 일반 에이전트 대기열에 넣음 — {{detail}}",
-      "other": "🌐 웹: {{op}}"
+      "other": "🌐 웹: {{op}}",
+      "shell-run": "🌐 웹: {{name}} 셸에서 실행 — {{detail}}"
     }
   }
 }

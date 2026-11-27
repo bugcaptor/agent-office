@@ -159,6 +159,7 @@ pub(super) fn spawn_output_pump(
     log: Option<Arc<crate::session_log::SessionLogHandle>>,
 ) {
     tokio::spawn(async move {
+        let shell_agent = agent_id.clone();
         let mut batcher = OutputBatcher::new(session_id.clone(), agent_id);
         let mut bell_detector = BellDetector::default();
         let mut deadline: Option<tokio::time::Instant> = None;
@@ -188,6 +189,8 @@ pub(super) fn spawn_output_pump(
                         if let Some(log) = log.as_ref() {
                             log.data(&bytes);
                         }
+                        // 셸 캐릭터의 명령 블록 기록(셸 캐릭터가 아니면 곧바로 돌아온다).
+                        crate::shell_assist::feed(&shell_agent, &session_id, &bytes);
                         batcher.push(&bytes);
                         if batcher.pending_bytes() >= MAX_BYTES {
                             batcher.flush(&*sink);

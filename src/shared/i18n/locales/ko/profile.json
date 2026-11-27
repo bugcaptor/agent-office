@@ -93,7 +93,9 @@
     "keyboardSoundHint": "이 에이전트가 타이핑할 때 나는 소리입니다. 고르면 미리 들려줍니다.",
     "shell": "셸",
     "shellAuto": "자동 (기본)",
-    "shellNoHooks": "{{label}} (시간 추적 미지원)"
+    "shellNoHooks": "{{label}} (시간 추적 미지원)",
+    "shellAssist": "셸 캐릭터(말 → 명령, 로컬 LLM)",
+    "shellAssistHint": "CLI를 띄우지 않고 셸만 둡니다. 웹 상태판이나 터미널 위 입력줄에 말로 시키면 LLM이 명령 하나를 제안하고, 실행은 직접 누릅니다. LLM은 설정 › 셸 캐릭터에서 넣습니다. 바꾼 뒤 터미널을 재시작하세요."
   },
   "io": {
     "export": "내보내기",

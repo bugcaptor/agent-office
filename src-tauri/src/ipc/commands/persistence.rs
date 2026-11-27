@@ -25,7 +25,9 @@ pub async fn save_state(
     app_state: State<'_, AppState>,
     state: PersistedState,
 ) -> Result<(), String> {
-    app_state.store.save(&state).map_err(|e| e.to_string())
+    app_state.store.save(&state).map_err(|e| e.to_string())?;
+    crate::shell_assist::set_agents(&state.agents);
+    Ok(())
 }
 
 /// 완료된 턴 1건을 로컬 시계열 로그(session-times.jsonl)에 append.

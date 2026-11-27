@@ -12,7 +12,8 @@
     "tabSound": "サウンド",
     "tabShortcuts": "ショートカット",
     "tabSystem": "システム",
-    "tabControl": "制御"
+    "tabControl": "制御",
+    "tabShell": "シェルキャラクター"
   },
   "keys": {
     "present": "あり",
@@ -214,5 +215,41 @@
       "web-dash-https-failed": "Tailscale 証明書を取得できなかったため、tailnet アドレスを HTTP で開いています。10 分後に再試行します。"
     },
     "lanTls": "LAN アドレスはこのコンピューターが作った証明書で HTTPS で開きます。初回はブラウザーが警告するので、証明書情報の SHA-256 フィンガープリントが下の CA と一致するか確認して進んでください。警告なしで使うには、その端末で LAN アドレスの後ろに /ca.crt を付けて開き、CA 証明書をインストールします(iOS はインストール後、設定 › 一般 › 情報 › 証明書信頼設定でオンにします)。"
+  },
+  "shellAssist": {
+    "intro": "シェルキャラクター(プロフィール › ターミナルでオン)に言葉で頼むと、ここに設定した LLM がコマンドを1つ作ります。上から順に試し、オフや応答なしなら次へ進みます。コマンドが終わると同じ LLM が結果を1〜2文で説明します。",
+    "examples": "OpenAI 互換のアドレスなら使えます。例: Ollama http://localhost:11434 · LM Studio http://localhost:1234/v1 · 別の PC(例: 4090 の Windows)は tailnet アドレス http://<PC名>.<tailnet>.ts.net:11434(Ollama は OLLAMA_HOST=0.0.0.0 で起動すると外部から受け付けます)。コマンド1つを作るだけなので 14B 級のコーダーモデルで十分です。",
+    "endpointN": "LLM {{n}}",
+    "enabled": "使う",
+    "label": "名前",
+    "labelPlaceholder": "例: 4090 PC",
+    "baseUrl": "アドレス",
+    "baseUrlHelp": "http://host:port、…/v1、…/v1/chat/completions のどれでも構いません。",
+    "model": "モデル",
+    "modelHelp": "サーバーに載っているモデル名。接続確認を押すと一覧から選べます。",
+    "apiKey": "API キー(任意)",
+    "apiKeyHelp": "ほとんどのローカルサーバーでは空のままです。入れると Bearer で送ります。",
+    "probe": "接続確認",
+    "probing": "確認中…",
+    "up": "上へ",
+    "down": "下へ",
+    "remove": "削除",
+    "add": "+ LLM を追加",
+    "probeOk": "接続済み · モデル {{count}} 個: {{models}}",
+    "probeEmpty": "接続できましたがモデル一覧が空です。",
+    "modelMissing": "入力したモデルが一覧にありません。",
+    "probeFailed": "接続失敗: {{error}}",
+    "explain": "コマンド結果の説明",
+    "explainHelp": "コマンドが終わるたびに出力を1〜2文で説明します。出力がなければ LLM を呼びません。",
+    "fallback": "ローカルが使えなければクラウドへフォールバック",
+    "fallbackHelp": "ローカル LLM がすべて失敗したら下の provider で再試行します。そのとき依頼と最近のコマンド出力がクラウドへ送られます。",
+    "fallbackProvider": "フォールバック provider",
+    "fallbackModel": "フォールバックモデル(任意)",
+    "fallbackModelHelp": "空ならその provider のラベル要約の既定モデルを使います。",
+    "openrouterKey": "OpenRouter のキーは一般タブの要約設定で入れます。",
+    "profileHint": "シェルキャラクターをオン・オフしたら、そのキャラクターのターミナルを再起動するとコマンド記録が始まります。",
+    "save": "保存",
+    "saving": "保存中…",
+    "saved": "保存しました"
   }
 }

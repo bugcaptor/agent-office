@@ -172,6 +172,28 @@ impl TranscriptFilter {
         out
     }
 
+    /// 아직 확정하지 않은 라이브 영역을 확정하지 않고 읽는다(진행 중 출력 미리보기).
+    /// 꼬리의 빈 줄은 뺀다.
+    pub fn peek_pending(&self) -> Vec<String> {
+        let mut out: Vec<String> = self
+            .pending
+            .iter()
+            .map(|line| {
+                let text: String = line.iter().filter(|c| **c != WIDE_TAIL).collect();
+                text.trim_end().to_string()
+            })
+            .collect();
+        while out.last().is_some_and(|l| l.is_empty()) {
+            out.pop();
+        }
+        out
+    }
+
+    /// 대체 화면(전체 화면 앱) 안에 있는가.
+    pub fn in_alt_screen(&self) -> bool {
+        self.alt_screen
+    }
+
     /// 전량 확정(세션 종료·앱 종료·화면 전체 지우기).
     pub fn flush_all(&mut self) -> Vec<String> {
         let mut out = Vec::new();

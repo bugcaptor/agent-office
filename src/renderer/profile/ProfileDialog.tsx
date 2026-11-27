@@ -126,6 +126,7 @@ export function ProfileDialog() {
         keyboardSound: trimmedKeyboardSound || undefined,
         defaultAgent: draft.defaultAgent ? normalizeWorkAgent(draft.defaultAgent) : undefined,
         defaultRoleId: draft.defaultRoleId || undefined,
+        shellAssist: draft.shellAssist ? true : undefined,
       });
     } else {
       const profile = draftToProfile(draft, agentOrder.length);

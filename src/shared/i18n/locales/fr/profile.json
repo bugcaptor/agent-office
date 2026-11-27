@@ -93,7 +93,9 @@
     "keyboardSoundHint": "Le son que fait cet agent en tapant. En choisir un lance un aperçu.",
     "shell": "Shell",
     "shellAuto": "Auto (par défaut)",
-    "shellNoHooks": "{{label}} (sans suivi du temps)"
+    "shellNoHooks": "{{label}} (sans suivi du temps)",
+    "shellAssist": "Personnage shell (mots → commande, LLM local)",
+    "shellAssistHint": "Garde un shell simple, sans CLI. Demandez avec des mots sur le tableau web ou dans la barre au-dessus du terminal : le LLM propose une commande et vous la lancez vous-même. Réglez le LLM dans Réglages › Personnages shell. Redémarrez le terminal après modification."
   },
   "io": {
     "export": "Exporter",

@@ -370,3 +370,20 @@ main.tasks-wide { max-width: 1380px; }
 .tb-pv { cursor: pointer; }
 .tb-pv .pv { margin-top: 6px; }
 .tb-pv .pv-lines { min-height: 0; }
+
+/* 셸 캐릭터 */
+.sh-cmd { font: 13px/1.45 ui-monospace, Menlo, monospace; min-height: 0; background: var(--code); }
+.sh-cmd[readonly] { border-color: transparent; }
+.sh-prop.risky { border-color: color-mix(in srgb, var(--bad) 50%, var(--line)); }
+.warn-note { color: var(--warn); }
+.sh-expl { margin-top: 8px; font-size: 14px; overflow-wrap: anywhere; }
+.sh-expl.muted, .sh-src { color: var(--muted); font-size: 12px; }
+.sh-status.busy { border-color: color-mix(in srgb, var(--ok) 45%, var(--line)); }
+.sh-status .row { color: var(--ok); font-size: 13px; }
+.sh-now { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sh-tail, .sh-out pre { margin: 8px 0 0; padding: 6px 8px; background: var(--code); border-radius: 8px; white-space: pre-wrap; overflow-wrap: anywhere; font: 12px/1.4 ui-monospace, Menlo, monospace; max-height: 50vh; overflow: auto; color: var(--ink); }
+.sh-head { align-items: flex-start; }
+.sh-line { font: 13px/1.4 ui-monospace, Menlo, monospace; overflow-wrap: anywhere; white-space: pre-wrap; }
+.sh-origin { flex: none; font-size: 13px; }
+.sh-block .sub { margin-top: 2px; }
+.sh-out { margin: 6px 0 0; }

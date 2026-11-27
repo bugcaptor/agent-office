@@ -145,5 +145,18 @@
     },
     "toChat": "切换到对话视图(CLI 继续运行)",
     "toTerminal": "切换到终端视图"
+  },
+  "shellAssist": {
+    "placeholder": "用语言吩咐 — 例如:这个文件夹里最大的 10 个文件(填入输入行,回车由你按)",
+    "make": "生成命令",
+    "making": "生成中…",
+    "filled": "已填入输入行。确认后按回车。",
+    "risky": "⚠ 这可能是难以撤销的命令。",
+    "interactive": "(全屏或交互式命令)",
+    "multiline": "多行命令未填入。请改成一行:",
+    "errorNone": "没有可用的 LLM(设置 › Shell 角色)",
+    "errorFailed": "LLM 调用失败",
+    "errorNotEnabled": "不是 Shell 角色",
+    "errorNotReady": "应用尚未就绪"
   }
 }

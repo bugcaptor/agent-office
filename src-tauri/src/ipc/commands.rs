@@ -41,6 +41,8 @@ mod doc_view;
 // 웹 상태판 설정·다리.
 mod chat_view;
 mod web_dash;
+// 셸 캐릭터 LLM 설정·명령 제안.
+mod shell_assist;
 
 // Re-imported here (in addition to each domain file's own scoped `use`s)
 // purely so `commands/tests.rs`'s `use super::*;` keeps resolving the bare
@@ -66,6 +68,7 @@ pub(crate) use usage::*;
 pub(crate) use doc_view::*;
 pub(crate) use chat_view::*;
 pub(crate) use web_dash::*;
+pub(crate) use shell_assist::*;
 
 #[cfg(test)]
 mod tests;

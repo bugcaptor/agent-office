@@ -145,5 +145,18 @@
     },
     "toChat": "대화 보기로 전환(CLI는 그대로 돎)",
     "toTerminal": "터미널 보기로 전환"
+  },
+  "shellAssist": {
+    "placeholder": "말로 시키기 — 예: 이 폴더에서 큰 파일 10개 (명령은 입력줄에 채워지고 Enter는 직접)",
+    "make": "명령 만들기",
+    "making": "만드는 중…",
+    "filled": "입력줄에 채웠습니다. 확인하고 Enter를 누르세요.",
+    "risky": "⚠ 되돌리기 어려운 명령일 수 있습니다.",
+    "interactive": "(전체 화면·대화형 명령)",
+    "multiline": "여러 줄 명령이라 채우지 않았습니다. 한 줄로 고쳐 쓰세요:",
+    "errorNone": "쓸 수 있는 LLM이 없습니다(설정 › 셸 캐릭터)",
+    "errorFailed": "LLM 호출에 실패했습니다",
+    "errorNotEnabled": "셸 캐릭터가 아닙니다",
+    "errorNotReady": "앱이 아직 준비되지 않았습니다"
   }
 }

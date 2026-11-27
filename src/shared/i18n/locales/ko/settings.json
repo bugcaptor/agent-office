@@ -12,7 +12,8 @@
     "tabSound": "소리",
     "tabShortcuts": "단축키",
     "tabSystem": "시스템",
-    "tabControl": "제어"
+    "tabControl": "제어",
+    "tabShell": "셸 캐릭터"
   },
   "keys": {
     "present": "있음",
@@ -214,5 +215,41 @@
       "web-dash-https-failed": "Tailscale 인증서를 받지 못해 tailnet 주소를 HTTP로 열었습니다. 10분 뒤 다시 해 봅니다."
     },
     "lanTls": "LAN 주소는 이 컴퓨터가 만든 인증서로 HTTPS로 열립니다. 처음 열면 브라우저가 경고하니, 인증서 정보의 SHA-256 지문이 아래 CA 지문과 같은지 확인하고 진행하세요. 경고 없이 쓰려면 그 기기에서 LAN 주소 뒤에 /ca.crt를 열어 CA 인증서를 설치하세요(iOS는 설치 뒤 설정 › 일반 › 정보 › 인증서 신뢰 설정에서 켭니다)."
+  },
+  "shellAssist": {
+    "intro": "셸 캐릭터(프로필 › 터미널에서 켬)에게 말로 시키면 여기 넣은 LLM이 명령 하나를 만듭니다. 위에서부터 차례로 시도하고, 꺼져 있거나 응답이 없으면 다음 것으로 넘어갑니다. 명령이 끝나면 같은 LLM이 결과를 한두 줄로 설명합니다.",
+    "examples": "OpenAI 호환 주소면 됩니다. 예: Ollama http://localhost:11434 · LM Studio http://localhost:1234/v1 · 다른 PC(예: 4090 Windows)는 tailnet 주소 http://<PC 이름>.<tailnet>.ts.net:11434 (Ollama는 OLLAMA_HOST=0.0.0.0으로 띄워야 바깥에서 받습니다). 명령 하나 만드는 일이라 14B급 코더 모델이면 충분합니다.",
+    "endpointN": "LLM {{n}}",
+    "enabled": "사용",
+    "label": "이름",
+    "labelPlaceholder": "예: 4090 PC",
+    "baseUrl": "주소",
+    "baseUrlHelp": "http://host:port, …/v1, …/v1/chat/completions 어느 꼴이든 됩니다.",
+    "model": "모델",
+    "modelHelp": "서버에 올라가 있는 모델 이름. 연결 확인을 누르면 목록에서 고를 수 있습니다.",
+    "apiKey": "API 키(선택)",
+    "apiKeyHelp": "대부분의 로컬 서버는 비워 둡니다. 넣으면 Bearer로 보냅니다.",
+    "probe": "연결 확인",
+    "probing": "확인 중…",
+    "up": "위로",
+    "down": "아래로",
+    "remove": "삭제",
+    "add": "+ LLM 추가",
+    "probeOk": "연결됨 · 모델 {{count}}개: {{models}}",
+    "probeEmpty": "연결됐지만 모델 목록이 비었습니다.",
+    "modelMissing": "넣은 모델이 목록에 없습니다.",
+    "probeFailed": "연결 실패: {{error}}",
+    "explain": "명령 결과 설명",
+    "explainHelp": "명령이 끝날 때마다 출력을 한두 줄로 설명합니다. 출력이 없으면 LLM을 부르지 않습니다.",
+    "fallback": "로컬이 안 되면 클라우드로 폴백",
+    "fallbackHelp": "로컬 LLM이 모두 실패하면 아래 provider로 다시 시도합니다. 이때 요청과 최근 명령 출력이 클라우드로 갑니다.",
+    "fallbackProvider": "폴백 provider",
+    "fallbackModel": "폴백 모델(선택)",
+    "fallbackModelHelp": "비우면 그 provider의 라벨 요약 기본 모델을 씁니다.",
+    "openrouterKey": "OpenRouter 키는 일반 탭의 요약기 설정에서 넣습니다.",
+    "profileHint": "셸 캐릭터를 켜거나 끈 뒤에는 그 캐릭터의 터미널을 재시작해야 명령 기록이 시작됩니다.",
+    "save": "저장",
+    "saving": "저장 중…",
+    "saved": "저장했습니다"
   }
 }

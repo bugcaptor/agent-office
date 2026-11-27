@@ -72,6 +72,8 @@ export interface AgentProfile {
   keyboardSound?: string;
   /** 토의 기본 역할(`DiscussionRole.id`). 없는 id면 역할 없음으로 본다. 자유 텍스트 `role`과 별개. */
   defaultRoleId?: string;
+  /** 셸 캐릭터: CLI 없이 셸만 두고, 말로 시키면 LLM이 명령을 제안한다(Rust `shell_assist`). 부재 = 일반 캐릭터. */
+  shellAssist?: boolean;
 }
 
 /**

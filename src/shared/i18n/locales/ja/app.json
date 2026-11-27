@@ -102,7 +102,8 @@
       "message": "🌐 Web: {{name}} に直接入力 — {{detail}}",
       "message-queued": "🌐 Web: {{name}} のキューに追加 — {{detail}}",
       "office-agent-queued": "🌐 Web: 汎用エージェントのキューに追加 — {{detail}}",
-      "other": "🌐 Web: {{op}}"
+      "other": "🌐 Web: {{op}}",
+      "shell-run": "🌐 Web: {{name}} のシェルで実行 — {{detail}}"
     }
   }
 }

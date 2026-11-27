@@ -387,3 +387,22 @@
 }
 
 .folder-open-error { top: 40px; overflow-wrap: anywhere; }
+
+/* ── 셸 캐릭터 입력줄(ShellAssistBar): 터미널 위 한 줄, 터미널은 남은 높이 ── */
+.terminal-mount.has-shell-assist { flex-direction: column; }
+.terminal-mount.has-shell-assist > .terminal-mount-host { flex: 1; min-height: 0; height: auto; }
+.shell-assist-bar {
+  flex: none;
+  padding: 4px 8px;
+  border-bottom: 1px solid var(--border-dark);
+  background: var(--bg-panel, transparent);
+  font-size: 0.85rem;
+}
+.shell-assist-row { display: flex; gap: 6px; align-items: center; }
+.shell-assist-row input { flex: 1; min-width: 0; }
+.shell-assist-icon { flex: none; opacity: 0.7; font-family: ui-monospace, Menlo, monospace; }
+.shell-assist-msg { margin-top: 3px; color: var(--text-dim); overflow-wrap: anywhere; }
+.shell-assist-msg code { font-family: ui-monospace, Menlo, monospace; }
+.shell-assist-risky { color: var(--accent-warn, #d98a00); }
+.shell-assist-error { color: var(--accent-error); }
+.shell-assist-source { opacity: 0.7; }

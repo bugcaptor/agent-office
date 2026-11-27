@@ -335,6 +335,20 @@ const impl: Partial<AgentOfficeApi> = {
     return status;
   },
   async webDashPublishLabels() {},
+  async shellAssistGetConfig() {
+    return {
+      endpoints: [{ label: "4090 PC", baseUrl: "http://pc.tailnet:11434", model: "qwen2.5-coder:14b", apiKey: "", enabled: true }],
+      fallbackEnabled: false,
+      fallbackProvider: "openrouter",
+      fallbackModel: "",
+      explain: true,
+    };
+  },
+  async shellAssistSetConfig(config) { return config; },
+  async shellAssistListModels() { return ["qwen2.5-coder:14b", "qwen3:14b"]; },
+  async shellAssistSuggest() {
+    return { command: "du -sh * | sort -rh | head -10", explanation: "Shows the 10 largest entries in this folder.", interactive: false, risky: false, multiline: false, source: "4090 PC" };
+  },
   async codexImageStatus() { return { available: false }; },
   async listProviderModels() { return []; },
   async workAgentModels() { return []; },

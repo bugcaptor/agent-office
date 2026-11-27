@@ -93,7 +93,9 @@
     "keyboardSoundHint": "這個 Agent 打字時發出的聲音。選取後會先試聽。",
     "shell": "Shell",
     "shellAuto": "自動（預設）",
-    "shellNoHooks": "{{label}}（不支援時間追蹤）"
+    "shellNoHooks": "{{label}}（不支援時間追蹤）",
+    "shellAssist": "Shell 角色(語言 → 命令,本機 LLM)",
+    "shellAssistHint": "不啟動 CLI,只保留 shell。在網頁面板或終端機上方的輸入列用語言吩咐,LLM 會建議一條命令,由你親自執行。LLM 在 設定 › Shell 角色 中設定。變更後請重新啟動終端機。"
   },
   "io": {
     "export": "匯出",

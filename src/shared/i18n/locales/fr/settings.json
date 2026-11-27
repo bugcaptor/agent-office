@@ -12,7 +12,8 @@
     "tabSound": "Son",
     "tabShortcuts": "Raccourcis",
     "tabSystem": "Système",
-    "tabControl": "Contrôle"
+    "tabControl": "Contrôle",
+    "tabShell": "Personnages shell"
   },
   "keys": {
     "present": "définie",
@@ -214,5 +215,41 @@
       "web-dash-https-failed": "Impossible d'obtenir un certificat Tailscale : l'adresse tailnet est servie en HTTP. Nouvel essai dans 10 minutes."
     },
     "lanTls": "Les adresses LAN utilisent HTTPS avec un certificat créé par cet ordinateur. Le navigateur avertit la première fois : vérifiez que l'empreinte SHA-256 de l'AC correspond à celle ci-dessous, puis continuez. Pour éviter l'avertissement, ouvrez /ca.crt après l'adresse LAN sur l'appareil et installez le certificat d'AC (sur iOS, activez-le ensuite dans Réglages › Général › Informations › Réglages des certificats)."
+  },
+  "shellAssist": {
+    "intro": "Dites à un personnage shell (activé dans Profil › Terminal) ce que vous voulez : le LLM réglé ici en fait une commande. Ils sont essayés de haut en bas ; un LLM éteint ou muet est ignoré. Quand la commande se termine, le même LLM explique le résultat en une ou deux phrases.",
+    "examples": "Toute adresse compatible OpenAI convient. Ex. : Ollama http://localhost:11434 · LM Studio http://localhost:1234/v1 · un autre PC (ex. un Windows avec 4090) via son adresse tailnet http://<pc>.<tailnet>.ts.net:11434 (lancez Ollama avec OLLAMA_HOST=0.0.0.0 pour accepter les connexions extérieures). Produire une commande est simple : un modèle de code 14B suffit.",
+    "endpointN": "LLM {{n}}",
+    "enabled": "Utiliser",
+    "label": "Nom",
+    "labelPlaceholder": "ex. PC 4090",
+    "baseUrl": "Adresse",
+    "baseUrlHelp": "http://hôte:port, …/v1 ou …/v1/chat/completions conviennent.",
+    "model": "Modèle",
+    "modelHelp": "Un modèle chargé sur ce serveur. Vérifiez la connexion pour choisir dans sa liste.",
+    "apiKey": "Clé API (facultatif)",
+    "apiKeyHelp": "La plupart des serveurs locaux n'en ont pas. Si elle est renseignée, elle est envoyée en Bearer.",
+    "probe": "Vérifier la connexion",
+    "probing": "Vérification…",
+    "up": "Monter",
+    "down": "Descendre",
+    "remove": "Supprimer",
+    "add": "+ Ajouter un LLM",
+    "probeOk": "Connecté · {{count}} modèles : {{models}}",
+    "probeEmpty": "Connecté, mais la liste des modèles est vide.",
+    "modelMissing": "Le modèle saisi n'est pas dans la liste.",
+    "probeFailed": "Échec de connexion : {{error}}",
+    "explain": "Expliquer les résultats",
+    "explainHelp": "Explique la sortie en une ou deux phrases après chaque commande. Sans sortie, le LLM n'est pas appelé.",
+    "fallback": "Basculer vers le cloud si le local échoue",
+    "fallbackHelp": "Si tous les LLM locaux échouent, réessaie avec le fournisseur ci-dessous. La demande et la sortie récente partent alors vers le cloud.",
+    "fallbackProvider": "Fournisseur de secours",
+    "fallbackModel": "Modèle de secours (facultatif)",
+    "fallbackModelHelp": "Vide = modèle par défaut des résumés de libellé de ce fournisseur.",
+    "openrouterKey": "La clé OpenRouter se règle dans les réglages du résumeur, onglet Général.",
+    "profileHint": "Après avoir activé ou désactivé un personnage shell, redémarrez son terminal pour commencer à enregistrer les commandes.",
+    "save": "Enregistrer",
+    "saving": "Enregistrement…",
+    "saved": "Enregistré"
   }
 }

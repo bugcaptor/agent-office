@@ -64,6 +64,7 @@ export function useProfileDraft(editingAgentId: string | undefined, initialCwd?:
       keyboardSound: agent.keyboardSound ?? "",
       defaultAgent: agent.defaultAgent,
       defaultRoleId: agent.defaultRoleId ?? "",
+      shellAssist: agent.shellAssist === true,
     });
   }, [editingAgentId]);
 

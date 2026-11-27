@@ -102,7 +102,8 @@
       "message": "🌐 網頁：直接傳給 {{name}} — {{detail}}",
       "message-queued": "🌐 網頁：加入 {{name}} 的佇列 — {{detail}}",
       "office-agent-queued": "🌐 網頁：加入通用代理的佇列 — {{detail}}",
-      "other": "🌐 網頁:{{op}}"
+      "other": "🌐 網頁:{{op}}",
+      "shell-run": "🌐 網頁:在 {{name}} 的 shell 中執行 — {{detail}}"
     }
   }
 }

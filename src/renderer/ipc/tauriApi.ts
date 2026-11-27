@@ -286,6 +286,10 @@ export const tauriApi: AgentOfficeApi = {
   async webDashRotateToken() { return await invoke(Commands.webDashRotateToken); },
   async webDashPublishLabels(labels) { await invoke(Commands.webDashPublishLabels, { labels }); },
   async webDashControlReply(requestId, error, data) { return await invoke(Commands.webDashControlReply, { requestId, error: error ?? null, data: data ?? null }); },
+  async shellAssistGetConfig() { return await invoke(Commands.shellAssistGetConfig); },
+  async shellAssistSetConfig(config) { return await invoke(Commands.shellAssistSetConfig, { config }); },
+  async shellAssistListModels(endpoint) { return await invoke(Commands.shellAssistListModels, { endpoint }); },
+  async shellAssistSuggest(agentId, text) { return await invoke(Commands.shellAssistSuggest, { agentId, text }); },
 
   async listAvailableShells() {
     return await invoke(Commands.listAvailableShells);
