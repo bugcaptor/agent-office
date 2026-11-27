@@ -10,6 +10,7 @@ const S = {
     restart: "터미널 재시작", resume: "이어하기", terminate: "종료", interrupt: "작업 중단(Esc)", ctrlc: "Ctrl-C", launch: "CLI 실행", launchCli: "띄울 CLI",
     again: "한 번 더 눌러 확인", done: "보냈습니다", saved: "저장했습니다", deleted: "삭제했습니다", result: "결과", lines: "줄",
     sentTasks: "보낸 업무", taskState: { in_progress: "진행 중", review: "끝남 · 확인 대기" }, markDone: "완료", markedDone: "완료로 옮겼습니다",
+    workNow: "업무 진행 중", workStep: (n, total) => `단계 ${n}/${total}`, workDone: (d, total) => `${d}/${total} 완료`, workAuto: { running: "자동 진행", paused: "자동 진행 멈춤" }, workOpen: "눌러서 업무 탭에서 이 업무 보기",
     sendTask: "업무 보내기", titlePh: "할 일(제목)", bodyPh: "자세한 내용(선택)", cli: "CLI", send: "보내기", restartSend: "재시작하고 보내기",
     office: "일반 에이전트", officeSub: "캐릭터 없음", officeHelp: "캐릭터 없이 Agent Office 안내가 다 들어간 에이전트입니다. 업무·토의를 만들거나 앱을 다루는 일을 맡길 수 있습니다.",
     instruct: "지시하기", instructPh: "에이전트에게 시킬 일", folder: "작업 폴더", home: "홈",
@@ -60,6 +61,7 @@ const S = {
     restart: "Restart terminal", resume: "Resume", terminate: "Terminate", interrupt: "Interrupt (Esc)", ctrlc: "Ctrl-C", launch: "Run CLI", launchCli: "CLI to run",
     again: "Tap again to confirm", done: "Sent", saved: "Saved", deleted: "Deleted", result: "Result", lines: "lines",
     sentTasks: "Sent tasks", taskState: { in_progress: "In progress", review: "Finished · to review" }, markDone: "Done", markedDone: "Marked done",
+    workNow: "Working on task", workStep: (n, total) => `Step ${n}/${total}`, workDone: (d, total) => `${d}/${total} done`, workAuto: { running: "Auto-run", paused: "Auto-run paused" }, workOpen: "Click to open this task in the Tasks tab",
     sendTask: "Send a task", titlePh: "Task (title)", bodyPh: "Details (optional)", cli: "CLI", send: "Send", restartSend: "Restart and send",
     office: "General agent", officeSub: "No character", officeHelp: "An agent without a character that still gets all Agent Office instructions. Ask it to create tasks or discussions, or to operate the app.",
     instruct: "Instruct", instructPh: "What should the agent do?", folder: "Folder", home: "Home",
@@ -326,6 +328,32 @@ function chips(c) {
     c.cli && c.session && c.session.state === "running" && el("span", { class: "chip cli working", text: S.cliRunning(CLI_NAMES[c.cli] || c.cli) }));
 }
 
+// 지금 진행 중인 Agent Office 업무와 플랜 진행도(서버 `work`). 누르면 업무 탭의 그 업무로 간다.
+const WORK_SEGMENTS = 12;
+function workMeter(p) {
+  const cur = Math.min(p.done, p.total - 1);
+  if (p.total > WORK_SEGMENTS) {
+    return el("div", { class: "work-m bar", "aria-hidden": "true" }, el("i", { style: `width:${Math.round((p.done / p.total) * 100)}%` }));
+  }
+  return el("div", { class: "work-m", "aria-hidden": "true" },
+    ...Array.from({ length: p.total }, (_, i) => el("i", { class: i < p.done ? "on" : i === cur ? "cur" : "" })));
+}
+function workBox(c, compact) {
+  const w = c && !c.office && c.work;
+  if (!w) return null;
+  const p = w.plan && w.plan.total > 0 ? w.plan : null;
+  const auto = p && p.autoRun && S.workAuto[p.autoRun];
+  return el("div", { class: "work" + (compact ? " compact" : ""), title: S.workOpen, role: "link", onclick: (e) => { e.stopPropagation(); openTask(w.id); } },
+    el("div", { class: "work-h" },
+      el("span", { class: "work-tag", text: "📋 " + S.workNow }),
+      el("span", { class: "work-t", title: w.title, text: w.title }),
+      auto && el("span", { class: "work-auto " + p.autoRun, text: auto })),
+    p && el("div", { class: "work-p" },
+      !compact && el("span", { class: "work-pt", title: p.title, text: `${p.title} · ${S.workStep(p.step || p.done + 1, p.total)}` }),
+      workMeter(p),
+      el("b", { text: S.workDone(p.done, p.total) })));
+}
+
 // ── 화면 ──
 function renderNav() {
   const nav = document.getElementById("nav");
@@ -418,6 +446,7 @@ function renderChars() {
         el("div", { class: "grow" }, el("div", { class: "name", text: c.name }), el("div", { class: "sub", title: cwdOf(c), text: [c.role, placeOf(c)].filter(Boolean).join(" · ") })),
         chips(c)),
       goal && el("div", { class: "goal", text: goal }),
+      workBox(c),
       wait && el("div", { class: "wait", text: wait }),
       previewSlot(c));
   })];
@@ -558,7 +587,7 @@ function renderSide() {
     ...others.map((c) => el("div", { class: "card clickable", onclick: () => openAgent(c.agentId) },
       el("div", { class: "row" }, avatar(c),
         el("div", { class: "grow" }, el("div", { class: "name", text: c.name }), el("div", { class: "sub", text: c.office ? S.officeSub : c.role || "" })),
-        chips(c)))));
+        chips(c)), workBox(c, true))));
 }
 function renderPaneHead(c) {
   const [cls] = phaseOf(c);
@@ -571,6 +600,7 @@ function renderPaneHead(c) {
       chips(c),
       el("button", { class: "b", type: "button", title: S.paneDoneHint, text: S.paneDone, onclick: () => dismissPane(c.agentId) })),
     !c.office && goalOf(c) && el("div", { class: "goal", title: goalOf(c), text: goalOf(c) }),
+    workBox(c, true),
     wait && el("div", { class: "wait", text: wait }));
 }
 function renderPane(c) {
@@ -798,6 +828,7 @@ function renderHead(c) {
       el("div", { class: "grow" }, el("div", { class: "name", text: c.name }), el("div", { class: "sub", title: cwdOf(c), text: placeOf(c) })),
       chips(c)),
     goalOf(c) && el("div", { class: "goal", text: goalOf(c) }),
+    workBox(c),
     wait && el("div", { class: "wait", text: wait }),
     el("div", { class: "btns" },
       el("button", { class: "b", disabled: !running, text: S.interrupt, onclick: () => act(`/agents/${id}/interrupt`) }),

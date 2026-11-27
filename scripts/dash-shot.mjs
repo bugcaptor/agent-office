@@ -7,7 +7,8 @@
 // 대화 로그 속 이미지(썸네일·확대), 권한 요청·선택지 카드(AskUserQuestion 답·Bash 허용),
 // 텍스트·이미지 클립보드 복사와 이미지·파일 다운로드, 하단 사용량 바, 생각 중·멈춤 상태 줄,
 // 직접 입력과 보낼 대기열(쌓기·빼기), 로그 위 이 세션 추정 사용량, 화면 테마 토글(브라우저에 저장),
-// 목록·업무 탭 진행 중 카드의 활성 캐릭터 로그 미리보기(접기·세션이 바뀌면 다시 펼침), 스플릿뷰(칸 격자·완료로 내리기·사이드 패널).
+// 목록·업무 탭 진행 중 카드의 활성 캐릭터 로그 미리보기(접기·세션이 바뀌면 다시 펼침), 스플릿뷰(칸 격자·완료로 내리기·사이드 패널),
+// 목록·상세·스플릿 칸의 진행 중 업무 표시와 플랜 진행도.
 import assert from "node:assert/strict";
 import { createServer } from "node:http";
 import { readFile, mkdir } from "node:fs/promises";
@@ -29,6 +30,7 @@ const characters = [
         { label: "썸네일", description: "로그 안에 작게 보이고 누르면 확대" }, { label: "링크만", description: "누르면 새 창" }] },
       { question: "어디에 보일까요?", header: "위치", multiSelect: true, options: [{ label: "웹" }, { label: "앱" }] },
     ] } }],
+    work: { id: "w2", title: "토큰 갱신 버튼 문구 바꾸기", plan: null },
     label: { goal: "웹 상태판 대화 로그 정리", cwd: "/Volumes/ssd4tb/dev/very/long/path/to/agent-office", branch: "main",
       usage: { sessionId: "s1", tokens: "11.7K CH(1.7M)", cost: "~$3.45", turns: 12 } },
   },
@@ -44,7 +46,8 @@ const characters = [
   { agentId: "d", name: "도토리", role: "테스트", cwd: "/Users/me/work/backend-service", clockedOut: false,
     session: { sessionId: "s4", state: "running" }, turn: { phase: "idle", at: now - 60000 }, waiting: [], asks: [], cli: "claude", atPrompt: false },
   { agentId: "e", name: "이끼", role: "빌드", cwd: "/Users/me/work/backend-service", clockedOut: false,
-    session: { sessionId: "s5", state: "running" }, turn: { phase: "working", at: now - 300000, since: now - 300000 }, waiting: [], asks: [], cli: "codex", atPrompt: false },
+    session: { sessionId: "s5", state: "running" }, turn: { phase: "working", at: now - 300000, since: now - 300000 }, waiting: [], asks: [], cli: "codex", atPrompt: false,
+    work: { id: "p2", title: "작업보드 UI 구현", plan: { id: "proot", title: "웹 작업보드 출시 플랜", done: 2, total: 5, step: 3, autoRun: "running" } } },
 ];
 const code = '  printf "완료\\n"\n';
 const fileName = "실행 결과.txt";
@@ -247,9 +250,20 @@ await p.goto(base);
 await p.waitForSelector(".card");
 await p.screenshot({ path: `${outDir}/list.png` });
 assert.deepEqual(await p.locator(".card.clickable .name").allTextContents(), ["일반 에이전트", "에이다", "보리", "이끼", "도토리", "체리"]);
+// 진행 중인 업무: 단독 업무는 제목만, 플랜 단계는 플랜 제목·단계·완료 수와 칸 막대, 자동 진행 상태.
+const workOf = (name) => p.locator(".card.clickable").filter({ hasText: name }).locator(".work");
+assert.equal(await workOf("에이다").locator(".work-t").textContent(), "토큰 갱신 버튼 문구 바꾸기");
+assert.equal(await workOf("에이다").locator(".work-p").count(), 0);
+assert.equal(await workOf("이끼").locator(".work-pt").textContent(), "웹 작업보드 출시 플랜 · 단계 3/5");
+assert.equal(await workOf("이끼").locator(".work-p > b").textContent(), "2/5 완료");
+assert.equal(await workOf("이끼").locator(".work-m > i.on").count(), 2);
+assert.equal(await workOf("이끼").locator(".work-m > i.cur").count(), 1);
+assert.equal(await workOf("이끼").locator(".work-auto.running").textContent(), "자동 진행");
+assert.equal(await workOf("보리").count(), 0);
 await p.locator(".card.clickable").filter({ hasText: "에이다" }).click();
 await p.waitForSelector("#log .msg");
 await p.waitForSelector("#sent .card");
+await p.waitForSelector("#head .work .work-t");
 await p.waitForSelector("#asks .card.ask");
 await p.waitForFunction(() => [...document.querySelectorAll("#log img.shot")].every((i) => i.complete));
 await p.screenshot({ path: `${outDir}/agent-claude.png`, fullPage: true });
@@ -406,6 +420,9 @@ await p.locator('#panes .pane[data-agent="e"] .log .msg').first().waitFor();
 // 보리는 앞에서 답을 기다리다 끝났다 — 완료로 내리기 전까지 칸이 남는다.
 assert.deepEqual((await paneIds()).sort(), ["a", "b", "e"]);
 await p.locator('#panes .pane[data-agent="b"] .chip.idle').waitFor();
+// 칸 머리에도 진행 중인 업무와 진행도(좁은 칸이라 플랜 제목은 빼고 막대·완료 수만).
+assert.equal(await p.locator('#panes .pane[data-agent="e"] .pane-head .work-p > b').textContent(), "2/5 완료");
+assert.equal(await p.locator('#panes .pane[data-agent="a"] .pane-head .work-t').textContent(), "토큰 갱신 버튼 문구 바꾸기");
 await p.screenshot({ path: `${outDir}/split-phone.png` });
 await p.getByRole("button", { name: /다른 캐릭터 3/ }).click();
 await p.locator("#split.side-open #side .card", { hasText: "도토리" }).waitFor();

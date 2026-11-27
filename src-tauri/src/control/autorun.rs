@@ -33,7 +33,7 @@ const LOG_TAIL: usize = 20;
 
 // ── 상태 조립(순수) ───────────────────────────────────────────────────
 
-fn title(item: &WorkItem) -> String {
+pub(crate) fn title(item: &WorkItem) -> String {
     let t = item.title.trim();
     if !t.is_empty() {
         return t.to_string();
@@ -92,7 +92,7 @@ fn plan_items<'a>(root: &WorkItem, items: &'a [WorkItem]) -> Vec<&'a WorkItem> {
 }
 
 /// 플랜 루트(메모 전용)는 선행 작업만, 아니면 루트까지 단계다. `runSteps`와 같다.
-fn run_steps<'a>(root: &'a WorkItem, items: &'a [WorkItem]) -> Vec<&'a WorkItem> {
+pub(crate) fn run_steps<'a>(root: &'a WorkItem, items: &'a [WorkItem]) -> Vec<&'a WorkItem> {
     let mut plan = plan_items(root, items);
     if !root.plan && !plan.is_empty() {
         plan.push(root);

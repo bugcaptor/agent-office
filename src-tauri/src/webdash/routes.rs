@@ -296,6 +296,7 @@ async fn state(State(ctx): Ctx) -> Json<Value> {
         let ctx = ctx.clone();
         tokio::task::spawn_blocking(move || probe_shells(&ctx, &running)).await.unwrap_or_default()
     };
+    let work_items = ctx.ctl.work_panels.load_work_items().unwrap_or_default();
     let characters: Vec<Value> = profiles
         .agents
         .iter()
@@ -321,6 +322,7 @@ async fn state(State(ctx): Ctx) -> Json<Value> {
                 "waiting": waiting,
                 "asks": asks,
                 "queue": queue,
+                "work": super::work_progress::agent_work(&work_items, &a.id),
                 "label": ctx.dash.label(&a.id),
                 "cli": probe.cli,
                 "atPrompt": probe.at_prompt,

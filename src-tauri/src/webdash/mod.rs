@@ -28,6 +28,7 @@ pub mod log;
 mod markdown;
 pub mod net;
 mod routes;
+mod work_progress;
 mod tls;
 pub(crate) use routes::foreground_cli;
 
