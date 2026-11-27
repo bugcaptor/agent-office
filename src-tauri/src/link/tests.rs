@@ -409,3 +409,78 @@ async fn host_requests_time_out_and_ignore_replies_from_other_devices() {
     assert_eq!(ask.await.unwrap().unwrap_err(), "link-request-timeout");
     assert_eq!(host.request(&b, "log", json!({}), Duration::from_millis(50)).await.unwrap_err(), "link-device-offline");
 }
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn remote_ops_and_ask_answers_reach_the_client_and_fail_clearly_when_it_drops() {
+    let mut host = Host::new();
+    let remote = Arc::downgrade(&host.state.remote);
+    host.state.host.set_event_handler(Arc::new(move |device: &str, kind: &str, data: &serde_json::Value| {
+        if let Some(r) = remote.upgrade() {
+            r.ingest(device, kind, data);
+        }
+    }));
+    host.serve().await;
+    let dir = temp("client-ops");
+    let c = client(&dir);
+    c.pair(&host.address(), &host.code()).await.unwrap();
+    let seen = Arc::new(std::sync::Mutex::new(Vec::<(String, serde_json::Value)>::new()));
+    let s = seen.clone();
+    c.client.set_request_handler(Arc::new(move |kind, data| {
+        let s = s.clone();
+        Box::pin(async move {
+            s.lock().unwrap().push((kind.clone(), data.clone()));
+            match (kind.as_str(), data["op"].as_str()) {
+                ("op", Some("message")) => Ok(json!({ "outcome": "queued" })),
+                // 오래 걸리는 조작(그 사이 연결이 끊긴다).
+                ("op", Some("restart")) => {
+                    tokio::time::sleep(Duration::from_secs(30)).await;
+                    Ok(serde_json::Value::Null)
+                }
+                ("ask", _) if data["askId"] == json!("k1") => Ok(json!({})),
+                ("ask", _) => Err("ask-gone".to_string()),
+                _ => Err("unknown-op".to_string()),
+            }
+        })
+    }));
+    tokio::spawn(c.client.clone().run());
+    until("connected", || client_state(&c).state == LinkClientState::Connected).await;
+    let device = host.devices()[0].id.clone();
+    until("host sees connection", || host.state.host.is_connected(&device)).await;
+    let snap = json!({ "now": now_ms(), "outputAt": {}, "characters": [{ "agentId": "a1", "name": "Ada", "role": "",
+        "session": { "sessionId": "s", "state": "running" }, "asks": [{ "id": "k1", "toolName": "Bash" }] }] });
+    assert!(c.client.send_live("agents", snap));
+    until("snapshot", || host.state.remote.device_of_ask("k1").is_some()).await;
+    assert_eq!(host.state.remote.device_of_ask("k1"), Some(device.clone()), "요청 id로 그 머신을 찾는다");
+    assert_eq!(host.state.remote.device_of_ask("other"), None);
+
+    let r = &host.state.remote;
+    let sent = r.request(&device, "op", json!({ "agentId": "a1", "op": "message", "text": "hi" })).await.unwrap();
+    assert_eq!(sent, json!({ "outcome": "queued" }));
+    assert_eq!(r.request(&device, "ask", json!({ "askId": "k1", "action": "allow" })).await.unwrap(), json!({}));
+    assert_eq!(r.request(&device, "ask", json!({ "askId": "k2", "action": "deny" })).await.unwrap_err(), "ask-gone", "그 머신의 거절 이유가 그대로 온다");
+    {
+        let seen = seen.lock().unwrap();
+        assert_eq!(seen[0].1["text"], json!("hi"));
+        assert_eq!(seen[1].1["action"], json!("allow"));
+    }
+
+    // 답을 기다리는 중에 끊기면 제한 시간을 다 채우지 않고 바로 실패한다.
+    let r2 = host.state.remote.clone();
+    let d2 = device.clone();
+    let slow = tokio::spawn(async move {
+        r2.request_with(&d2, "op", json!({ "agentId": "a1", "op": "restart" }), Duration::from_secs(60)).await
+    });
+    until("restart asked", || seen.lock().unwrap().iter().any(|(_, d)| d["op"] == json!("restart"))).await;
+    let started = std::time::Instant::now();
+    host.halt();
+    let err = slow.await.unwrap().unwrap_err();
+    assert_eq!(err, "link-device-offline");
+    assert!(started.elapsed() < Duration::from_secs(10), "끊김을 바로 알린다: {:?}", started.elapsed());
+    // 끊긴 뒤의 조작도 바로 실패하고, 끊긴 머신의 요청은 찾지 않는다.
+    until("offline", || !host.state.remote.office_view().machines[0].online).await;
+    assert_eq!(
+        host.state.remote.request(&device, "op", json!({ "agentId": "a1", "op": "terminate" })).await.unwrap_err(),
+        "link-device-offline"
+    );
+    assert_eq!(host.state.remote.device_of_ask("k1"), None);
+}

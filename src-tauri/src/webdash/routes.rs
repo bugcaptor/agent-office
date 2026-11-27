@@ -15,7 +15,7 @@ use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
 use axum::Router;
 use base64::Engine;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use tokio::sync::oneshot;
 
@@ -557,92 +557,104 @@ async fn bridged(ctx: &Dash, payload: Value) -> Result<Value, String> {
     ctx.dash.bridge.send(payload).await
 }
 
-#[derive(Deserialize, Default)]
+#[derive(Deserialize, Serialize, Default)]
 #[serde(rename_all = "camelCase")]
-struct AgentCommandBody {
-    #[serde(default)]
-    cli: Option<String>,
+pub(crate) struct AgentCommandBody {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cli: Option<String>,
     /// `message`: 보낼 글.
-    #[serde(default)]
-    text: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub text: Option<String>,
     /// `queue-cancel`: 뺄 대기열 메시지.
-    #[serde(default)]
-    id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub id: Option<String>,
 }
+
+/// 원격 조작이 오래 걸릴 수 있는 것(CLI를 띄워 첫 프롬프트를 넣는 데 수십 초가 걸린다)까지 기다릴 시간.
+pub(crate) const REMOTE_OP_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(90);
 
 async fn agent_command(
     State(ctx): Ctx,
     Path((agent, op)): Path<(String, String)>,
     body: Option<Json<AgentCommandBody>>,
 ) -> Json<Value> {
-    // 다른 머신 캐릭터는 이 단계에서 보기만 한다.
-    if remote_of(&ctx, &agent).is_some() {
-        return fail("link-remote-read-only");
-    }
-    let Some(profile) = profile(&ctx, &agent) else {
-        return fail("unknown-agent");
-    };
     let body = body.map(|Json(b)| b).unwrap_or_default();
-    match op.as_str() {
+    // 다른 머신 캐릭터는 그 머신에 넘긴다(그 머신의 웹 상태판 조작과 같은 일을 한다).
+    if let Some((remote, device, id)) = remote_of(&ctx, &agent) {
+        let mut ask = serde_json::to_value(&body).unwrap_or_else(|_| json!({}));
+        ask["agentId"] = json!(id);
+        ask["op"] = json!(op);
+        return match remote.request_with(&device, "op", ask, REMOTE_OP_TIMEOUT).await {
+            Ok(v) => ok(v),
+            Err(e) => fail(e),
+        };
+    }
+    match run_agent_op(&ctx, &agent, &op, body).await {
+        Ok(v) => ok(v),
+        Err(e) => fail(e),
+    }
+}
+
+/// 이 머신 캐릭터 하나에 웹 상태판 조작을 한다(`/api/agents/:agent/:op`, 호스트가 넘긴 원격 조작도 여기로 온다).
+pub(crate) async fn agent_op(
+    ctl: Arc<ControlContext>,
+    dash: Arc<WebDashState>,
+    agent: &str,
+    op: &str,
+    body: AgentCommandBody,
+) -> Result<Value, String> {
+    run_agent_op(&Dash { ctl, dash }, agent, op, body).await
+}
+
+async fn run_agent_op(ctx: &Dash, agent: &str, op: &str, body: AgentCommandBody) -> Result<Value, String> {
+    let profile = profile(ctx, agent).ok_or("unknown-agent")?;
+    match op {
         "message" => {
             let text = body.text.as_deref().unwrap_or("");
             // 셸 프롬프트만 있는 터미널(새 세션 등)이면 업무 보내기처럼 CLI를 띄워 첫 프롬프트로 넣는다.
-            if let Some(result) = launch_with_prompt(&ctx, &profile, body.cli.as_deref(), text).await {
-                return match result {
-                    Ok(()) => {
-                        activity(&ctx, "message", Some(&agent), Some(&first_line(text)));
-                        ok(json!({ "outcome": "launched" }))
-                    }
-                    Err(e) => fail(e),
-                };
+            if let Some(result) = launch_with_prompt(ctx, &profile, body.cli.as_deref(), text).await {
+                result?;
+                activity(ctx, "message", Some(agent), Some(&first_line(text)));
+                return Ok(json!({ "outcome": "launched" }));
             }
-            return message(&ctx, &agent, text).await;
+            return message(ctx, agent, text).await;
         }
-        "queue-cancel" => return queue_cancel(&ctx, &agent, body.id.as_deref().unwrap_or("")),
+        "queue-cancel" => return queue_cancel(ctx, agent, body.id.as_deref().unwrap_or("")).map(|()| Value::Null),
         _ => {}
     }
-    let result = match op.as_str() {
-        "interrupt" | "ctrl-c" => interrupt(&ctx, &agent, &op),
-        "launch" => launch(&ctx, &profile, body.cli.as_deref()).await,
+    match op {
+        "interrupt" | "ctrl-c" => interrupt(ctx, agent, op)?,
+        "launch" => launch(ctx, &profile, body.cli.as_deref()).await?,
         "restart" | "terminate" | "resume" => {
-            bridged(&ctx, json!({ "op": op, "agentId": agent })).await.map(|_| ())
+            bridged(ctx, json!({ "op": op, "agentId": agent })).await?;
         }
-        _ => Err("unknown-op".into()),
-    };
-    match result {
-        Ok(()) => {
-            activity(&ctx, &op, Some(&agent), body.cli.as_deref());
-            ok(Value::Null)
-        }
-        Err(e) => fail(e),
+        _ => return Err("unknown-op".into()),
     }
+    activity(ctx, op, Some(agent), body.cli.as_deref());
+    Ok(Value::Null)
 }
 
 /// 터미널의 CLI에 직접 쓴 글을 넣는다(업무 보내기와 달리 업무 보드에 남지 않는다). 입력 대기면 바로,
 /// 작업 중이면 대기열에 쌓아 턴이 끝날 때 넣는다 — 앱의 대화 보기와 같은 대기열이다.
-async fn message(ctx: &Dash, agent: &str, text: &str) -> Json<Value> {
+async fn message(ctx: &Dash, agent: &str, text: &str) -> Result<Value, String> {
     let office = is_office_agent_id(agent);
-    match ctx.ctl.chat_queue.send(&ctx.ctl, agent, text).await {
-        Ok(outcome) => {
-            let queued = outcome == crate::chat_queue::SendOutcome::Queued;
-            let op = match (office, queued) {
-                (true, true) => "office-agent-queued",
-                (true, false) => "office-agent-follow-up",
-                (false, true) => "message-queued",
-                (false, false) => "message",
-            };
-            activity(ctx, op, (!office).then_some(agent), Some(&first_line(text)));
-            ok(json!({ "outcome": outcome }))
-        }
-        Err(e) => fail(e),
-    }
+    let outcome = ctx.ctl.chat_queue.send(&ctx.ctl, agent, text).await?;
+    let queued = outcome == crate::chat_queue::SendOutcome::Queued;
+    let op = match (office, queued) {
+        (true, true) => "office-agent-queued",
+        (true, false) => "office-agent-follow-up",
+        (false, true) => "message-queued",
+        (false, false) => "message",
+    };
+    activity(ctx, op, (!office).then_some(agent), Some(&first_line(text)));
+    Ok(json!({ "outcome": outcome }))
 }
 
-fn queue_cancel(ctx: &Dash, agent: &str, id: &str) -> Json<Value> {
+fn queue_cancel(ctx: &Dash, agent: &str, id: &str) -> Result<(), String> {
     if ctx.ctl.chat_queue.cancel(agent, id) {
-        ok(Value::Null)
+        Ok(())
     } else {
-        fail("queue-gone")
+        Err("queue-gone".into())
     }
 }
 
@@ -786,7 +798,10 @@ async fn office_agent_send(State(ctx): Ctx, Json(b): Json<OfficeAgentSend>) -> J
         };
         if probe.cli.is_some() {
             // 입력 대기면 이어 넣고, 작업 중이면 대기열에 쌓는다.
-            return message(&ctx, OFFICE_AGENT_ID, &b.text).await;
+            return match message(&ctx, OFFICE_AGENT_ID, &b.text).await {
+                Ok(v) => ok(v),
+                Err(e) => fail(e),
+            };
         }
         if probe.at_prompt != Some(true) {
             return fail("office-agent-shell-busy");
@@ -822,7 +837,10 @@ async fn office_agent_command(
 ) -> Json<Value> {
     if op == "queue-cancel" {
         let id = body.and_then(|Json(b)| b.id).unwrap_or_default();
-        return queue_cancel(&ctx, OFFICE_AGENT_ID, &id);
+        return match queue_cancel(&ctx, OFFICE_AGENT_ID, &id) {
+            Ok(()) => ok(Value::Null),
+            Err(e) => fail(e),
+        };
     }
     let result = match op.as_str() {
         "interrupt" | "ctrl-c" => interrupt(&ctx, OFFICE_AGENT_ID, &op),
@@ -1267,24 +1285,53 @@ async fn answer_discussion(State(ctx): Ctx, Path(id): Path<String>, Json(a): Jso
 // Claude `PermissionRequest` 훅이 붙들고 있는 요청에 답한다(`observer/permission.rs`).
 // 터미널 대화상자도 함께 떠 있어 먼저 답한 쪽이 이긴다 — 이미 답한 요청이면 `ask-gone`.
 
-#[derive(Deserialize)]
-struct AskAnswer {
+#[derive(Deserialize, Serialize)]
+pub(crate) struct AskAnswer {
     /// allow | always | deny | dismiss
-    action: String,
+    pub action: String,
     /// AskUserQuestion: 질문 → 답.
-    #[serde(default)]
-    answers: Option<HashMap<String, String>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub answers: Option<HashMap<String, String>>,
     /// 거부 사유(에이전트에게 전한다).
-    #[serde(default)]
-    message: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub message: Option<String>,
+    /// 누구의 요청인가(다른 머신 캐릭터면 그 머신에 넘긴다). 없으면 요청 id로 찾는다.
+    #[serde(rename = "agentId", default, skip_serializing_if = "Option::is_none")]
+    pub agent_id: Option<String>,
 }
 
 async fn answer_ask(State(ctx): Ctx, Path(id): Path<String>, Json(a): Json<AskAnswer>) -> Json<Value> {
+    // 다른 머신의 요청이면 그 머신 훅 중계로 답한다. 캐릭터 id가 없으면 받아 둔 모습에서 요청 id로 찾는다.
+    let remote = match a.agent_id.as_deref().and_then(|agent| remote_of(&ctx, agent)) {
+        Some((remote, device, _)) => Some((remote, device)),
+        None => ctx.dash.link_remote().and_then(|r| r.device_of_ask(&id).map(|d| (r, d))),
+    };
+    if let Some((remote, device)) = remote {
+        let mut ask = serde_json::to_value(&a).unwrap_or_else(|_| json!({}));
+        ask["askId"] = json!(id);
+        if let Some(obj) = ask.as_object_mut() {
+            obj.remove("agentId");
+        }
+        return match remote.request(&device, "ask", ask).await {
+            Ok(_) => ok(json!({})),
+            Err(e) => fail(e),
+        };
+    }
+    match answer_ask_here(&ctx, &id, a) {
+        Ok(()) => ok(json!({})),
+        Err(e) => fail(e),
+    }
+}
+
+/// 이 머신 훅 중계에 걸린 요청에 답한다(호스트가 넘긴 원격 답도 여기로 온다).
+pub(crate) fn answer_ask_local(ctl: Arc<ControlContext>, dash: Arc<WebDashState>, id: &str, a: AskAnswer) -> Result<(), String> {
+    answer_ask_here(&Dash { ctl, dash }, id, a)
+}
+
+fn answer_ask_here(ctx: &Dash, id: &str, a: AskAnswer) -> Result<(), String> {
     use crate::observer::permission::AskDecision;
     for text in a.answers.iter().flat_map(|m| m.values()).chain(a.message.iter()) {
-        if let Err(e) = check_limits(text) {
-            return fail(e);
-        }
+        check_limits(text)?;
     }
     let relay = ctx.ctl.observer.permissions().clone();
     // 누구의 요청인가(앱 알림에 이름을 싣는다).
@@ -1302,21 +1349,14 @@ async fn answer_ask(State(ctx): Ctx, Path(id): Path<String>, Json(a): Json<AskAn
         "deny" => "ask-deny",
         _ => "",
     };
-    let decision = match AskDecision::from_action(&a.action, a.answers, a.message) {
-        Ok(d) => d,
-        Err(e) => return fail(e),
-    };
-    match relay.answer(&id, decision) {
-        Ok(()) => {
-            if !op.is_empty() {
-                let (agent, tool) = owner.map(|(a, t)| (Some(a), Some(t))).unwrap_or((None, None));
-                let agent = agent.filter(|a| !is_office_agent_id(a));
-                activity(&ctx, op, agent.as_deref(), tool.as_deref());
-            }
-            ok(json!({}))
-        }
-        Err(e) => fail(e),
+    let decision = AskDecision::from_action(&a.action, a.answers, a.message)?;
+    relay.answer(id, decision)?;
+    if !op.is_empty() {
+        let (agent, tool) = owner.map(|(a, t)| (Some(a), Some(t))).unwrap_or((None, None));
+        let agent = agent.filter(|a| !is_office_agent_id(a));
+        activity(ctx, op, agent.as_deref(), tool.as_deref());
     }
+    Ok(())
 }
 
 // ── 셸 캐릭터 ────────────────────────────────────────────────────────

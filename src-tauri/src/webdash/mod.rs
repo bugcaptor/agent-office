@@ -31,7 +31,7 @@ mod routes;
 pub(crate) mod snapshot;
 mod work_progress;
 pub(crate) mod tls;
-pub(crate) use routes::{foreground_cli, remote_image};
+pub(crate) use routes::{agent_op, answer_ask_local, foreground_cli, remote_image, AgentCommandBody, AskAnswer, REMOTE_OP_TIMEOUT};
 
 use std::collections::HashMap;
 use std::net::{IpAddr, Ipv4Addr};

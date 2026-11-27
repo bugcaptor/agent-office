@@ -2,7 +2,7 @@
 //
 // 머신 연동 호스트: 붙은 머신들의 캐릭터(`link-remote` 이벤트)와 오피스에서 지금 보는 층. 층 하나가 머신
 // 하나다 — 이 머신 층(null)과 다른 머신 층(기기 id). 다른 층의 캐릭터를 누르면 그 머신에 물어 대화 보기를 연다
-// (`RemoteChatDialog`, 보기만).
+// (`RemoteChatDialog`, 입력·권한 답·세션 조작은 그 머신에 넘긴다).
 import { create } from "zustand";
 import { listen } from "@tauri-apps/api/event";
 import { Events } from "@shared/ipc";

@@ -54,8 +54,12 @@ export interface PendingAsk {
 
 export type AskAction = "allow" | "always" | "deny" | "dismiss";
 
-/** 보내기 결과: 바로 넣었거나(sent) 작업 중이라 대기열에 쌓았다(queued). */
-export type ChatSendOutcome = "sent" | "queued";
+/** 보내기 결과: 바로 넣었거나(sent) 작업 중이라 대기열에 쌓았다(queued).
+ * 다른 머신 캐릭터는 셸 프롬프트만 있으면 CLI를 띄워 첫 프롬프트로 넣는다(launched). */
+export type ChatSendOutcome = "sent" | "queued" | "launched";
+
+/** 다른 머신 캐릭터의 세션 조작(호스트 대화 보기 머리 단추). */
+export type RemoteSessionOp = "restart" | "resume" | "terminate" | "interrupt";
 
 /** 턴이 끝나면 넣으려고 쌓아 둔 메시지(Rust `chat_queue::QueuedMessage`). */
 export interface QueuedMessage {

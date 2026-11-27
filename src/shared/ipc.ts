@@ -28,6 +28,7 @@ export const Commands = {
   chatViewSend: "chat_view_send",
   chatViewStatus: "chat_view_status",
   chatViewCancelQueued: "chat_view_cancel_queued",
+  chatViewRemoteOp: "chat_view_remote_op",
   webDashStatus: "web_dash_status",
   webDashConfigure: "web_dash_configure",
   webDashRotateToken: "web_dash_rotate_token",

@@ -105,4 +105,3 @@
 .remote-chat-name { font-weight: bold; color: var(--text); }
 .remote-chat-machine { font-size: 11px; color: var(--text-dim); }
 .remote-chat-body { position: relative; flex: 1; min-height: 0; }
-.chat-ask.remote .chat-ask-qt { white-space: pre-wrap; word-break: break-word; }

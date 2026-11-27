@@ -375,8 +375,8 @@ const impl: Partial<AgentOfficeApi> = {
     return true;
   },
   async chatViewAsks(agentId) { return chatAsks.filter((a) => a.id.startsWith(agentId + ":")); },
-  async chatViewAnswer(askId, action, answers, message) {
-    chatAnswers.push({ askId, action, answers, message });
+  async chatViewAnswer(askId, action, answers, message, agentId) {
+    chatAnswers.push({ askId, action, answers, message, agentId });
     chatAsks = chatAsks.filter((a) => a.id !== askId);
   },
   async chatViewSend(agentId, text) {
@@ -395,6 +395,9 @@ const impl: Partial<AgentOfficeApi> = {
   },
   async chatViewCancelQueued(_agentId, id) {
     chatQueue = chatQueue.filter((m) => m.id !== id);
+  },
+  async chatViewRemoteOp(agentId, op) {
+    remoteOps.push({ agentId, op });
   },
 };
 
@@ -428,11 +431,13 @@ let chatAsks: PendingAsk[] = [
     { question: "Which fix?", header: "Fix", multiSelect: false, options: [{ label: "Grid", description: "Rewrite with CSS grid" }, { label: "Flex", description: "Keep flexbox" }] },
   ] } },
   { id: "p1:ask-2", toolName: "Bash", canAlways: true, sidechain: false, at: Date.now(), toolInput: { command: "rm -rf dist && npm run build", description: "Clean build" } },
-  // `machines` 시나리오: 다른 머신(studio-pc) 캐릭터 Ada의 권한 요청(원격 대화 보기는 보기만).
+  // `machines` 시나리오: 다른 머신(studio-pc) 캐릭터 Ada의 권한 요청(원격 대화 보기에서 답하면 그 머신에 넘긴다).
   { id: "d-1a2b3c4d:agent-a:ask-1", toolName: "Bash", canAlways: true, sidechain: false, at: Date.now(), toolInput: { command: "cargo test --lib", description: "Run tests" } },
 ];
 const chatAnswers: unknown[] = [];
 const chatDownloads: unknown[] = [];
+/** 원격 대화 보기의 세션 조작(열기·이어하기·닫기·중단). */
+const remoteOps: unknown[] = [];
 
 export const tauriApi = new Proxy(impl, {
   get(target, key) {
@@ -449,6 +454,7 @@ Object.assign(harness, {
   /** 대화 보기에서 넣은 답(권한·질문). */
   chatAnswers,
   chatDownloads,
+  remoteOps,
   /** 대화 보기 스토어(예: 탭을 대화 보기로). */
   chatViewStore: async () => (await import("../chatView/chatViewStore")).useChatViewStore,
   emitSessionState,

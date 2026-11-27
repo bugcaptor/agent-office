@@ -28,6 +28,15 @@
 }
 .chat-view-bar-title { font-weight: 700; }
 .chat-view-bar-hint { flex: 1; min-width: 0; color: var(--text-dim); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* 다른 머신 캐릭터의 세션 단추(호스트 대화 보기). */
+.chat-view-session {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  flex: none;
+  padding: 4px 10px;
+  border-bottom: 2px solid var(--border-dark);
+}
 
 .chat-view-scroll {
   flex: 1 1 auto;

@@ -1,8 +1,9 @@
 // src/renderer/link/RemoteChatDialog.tsx
 //
 // 머신 연동 호스트: 다른 층 캐릭터를 누르면 뜨는 대화 보기. 터미널 탭의 대화 보기(`ChatView`)를 그대로 쓰되
-// 원격 모드라 보기만 한다 — 전사·권한 요청·대기열·지금 상태를 그 머신에 물어 그린다(`chat_view_*`가
-// `기기id:캐릭터id`를 알아보고 링크로 묻는다). 터미널 화면은 비추지 않는다.
+// 원격 모드다 — 전사·권한 요청·대기열·지금 상태를 그 머신에 물어 그리고, 입력·권한 답·대기열 빼기·세션
+// 열기/닫기도 그 머신에 넘긴다(`chat_view_*`가 `기기id:캐릭터id`를 알아보고 링크로 묻는다). 끊긴 머신이면
+// 보기만 한다. 터미널 화면은 비추지 않는다.
 import { useEffect } from "react";
 import { ChatView } from "../chatView/ChatView";
 import { findRemote, openRemoteChat, useRemoteFloors } from "./remoteFloors";
@@ -30,7 +31,7 @@ export function RemoteChatDialog() {
           <span className="remote-chat-machine">{found.machine.name}</span>
         </div>
         <div className="remote-chat-body">
-          <ChatView key={chat} agentId={chat} active remote={{ machine: found.machine.name, onClose: close }} />
+          <ChatView key={chat} agentId={chat} active remote={{ machine: found.machine.name, online: found.machine.online, sessionState: found.character.sessionState, onClose: close }} />
         </div>
       </div>
     </div>

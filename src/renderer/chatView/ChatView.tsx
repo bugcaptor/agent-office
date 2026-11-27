@@ -12,7 +12,7 @@
 // 생각 중(움직임)과 출력이 끊긴 멈춤·입력 대기(정지)를 가른다.
 import { createContext, memo, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import type { AskAction, ChatLiveStatus, ChatLogItem, ChatLogPage, PendingAsk } from "@shared/types";
+import type { AskAction, ChatLiveStatus, ChatLogItem, ChatLogPage, PendingAsk, RemoteSessionOp } from "@shared/types";
 import { tauriApi } from "../ipc/tauriApi";
 import { ChatMarkdown, ChatPlainText, CopyableText, CopyButton, DownloadButton, ImageActions, type ShowNotice } from "./ChatLogActions";
 import {
@@ -57,10 +57,15 @@ function errorCode(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
 }
 
-/** 다른 머신 캐릭터(머신 연동 호스트)를 볼 때: 보기만 한다 — 입력칸·답하기·대기열 빼기가 없다. */
+/** 다른 머신 캐릭터(머신 연동 호스트)를 볼 때. 입력·답하기·대기열 빼기는 그 머신에 넘기고(`chat_view_*`가
+ * `기기id:캐릭터id`를 알아본다), 머리에 세션 열기·이어하기·닫기·중단 단추가 붙는다. 끊긴 머신이면 보기만 한다. */
 export interface RemoteChatTarget {
   /** 그 머신 이름(머리에 보인다). */
   machine: string;
+  /** 그 머신이 붙어 있다(끊기면 조작을 막는다). */
+  online: boolean;
+  /** 그 캐릭터 세션 상태(`starting`·`running`·`exited`, 없으면 세션 없음). */
+  sessionState?: string;
   onClose: () => void;
 }
 
@@ -82,6 +87,10 @@ export function ChatView({ agentId, active, onShowTerminal, remote }: { agentId:
   const atTop = useRef(true);
   const pageRef = useRef<ChatLogPage | null>(null);
   pageRef.current = page;
+  const remoteRef = useRef(remote);
+  remoteRef.current = remote;
+  // 끊긴 머신 캐릭터는 보기만 한다.
+  const canAct = !remote || remote.online;
 
   const errText = (code: string) => t(`chatView.err.${code}`, { defaultValue: code });
 
@@ -119,7 +128,9 @@ export function ChatView({ agentId, active, onShowTerminal, remote }: { agentId:
         setAsks((a) => (JSON.stringify(a) === JSON.stringify(pending) ? a : pending));
         setStatus(live);
       } catch {
-        // 앱이 바쁘거나 세션이 바뀌는 중 — 다음 틱에 다시 묻는다.
+        // 앱이 바쁘거나 세션이 바뀌는 중 — 다음 틱에 다시 묻는다. 다른 머신이 끊겼으면 걸려 있던 요청은 내린다
+        // (그 머신에 답할 수 없다).
+        if (!stop && remoteRef.current && !remoteRef.current.online) setAsks((a) => (a.length ? [] : a));
       }
       if (!stop) timer = setTimeout(tick, POLL_MS);
     };
@@ -177,6 +188,7 @@ export function ChatView({ agentId, active, onShowTerminal, remote }: { agentId:
       atTop.current = true;
       scrollRef.current?.scrollTo({ top: 0 });
       if (outcome === "queued") showActionNotice(t("chatView.queuedNotice"));
+      else if (outcome === "launched") showActionNotice(t("chatView.launchedNotice"));
       refreshStatus();
     } catch (err) {
       setNotice(errText(errorCode(err)));
@@ -196,7 +208,7 @@ export function ChatView({ agentId, active, onShowTerminal, remote }: { agentId:
 
   const answer = async (ask: PendingAsk, action: AskAction, answers?: Record<string, string>, message?: string) => {
     try {
-      await tauriApi.chatViewAnswer(ask.id, action, answers, message);
+      await tauriApi.chatViewAnswer(ask.id, action, answers, message, remote ? agentId : undefined);
       setAsks((a) => a.filter((x) => x.id !== ask.id));
       setNotice(null);
     } catch (err) {
@@ -210,12 +222,20 @@ export function ChatView({ agentId, active, onShowTerminal, remote }: { agentId:
     <div className="chat-view" data-agent-id={agentId}>
       <div className="chat-view-bar">
         <span className="chat-view-bar-title">{remote ? t("chatView.remoteTitle", { machine: remote.machine }) : t("chatView.title")}</span>
-        <span className="chat-view-bar-hint">{remote ? t("chatView.remoteHint") : t("chatView.hint")}</span>
+        <span className="chat-view-bar-hint">{remote ? (remote.online ? t("chatView.remoteHint") : t("chatView.remoteOffline", { machine: remote.machine })) : t("chatView.hint")}</span>
         {remote
           ? <button type="button" className="pixel-btn" onClick={remote.onClose}>{t("chatView.close")}</button>
           : <button type="button" className="pixel-btn" onClick={onShowTerminal}>{t("chatView.showTerminal")}</button>}
       </div>
-      {!remote && <div className="chat-view-input">
+      {remote && remote.online && (
+        <RemoteSessionBar
+          agentId={agentId}
+          sessionState={remote.sessionState}
+          onDone={() => { setNotice(null); showActionNotice(t("chatView.remoteOpSent", { machine: remote.machine })); refreshStatus(); }}
+          onError={(code) => setNotice(errText(code))}
+        />
+      )}
+      {canAct && <div className="chat-view-input">
         <textarea
           ref={inputRef}
           value={draft}
@@ -242,7 +262,7 @@ export function ChatView({ agentId, active, onShowTerminal, remote }: { agentId:
             <div key={m.id} className="chat-queue-item">
               <span className="chat-queue-n">{i + 1}</span>
               <span className="chat-queue-text" title={m.text}>{m.text}</span>
-              {!remote && <button type="button" className="pixel-btn chat-queue-cancel" aria-label={t("chatView.queueCancel")} title={t("chatView.queueCancel")} onClick={() => void cancelQueued(m.id)}>✕</button>}
+              {canAct && <button type="button" className="pixel-btn chat-queue-cancel" aria-label={t("chatView.queueCancel")} title={t("chatView.queueCancel")} onClick={() => void cancelQueued(m.id)}>✕</button>}
             </div>
           ))}
           {queueError && <div className="chat-queue-error">{errText(queueError)}</div>}
@@ -255,7 +275,7 @@ export function ChatView({ agentId, active, onShowTerminal, remote }: { agentId:
           atTop.current = e.currentTarget.scrollTop < TOP_PX;
         }}
       >
-        {asks.map((a) => remote ? <RemoteAskCard key={a.id} ask={a} /> : <AskCard key={a.id} ask={a} onAnswer={answer} onNotice={showActionNotice} />)}
+        {asks.map((a) => <AskCard key={a.id} ask={a} onAnswer={answer} onNotice={showActionNotice} remote={!!remote} />)}
         {page?.attached && live && <LiveRow live={live} />}
         {!page ? (
           <div className="chat-view-empty">…</div>
@@ -427,23 +447,65 @@ function ChatImage({ item, agentId, onZoom, onNotice }: Omit<ItemActions, "epoch
   );
 }
 
-/** 다른 머신의 권한 요청·질문. 이 단계는 보기만 한다 — 그 머신(앱·터미널)에서 답한다. */
-function RemoteAskCard({ ask }: { ask: PendingAsk }) {
+/** 다른 머신 캐릭터의 세션 단추. 세션이 없으면 열기·이어하기, 있으면 다시 열기·이어하기·중단·닫기.
+ * 세션을 끊는 것(다시 열기·이어하기·닫기)은 한 번 더 눌러 확인한다. */
+function RemoteSessionBar({ agentId, sessionState, onDone, onError }: {
+  agentId: string;
+  sessionState?: string;
+  onDone: () => void;
+  onError: (code: string) => void;
+}) {
   const { t } = useTranslation("terminal");
-  const question = ask.toolName === "AskUserQuestion";
-  const title = question ? t("chatView.askQuestion") : ask.toolName === "ExitPlanMode" ? t("chatView.askPlan") : t("chatView.askPermission", { tool: ask.toolName });
-  const lines = question ? askQuestions(ask).map((q) => q.question) : [permissionSummary(ask).target ?? permissionSummary(ask).body];
+  const [busy, setBusy] = useState(false);
+  const [armed, setArmed] = useState<RemoteSessionOp | null>(null);
+  const armTimer = useRef<ReturnType<typeof setTimeout>>();
+  useEffect(() => () => clearTimeout(armTimer.current), []);
+  const live = sessionState === "running" || sessionState === "starting";
+  const run = async (op: RemoteSessionOp, confirm: boolean) => {
+    if (busy) return;
+    if (confirm && armed !== op) {
+      setArmed(op);
+      clearTimeout(armTimer.current);
+      armTimer.current = setTimeout(() => setArmed(null), 3000);
+      return;
+    }
+    setArmed(null);
+    setBusy(true);
+    try {
+      await tauriApi.chatViewRemoteOp(agentId, op);
+      onDone();
+    } catch (err) {
+      onError(errorCode(err));
+    } finally {
+      setBusy(false);
+    }
+  };
+  const button = (op: RemoteSessionOp, label: string, confirm: boolean, cls = "pixel-btn") => (
+    <button type="button" className={cls} disabled={busy} onClick={() => void run(op, confirm)}>
+      {armed === op ? t("chatView.again") : label}
+    </button>
+  );
   return (
-    <div className="chat-ask remote">
-      <div className="chat-ask-title">{ask.sidechain ? "⤷ " : ""}{title}</div>
-      {lines.filter(Boolean).map((line, i) => <div key={i} className="chat-ask-qt">{line}</div>)}
-      <div className="chat-ask-note">{t("chatView.remoteAskNote")}</div>
+    <div className="chat-view-session" role="group" aria-label={t("chatView.sessionGroup")}>
+      {live
+        ? <>
+            {button("interrupt", t("chatView.sessionInterrupt"), false)}
+            {button("restart", t("chatView.sessionRestart"), true)}
+            {button("resume", t("chatView.sessionResume"), true)}
+            {button("terminate", t("chatView.sessionClose"), true, "pixel-btn danger")}
+          </>
+        : <>
+            {button("restart", t("chatView.sessionOpen"), false, "pixel-btn primary")}
+            {button("resume", t("chatView.sessionResume"), false)}
+          </>}
     </div>
   );
 }
 
-function AskCard({ ask, onAnswer, onNotice }: {
+function AskCard({ ask, onAnswer, onNotice, remote = false }: {
   ask: PendingAsk;
+  /** 다른 머신의 요청(답은 그 머신 훅 중계로 간다). */
+  remote?: boolean;
   onAnswer: (ask: PendingAsk, action: AskAction, answers?: Record<string, string>, message?: string) => Promise<void>;
   onNotice: ShowNotice;
 }) {
@@ -509,7 +571,7 @@ function AskCard({ ask, onAnswer, onNotice }: {
           <button type="button" className="pixel-btn primary" disabled={busy || !ready} onClick={() => void run("allow", answers)}>{t("chatView.askSend")}</button>
           <button type="button" className="pixel-btn" disabled={busy} onClick={() => void run("dismiss")}>{t("chatView.dismiss")}</button>
         </div>
-        <div className="chat-ask-note">{t("chatView.askNote")}</div>
+        <div className="chat-ask-note">{remote ? t("chatView.remoteAskNote") : t("chatView.askNote")}</div>
       </div>
     );
   }
@@ -541,7 +603,7 @@ function AskCard({ ask, onAnswer, onNotice }: {
         <button type="button" className="pixel-btn danger" disabled={busy} onClick={() => void run("deny", undefined, reason.trim() || undefined)}>{t("chatView.deny")}</button>
         <button type="button" className="pixel-btn" disabled={busy} onClick={() => void run("dismiss")}>{t("chatView.dismiss")}</button>
       </div>
-      <div className="chat-ask-note">{t("chatView.askNote")}</div>
+      <div className="chat-ask-note">{remote ? t("chatView.remoteAskNote") : t("chatView.askNote")}</div>
     </div>
   );
 }

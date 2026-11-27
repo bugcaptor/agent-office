@@ -5,7 +5,9 @@
 // 다시 붙었을 때, 아니면 가끔), 호스트가 묻는 대화 로그·초상·이미지·파일에 답한다.
 //
 // 터미널 화면(PTY)은 보내지 않는다 — 대화 보기 수준(전사·권한 요청·대기열·상태)까지만이다.
-// 이 단계는 보기만이라 호스트가 시키는 조작(입력·권한 응답·세션 열기)은 받지 않는다.
+// 호스트가 시키는 조작도 같은 물음(`Request`)으로 온다: `op`(웹 상태판 `/api/agents/:agent/:op`와 같은 일 —
+// 메시지·대기열 빼기·중단·CLI 실행·세션 열기(재시작)·이어하기·닫기)와 `ask`(권한 요청·질문 답). 이 머신의
+// 웹 상태판 조작과 같은 함수를 부르므로 이 머신 앱에도 웹 조작처럼 알림이 뜬다. 권한 등급은 없다(페어링 = 전부 허용).
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
@@ -94,6 +96,12 @@ fn blob(bytes: &[u8]) -> Result<String, String> {
 
 /// 호스트의 물음에 답한다.
 async fn answer(ctl: &Arc<ControlContext>, dash: &Arc<WebDashState>, kind: &str, data: Value) -> Result<Value, String> {
+    if kind == "ask" {
+        let id = data.get("askId").and_then(Value::as_str).filter(|s| !s.is_empty()).ok_or("bad-request")?.to_string();
+        let answer: crate::webdash::AskAnswer = serde_json::from_value(data).map_err(|_| "bad-request".to_string())?;
+        crate::webdash::answer_ask_local(ctl.clone(), dash.clone(), &id, answer)?;
+        return Ok(json!({}));
+    }
     let agent = agent_of(&data)?;
     // 앱 대화 보기(`view: "app"`)는 이미지 끄기와 무관한 수집기를 쓰고, 웹은 이 머신 웹 상태판 설정을 따른다.
     let app = data.get("view").and_then(Value::as_str) == Some("app");
@@ -148,6 +156,11 @@ async fn answer(ctl: &Arc<ControlContext>, dash: &Arc<WebDashState>, kind: &str,
         "asks" => {
             let sid = ctl.manager.session_id_for(&agent);
             Ok(json!(sid.map(|sid| ctl.observer.permissions().list(&sid)).unwrap_or_default()))
+        }
+        "op" => {
+            let op = data.get("op").and_then(Value::as_str).ok_or("bad-request")?.to_string();
+            let body: crate::webdash::AgentCommandBody = serde_json::from_value(data).map_err(|_| "bad-request".to_string())?;
+            crate::webdash::agent_op(ctl.clone(), dash.clone(), &agent, &op, body).await
         }
         "status" => serde_json::to_value(crate::chat_queue::live_status(ctl, &agent)).map_err(|e| e.to_string()),
         _ => Err("link-unsupported".into()),

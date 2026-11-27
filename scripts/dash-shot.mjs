@@ -520,11 +520,30 @@ assert.equal(await p.locator(".machine-h").count(), 3, "이 머신 + 붙은 머�
 assert.equal(await p.locator(".card.offline", { hasText: "Cleo" }).count(), 1);
 await p.screenshot({ path: `${outDir}/list-machines.png`, fullPage: true });
 await p.locator(".card", { hasText: "Ada" }).filter({ hasText: "studio-pc" }).click();
-await p.locator(".ask.remote").waitFor();
-assert.equal(await p.locator("#msgform").count(), 0, "다른 머신 캐릭터에는 직접 입력이 없다");
-assert.equal(await p.locator("#head .btns").count(), 0, "조작 단추가 없다");
+await p.locator(".ask").waitFor();
+// 다른 머신 캐릭터: 메시지·권한 응답·세션 조작을 그 머신에 넘긴다(호스트가 원격 id로 받는다).
+assert.equal(await p.locator("#msgform").count(), 1, "붙은 머신 캐릭터에는 직접 입력이 있다");
+assert.equal(await p.locator("#taskform").count(), 0, "업무 보내기는 아직 이 머신 캐릭터만");
+assert.ok(await p.locator("#head .btns").count() > 0, "조작 단추가 있다");
 assert.ok(logReqs.some((r) => r.startsWith("/api/log/d-1a2b3c4d%3Ar1")), "로그는 머신:캐릭터 id로 묻는다");
 await p.screenshot({ path: `${outDir}/agent-remote.png`, fullPage: true });
+await p.locator(".ask").getByRole("button", { name: "허용", exact: true }).click();
+await p.waitForFunction(() => !document.querySelector(".ask"));
+assert.deepEqual(posts.at(-1), { path: "/api/asks/k1", body: { action: "allow", agentId: "d-1a2b3c4d:r1" } }, "원격 요청 답에는 캐릭터 id를 싣는다");
+await p.locator("#msgtext").fill("원격으로 보냄");
+await p.locator("#msgact button").click();
+await p.waitForFunction(() => document.querySelector("#msgtext") && !document.querySelector("#msgtext").value);
+assert.deepEqual(posts.at(-1), { path: "/api/agents/d-1a2b3c4d%3Ar1/message", body: { text: "원격으로 보냄" } });
+await p.locator("#head .btns button", { hasText: "작업 중단" }).click();
+await p.waitForTimeout(200);
+assert.equal(posts.at(-1).path, "/api/agents/d-1a2b3c4d%3Ar1/interrupt");
+// 끊긴 머신 캐릭터는 보기만.
+await p.locator("button.back").click();
+await p.locator(".card", { hasText: "Cleo" }).click();
+await p.locator("#head").waitFor();
+assert.equal(await p.locator("#msgform").count(), 0, "끊긴 머신 캐릭터에는 입력이 없다");
+assert.equal(await p.locator("#head .btns").count(), 0, "끊긴 머신 캐릭터에는 조작 단추가 없다");
+await p.screenshot({ path: `${outDir}/agent-remote-offline.png`, fullPage: true });
 // 업무 탭 담당 고르기에는 이 머신 캐릭터만
 assert.ok(!(await p.evaluate(() => window.Dash.getChars().some((c) => c.remote))));
 

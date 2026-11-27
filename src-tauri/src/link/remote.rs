@@ -344,6 +344,25 @@ impl RemoteView {
         self.host.request(device_id, kind, data, REQUEST_TIMEOUT).await
     }
 
+    /// 제한 시간을 정해 묻는다(오래 걸리는 조작).
+    pub async fn request_with(&self, device_id: &str, kind: &str, data: Value, timeout: std::time::Duration) -> Result<Value, String> {
+        self.host.request(device_id, kind, data, timeout).await
+    }
+
+    /// 이 권한 요청 id가 걸린 머신(붙어 있는 머신이 마지막으로 올린 모습에서 찾는다).
+    pub fn device_of_ask(&self, ask_id: &str) -> Option<String> {
+        if !self.host.enabled() {
+            return None;
+        }
+        let machines = self.machines.lock().unwrap();
+        machines.iter().find_map(|(device, m)| {
+            let found = m.characters.as_deref()?.iter().any(|c| {
+                c.get("asks").and_then(Value::as_array).is_some_and(|asks| asks.iter().any(|a| str_of(a, "id") == ask_id))
+            });
+            found.then(|| device.clone())
+        })
+    }
+
     /// 원격 캐릭터 초상(PNG). 같은 판이면 다시 묻지 않는다.
     pub async fn portrait(&self, device_id: &str, agent_id: &str) -> Option<Arc<Vec<u8>>> {
         let version = {

@@ -952,6 +952,7 @@ pub fn run() {
             ipc::commands::chat_view_send,
             ipc::commands::chat_view_status,
             ipc::commands::chat_view_cancel_queued,
+            ipc::commands::chat_view_remote_op,
             ipc::commands::web_dash_status,
             ipc::commands::web_dash_configure,
             ipc::commands::web_dash_rotate_token,

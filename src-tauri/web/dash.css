@@ -395,4 +395,3 @@ main.tasks-wide { max-width: 1380px; }
 .machine-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--idle); opacity: 0.6; flex: none; }
 .machine-dot.on { background: var(--ok); opacity: 1; }
 .card.offline { opacity: 0.55; }
-.ask.remote .ask-line { margin-top: 6px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; white-space: pre-wrap; word-break: break-word; }
