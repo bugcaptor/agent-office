@@ -33,11 +33,6 @@ export function participantName(
   return remote ? `${remote.character.name} · ${remote.machine.name}` : undefined;
 }
 
-/** 이름, 모르면 "지워진 팀원". */
-export function participantLabel(agentId: string | undefined): string {
-  return participantName(agentId) ?? t("discussion:board.missingAgent");
-}
-
 /** 화면용: 이 머신·연동 머신이 바뀌면 다시 그린다. */
 export function useParticipantLabel(): (agentId: string | undefined) => string {
   const agents = useAppStore((s) => s.agents);
