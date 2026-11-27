@@ -157,8 +157,10 @@ async fn lan_ca(State(ctx): Ctx) -> Response {
     res
 }
 
+/// 상태판 HTML. 탭 제목과 머리에 처음부터 컴퓨터 이름을 넣어, 상태를 받기 전에도 어느 기기인지 보이게 한다.
 async fn page() -> Response {
-    let mut res = Response::new(Body::from(PAGE));
+    let host = tokio::task::spawn_blocking(super::computer_name).await.unwrap_or_default();
+    let mut res = Response::new(Body::from(render_page(&host)));
     let h = res.headers_mut();
     h.insert(header::CONTENT_TYPE, HeaderValue::from_static("text/html; charset=utf-8"));
     h.insert(header::CACHE_CONTROL, HeaderValue::from_static("no-store"));
@@ -168,6 +170,16 @@ async fn page() -> Response {
         HeaderValue::from_static("default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'; connect-src 'self'; frame-ancestors 'none'"),
     );
     res
+}
+
+fn render_page(host: &str) -> String {
+    let host = host.trim();
+    if host.is_empty() {
+        return PAGE.to_string();
+    }
+    let host = crate::doc_view::escape_html(host);
+    PAGE.replacen("<title>Agent Office</title>", &format!("<title>{host} · Agent Office</title>"), 1)
+        .replacen(r#"<h1 id="title">Agent Office</h1>"#, &format!(r#"<h1 id="title">{host}</h1>"#), 1)
 }
 
 fn static_asset(body: &'static str, content_type: &'static str) -> Response {
@@ -1382,6 +1394,14 @@ mod tests {
         assert_eq!(validate_auto_run_limits(None, Some(1441)), Err("bad-request"));
         assert!(validate_work_agent(&WorkAgent { cli: WorkCli::Claude, model: Some("opus".into()), effort: Some("high".into()) }).is_ok());
         assert_eq!(validate_work_agent(&WorkAgent { cli: WorkCli::Claude, model: Some("\x00".into()), effort: None }), Err("control-char"));
+    }
+
+    #[test]
+    fn page_carries_the_computer_name_from_the_start() {
+        let html = super::render_page("Mac <&> Studio");
+        assert!(html.contains("<title>Mac &lt;&amp;&gt; Studio · Agent Office</title>"), "{html}");
+        assert!(html.contains(r#"<h1 id="title">Mac &lt;&amp;&gt; Studio</h1>"#), "{html}");
+        assert_eq!(super::render_page("  "), super::PAGE);
     }
 
     #[test]
