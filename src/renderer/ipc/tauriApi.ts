@@ -24,6 +24,7 @@ import { invoke, Channel } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { Commands, Events } from "@shared/ipc";
 import type {
+  LinkDiscussionSessionEvent,
   LinkTaskEvent,
   ActivityEvent,
   AgentOfficeApi,
@@ -586,6 +587,10 @@ export const tauriApi: AgentOfficeApi = {
 
   onLinkTask(cb) {
     return wrapListen<LinkTaskEvent>(Events.linkTask, cb);
+  },
+
+  onLinkDiscussionSession(cb) {
+    return wrapListen<LinkDiscussionSessionEvent>(Events.linkDiscussionSession, cb);
   },
 
   onAppSettingsChanged(cb) {

@@ -33,6 +33,8 @@ import { useAppStore } from "../store/appStore";
 import { useAwardsStore } from "../awards/awardsStore";
 import { useDiscussionStore } from "../discussion/discussionStore";
 import { discussionStageEquals, officeDiscussionStage } from "../discussion/officeStage";
+import { remoteParticipantProfile } from "../discussion/participants";
+import { openRemoteChat, useRemoteFloors } from "../link/remoteFloors";
 import { pendingAgentIds } from "../store/selectors";
 import { tauriApi } from "./tauriApi";
 import { sessionOptsFor } from "./sessionOpts";
@@ -90,13 +92,17 @@ useAwardsStore.subscribe((state) => {
 
 // discussions -> officeBus 토의 연출 relay(같은 이유로 모듈 스코프). 토의 스토어도 셀렉터 미들웨어가
 // 없고 실행기가 commit을 자주 하므로, 파생값(참가자·사회자·말하는 사람)이 실제로 바뀔 때만 발화한다.
-let lastDiscussionStage: OfficeDiscussionStage | null = officeDiscussionStage(useDiscussionStore.getState().discussions);
-useDiscussionStore.subscribe((state) => {
-  const next = officeDiscussionStage(state.discussions);
+// 머신 연동 호스트면 다른 머신 참가자의 외형(회의실 분신)이 연동 머신 목록에서 오므로 그쪽이 바뀔 때도 본다.
+const stageNow = () => officeDiscussionStage(useDiscussionStore.getState().discussions, (id) => remoteParticipantProfile(id));
+let lastDiscussionStage: OfficeDiscussionStage | null = stageNow();
+const publishDiscussionStage = () => {
+  const next = stageNow();
   if (discussionStageEquals(lastDiscussionStage, next)) return;
   lastDiscussionStage = next;
   discussionStageCbs.forEach((cb) => cb(next));
-});
+};
+useDiscussionStore.subscribe(publishDiscussionStage);
+useRemoteFloors.subscribe((s, prev) => { if (s.office !== prev.office) publishDiscussionStage(); });
 
 // Agents with an in-flight createSession, so a double-click (two
 // emitAgentClicked in a row) can only ever produce ONE createSession call.
@@ -317,6 +323,8 @@ export const officeBus: OfficeBus = {
   emitAgentClicked(agentId) {
     // 클릭 시 호버 카드 즉시 숨김.
     hoverCbs.forEach((cb) => cb(null, 0, 0));
+    // 회의실의 다른 머신 참가자 분신: 그 머신 캐릭터의 대화 보기를 연다(이 머신 세션이 아니다).
+    if (remoteParticipantProfile(agentId)) { openRemoteChat(agentId); return; }
     // Recreate the session for persisted/exited agents before opening
     // the terminal, so clicking a character that has no live PTY restarts it.
     ensureSession(agentId);

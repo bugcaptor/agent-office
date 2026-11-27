@@ -306,6 +306,7 @@ const impl: Partial<AgentOfficeApi> = {
   onActivity: (cb) => subscribe(Events.activityEvent, cb),
   onTurnUsage: (cb) => subscribe(Events.turnUsage, cb),
   onLinkTask: (cb) => subscribe(Events.linkTask, cb),
+  onLinkDiscussionSession: (cb) => subscribe(Events.linkDiscussionSession, cb),
   onAppSettingsChanged: (cb) => subscribe(Events.appSettingsChanged, cb),
   appendSessionTurn() {},
   async listNotifications(agentId) { return scenario.notifications.filter((n) => n.agentId === agentId); },

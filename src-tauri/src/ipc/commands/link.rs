@@ -61,16 +61,27 @@ pub fn link_remote(app_state: State<'_, AppState>) -> RemoteOffice {
 /// `agentId`는 원격 id(`기기id:캐릭터id`)다. 몸에 그 머신의 캐릭터 id를 넣어 넘긴다.
 #[tauri::command(rename_all = "camelCase")]
 pub async fn link_work(agent_id: String, kind: String, data: serde_json::Value, app_state: State<'_, AppState>) -> Result<serde_json::Value, String> {
-    if !matches!(kind.as_str(), "work-send" | "work-followup" | "work-reply" | "usage") {
+    let discuss = crate::link::discuss::KINDS.contains(&kind.as_str());
+    if !discuss && !matches!(kind.as_str(), "work-send" | "work-followup" | "work-reply" | "usage") {
         return Err("bad-request".into());
     }
     let remote = app_state.link.remote.clone();
     let (device, agent) = remote.resolve(&agent_id).ok_or("work-send-agent-missing")?;
     let mut data = if data.is_object() { data } else { serde_json::json!({}) };
     data["agentId"] = serde_json::json!(agent);
-    if kind == "work-send" {
-        // 받은 업무에 보일 호스트 이름.
+    if kind == "work-send" || kind == crate::link::discuss::KIND_OPEN {
+        // 받은 업무·토의 탭에 보일 호스트 이름.
         data["hostName"] = serde_json::json!(crate::webdash::computer_name());
+    }
+    if kind == crate::link::discuss::KIND_OPEN {
+        // 참가자는 자기 머신 폴더를 읽는다: 토의 폴더가 든 저장소(원격 주소·하위 경로)를 그 머신이 클론으로 찾는다.
+        let cwd = data.get("discussion").and_then(|d| d.get("cwd")).and_then(|c| c.as_str()).map(std::path::PathBuf::from);
+        if let Some(cwd) = cwd {
+            let found = tauri::async_runtime::spawn_blocking(move || crate::link::repos::locate(&cwd)).await.map_err(|e| e.to_string())?;
+            if let Some((url, subpath)) = found {
+                data["repo"] = serde_json::json!({ "url": url, "subpath": subpath });
+            }
+        }
     }
     remote.request_with(&device, &kind, data, crate::webdash::REMOTE_OP_TIMEOUT).await
 }

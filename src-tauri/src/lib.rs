@@ -797,7 +797,7 @@ pub fn run() {
             );
             web_dash.set_link_host(link.host.clone());
             web_dash.set_link_remote(link.remote.clone());
-            crate::link::share::install(&link, control_ctx.clone(), web_dash.clone());
+            crate::link::share::install(&link, control_ctx.clone(), web_dash.clone(), handle.clone());
             link.start();
             if web_dash.config().enabled {
                 tauri::async_runtime::block_on(web_dash.reconcile(control_ctx.clone(), web_dash.clone()));

@@ -10,6 +10,7 @@
 // skeleton verification before C wires the real one.
 
 import type { SessionState } from "../../shared/types";
+import type { AgentProfile } from "./types";
 
 /** 머리 위 라벨 앵커(화면좌표 px). TaskLabelLayer가 소비. */
 export interface LabelAnchor {
@@ -46,6 +47,8 @@ export interface OfficeDiscussionMember {
   moderator: boolean;
   /** 지금 차례를 받아 말하는 중(차례를 보냈고 발언을 아직 받지 않음). */
   speaking: boolean;
+  /** 머신 연동: 다른 머신 참가자의 외형. 이 머신 프로필이 없어 회의실 분신을 이것으로 그린다. */
+  profile?: AgentProfile;
 }
 
 /**

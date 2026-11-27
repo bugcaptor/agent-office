@@ -143,7 +143,8 @@
       "debaters": "請至少新增一位討論者。",
       "too-many": "討論者最多 {{max}} 人。",
       "limits": "上限超出範圍。輪數 {{rounds}}，時間 {{minutes}} 分鐘，費用 ${{cost}}。"
-    }
+    },
+    "remoteHint": "其他機器上的角色會在那台機器上開啟討論分頁，讀取那台機器上包含此資料夾的儲存庫複本（沒有則讀取該角色的起始資料夾）。"
   },
   "detail": {
     "cwd": "工作資料夾",
@@ -191,7 +192,9 @@
     "quitNotice_other": "開啟的 {{count}} 個討論分頁也會一起結束。",
     "tooltip": "討論：{{topic}}",
     "tooltipModerator": "討論主持：{{topic}}",
-    "unknownTopic": "（已刪除的討論）"
+    "unknownTopic": "（已刪除的討論）",
+    "linkedTitle": "{{name}} · {{host}} 的討論",
+    "linkedTooltip": "由 {{host}} 主持的討論：{{topic}}"
   },
   "run": {
     "prompt": {
@@ -234,7 +237,8 @@
       "discussion-invalid": "討論內容有問題，無法開始。請在編輯中檢查。",
       "discussion-busy": "另一個討論正在進行。一次只能進行一個討論。",
       "discussion-missing-member": "參與者中有已刪除的成員。請在編輯中移除。",
-      "discussion-observer-off": "觀察鉤子已關閉，無法得知一輪何時結束。請在設定中開啟觀察。"
+      "discussion-observer-off": "觀察鉤子已關閉，無法得知一輪何時結束。請在設定中開啟觀察。",
+      "discussion-remote-offline": "有參與者的機器已中斷連線。請等該機器重新連線後再開始。"
     },
     "pause": {
       "user": "已被人暫停。",
@@ -245,7 +249,8 @@
       "session-ended": "正在進行這一輪的討論分頁已結束。繼續時會重新開啟。",
       "no-utterance": "再次請求後仍未收到發言。請檢查分頁後再繼續。",
       "moderator-invalid": "再次請求後仍無法讀取主持人的指示。請檢查分頁後再繼續。",
-      "usage-wait": "訂閱用量看起來不夠，正在等待限額視窗重設。"
+      "usage-wait": "訂閱用量看起來不夠，正在等待限額視窗重設。",
+      "link-offline": "參與者的機器已中斷連線。重新連線後會自動繼續。"
     },
     "phase": {
       "opening": "同時進行的第一輪 · {{done}}/{{total}} 人已發言",

@@ -225,7 +225,16 @@ fn folders(ctx: &Dash) -> Vec<String> {
 
 /// 캐릭터 id → 이름.
 fn agent_names(ctx: &Dash) -> HashMap<String, String> {
-    ctx.ctl.store.load().agents.into_iter().map(|a| (a.id, a.name)).collect()
+    let mut names: HashMap<String, String> = ctx.ctl.store.load().agents.into_iter().map(|a| (a.id, a.name)).collect();
+    // 머신 연동 호스트: 다른 머신 캐릭터(토의 참가자·업무 담당)는 `이름 · 머신`.
+    if let Some(remote) = ctx.dash.link_remote() {
+        for m in remote.office_view().machines {
+            for c in m.characters {
+                names.entry(c.id.clone()).or_insert_with(|| format!("{} · {}", c.name, m.name));
+            }
+        }
+    }
+    names
 }
 
 fn clip(text: &str, max: usize) -> String {

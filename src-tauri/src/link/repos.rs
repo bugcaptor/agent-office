@@ -100,6 +100,23 @@ fn remote_of(root: &Path) -> Option<String> {
     normalize_remote(&git(root, &["remote", "get-url", &first])?)
 }
 
+/// 폴더가 든 저장소의 원격 주소 정규형과 저장소 최상위에서의 하위 경로(없으면 빈 문자열). 저장소가 아니거나
+/// 원격이 없으면 None(블로킹 — git을 부른다). 토의 작업 폴더를 다른 머신의 클론으로 옮길 때 쓴다.
+pub fn locate(dir: &Path) -> Option<(String, String)> {
+    let root = toplevel(dir)?;
+    let url = remote_of(&root)?;
+    let canon = |p: &Path| std::fs::canonicalize(p).unwrap_or_else(|_| p.to_path_buf());
+    let sub = canon(dir)
+        .strip_prefix(canon(&root))
+        .ok()
+        .map(|p| p.components().filter_map(|c| match c {
+            std::path::Component::Normal(n) => Some(n.to_string_lossy().into_owned()),
+            _ => None,
+        }).collect::<Vec<_>>().join("/"))
+        .unwrap_or_default();
+    Some((url, sub))
+}
+
 /// 찾아볼 폴더들: 시작 폴더와 그 바로 아래 폴더, 작업 기록의 폴더.
 pub fn candidates(start_dirs: &[PathBuf], event_root: Option<&Path>) -> Vec<PathBuf> {
     let mut out = BTreeSet::new();
@@ -275,6 +292,9 @@ mod tests {
         assert_eq!(roots.iter().map(|r| std::fs::canonicalize(r).unwrap()).collect::<Vec<_>>(), vec![app.clone()]);
         assert_eq!(found.len(), 1, "저장소가 아닌 폴더는 없다: {found:?}");
 
+        assert_eq!(locate(&app.join("web")), Some(("github.com/acme/app".to_string(), "web".to_string())));
+        assert_eq!(locate(&app), Some(("github.com/acme/app".to_string(), String::new())));
+        assert_eq!(locate(&base.join("dev").join("notes")), None);
         // 하위 경로.
         assert_eq!(prepare(&app, "t-1", Some("web"), None, false).unwrap(), app.join("web"));
         assert_eq!(prepare(&app, "t-1", Some("nope"), None, false).unwrap_err(), "link-subpath-missing");

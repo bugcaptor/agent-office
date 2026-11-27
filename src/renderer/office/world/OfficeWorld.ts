@@ -189,9 +189,10 @@ export class OfficeWorld {
   private syncMeetingAvatars(): void {
     const members = this.discussionStage?.members ?? [];
     const seats = this.o.map.meetingRoom?.seats ?? [];
-    const wanted = new Map<string, { seatIndex: number; moderator: boolean; speaking: boolean }>();
+    const wanted = new Map<string, { seatIndex: number; moderator: boolean; speaking: boolean; profile: AgentProfile }>();
     members.forEach((m, i) => {
-      if (i < seats.length && this.profiles.has(m.agentId)) wanted.set(m.agentId, { seatIndex: i, moderator: m.moderator, speaking: m.speaking });
+      const profile = this.profiles.get(m.agentId) ?? m.profile;
+      if (i < seats.length && profile) wanted.set(m.agentId, { seatIndex: i, moderator: m.moderator, speaking: m.speaking, profile });
     });
     for (const [id, avatar] of this.avatars) {
       if (wanted.has(id)) continue;
@@ -200,7 +201,7 @@ export class OfficeWorld {
       this.avatarKeys.delete(id);
     }
     for (const [id, w] of wanted) {
-      const p = this.profiles.get(id)!;
+      const p = w.profile;
       const seat = seats[w.seatIndex];
       const key = `${appearanceKey(p)}|${seat.tx},${seat.ty},${seat.facing}`;
       let avatar = this.avatars.get(id);

@@ -1526,7 +1526,7 @@ pub enum DiscussionPhase { Opening, Moderator, Speakers, User, WrapUp }
 /// 멈춘 이유. TS `DiscussionPauseReason` 미러.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
-pub enum DiscussionPauseReason { User, Restarted, HumanInput, OpenFailed, SendFailed, SessionEnded, NoUtterance, ModeratorInvalid, UsageWait }
+pub enum DiscussionPauseReason { User, Restarted, HumanInput, OpenFailed, SendFailed, SessionEnded, NoUtterance, ModeratorInvalid, UsageWait, LinkOffline }
 /// 강제 정리를 부른 상한. TS `DiscussionLimitReason` 미러.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]

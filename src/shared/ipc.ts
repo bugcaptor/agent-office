@@ -260,4 +260,5 @@ export const Events = {
   linkRemote: "link-remote",
   // 호스트: 붙은 머신이 받은 업무의 진행 상태를 올렸다.
   linkTask: "link-task",
+  linkDiscussionSession: "link-discussion-session",
 } as const;

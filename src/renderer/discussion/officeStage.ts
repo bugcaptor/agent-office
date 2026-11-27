@@ -11,6 +11,7 @@
 //   토론자 전원이 함께 말한다.
 import type { Discussion, DiscussionState } from "@shared/types";
 import type { OfficeDiscussionMember, OfficeDiscussionStage } from "../office/bus";
+import type { AgentProfile } from "../office/types";
 import { isActiveDiscussion, participantsModeratorFirst } from "./discussionModel";
 
 const SPEAKING: ReadonlySet<DiscussionState> = new Set<DiscussionState>(["running", "wrapping_up"]);
@@ -30,24 +31,37 @@ export function speakingSince(d: Discussion): Map<string, number> {
   return out;
 }
 
-export function officeDiscussionStage(discussions: readonly Discussion[]): OfficeDiscussionStage | null {
+/**
+ * `remoteProfile`은 다른 머신 참가자(`기기id:캐릭터id`)의 외형을 준다(머신 연동 호스트). 이 머신 캐릭터는 씬이 이미
+ * 프로필을 안다. 외형을 모르는 원격 참가자는 분신 없이 보드에만 나온다.
+ */
+export function officeDiscussionStage(
+  discussions: readonly Discussion[],
+  remoteProfile: (agentId: string) => AgentProfile | undefined = () => undefined,
+): OfficeDiscussionStage | null {
   const d = stagedDiscussion(discussions);
   if (!d) return null;
   const speaking = speakingSince(d);
   const ids = participantsModeratorFirst(d).map((p) => p.agentId);
-  const members: OfficeDiscussionMember[] = [...new Set(ids)].map((agentId) => ({
-    agentId,
-    moderator: agentId === d.moderatorAgentId,
-    speaking: speaking.has(agentId),
-  }));
+  const members: OfficeDiscussionMember[] = [...new Set(ids)].map((agentId) => {
+    const profile = agentId.includes(":") ? remoteProfile(agentId) : undefined;
+    return {
+      agentId,
+      moderator: agentId === d.moderatorAgentId,
+      speaking: speaking.has(agentId),
+      ...(profile ? { profile } : {}),
+    };
+  });
   return { discussionId: d.id, members };
 }
+
+const looksKey = (p: AgentProfile | undefined) => (p ? `${p.seed}|${p.archetype ?? ""}|${JSON.stringify(p.colors ?? null)}|${p.name}` : "");
 
 export function discussionStageEquals(a: OfficeDiscussionStage | null, b: OfficeDiscussionStage | null): boolean {
   if (a === b) return true;
   if (!a || !b || a.discussionId !== b.discussionId || a.members.length !== b.members.length) return false;
   return a.members.every((m, i) => {
     const n = b.members[i];
-    return m.agentId === n.agentId && m.moderator === n.moderator && m.speaking === n.speaking;
+    return m.agentId === n.agentId && m.moderator === n.moderator && m.speaking === n.speaking && looksKey(m.profile) === looksKey(n.profile);
   });
 }

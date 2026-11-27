@@ -46,19 +46,60 @@ pub struct TurnObservation {
     pub message: Option<String>,
 }
 
+/// 토의 세션의 턴 토큰 하나(머신 연동: 호스트가 진행하는 토의의 비용을 그 머신에서 올려 보낸다).
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DiscussionUsage {
+    pub seq: u64,
+    pub at: u64,
+    pub tokens: crate::types::SessionEventTokens,
+    pub partial: bool,
+}
+
+/// 세션마다 들고 있는 토의 토큰 기록 수와 세션 수.
+const MAX_USAGE_PER_SESSION: usize = 256;
+const MAX_USAGE_SESSIONS: usize = 32;
+
 /// 세션 id → 마지막 관측. 바뀔 때마다 `version`을 올려 기다리는 쪽을 깨운다.
 pub struct TurnTracker {
     sessions: Mutex<HashMap<String, TurnObservation>>,
     version: watch::Sender<u64>,
+    /// 토의 세션 id → (다음 seq, 기록). 토의 세션만 모은다.
+    usage: Mutex<HashMap<String, (u64, std::collections::VecDeque<DiscussionUsage>)>>,
 }
 
 impl Default for TurnTracker {
     fn default() -> Self {
-        Self { sessions: Mutex::new(HashMap::new()), version: watch::channel(0).0 }
+        Self { sessions: Mutex::new(HashMap::new()), version: watch::channel(0).0, usage: Mutex::new(HashMap::new()) }
     }
 }
 
 impl TurnTracker {
+    /// 그 토의 세션의 `after`보다 뒤 토큰 기록.
+    pub fn discussion_usage_after(&self, session_id: &str, after: u64) -> Vec<DiscussionUsage> {
+        let usage = self.usage.lock().unwrap();
+        usage.get(session_id).map(|(_, list)| list.iter().filter(|u| u.seq > after).cloned().collect()).unwrap_or_default()
+    }
+
+    fn record_usage(&self, ev: &TurnUsageEvent) {
+        if !crate::types::is_discussion_session_id(&ev.agent_id) {
+            return;
+        }
+        let mut usage = self.usage.lock().unwrap();
+        if !usage.contains_key(&ev.session_id) && usage.len() >= MAX_USAGE_SESSIONS {
+            let oldest = usage.iter().min_by_key(|(_, (_, l))| l.back().map_or(0, |u| u.at)).map(|(k, _)| k.clone());
+            if let Some(k) = oldest {
+                usage.remove(&k);
+            }
+        }
+        let (next, list) = usage.entry(ev.session_id.clone()).or_insert((1, Default::default()));
+        list.push_back(DiscussionUsage { seq: *next, at: ev.at, tokens: ev.tokens.clone(), partial: ev.partial });
+        *next += 1;
+        while list.len() > MAX_USAGE_PER_SESSION {
+            list.pop_front();
+        }
+    }
+
     pub fn get(&self, session_id: &str) -> Option<TurnObservation> {
         self.sessions.lock().unwrap().get(session_id).cloned()
     }
@@ -141,6 +182,7 @@ impl AppEvents for TrackingEvents {
         self.inner.activity_event(ev);
     }
     fn turn_usage(&self, ev: &TurnUsageEvent) {
+        self.tracker.record_usage(ev);
         if ev.ends_turn() {
             self.tracker.observe(&ev.session_id, &ev.agent_id, TurnPhase::Idle, ev.at, None);
         }
@@ -212,6 +254,32 @@ mod tests {
         assert_eq!(tracker.get("s1").unwrap().phase, TurnPhase::Idle);
         events.activity_event(&activity(ActivityKind::Prompt, 30));
         assert_eq!(tracker.get("s1").unwrap().phase, TurnPhase::Idle);
+    }
+
+    #[test]
+    fn discussion_session_tokens_are_kept_for_the_host_to_read_after_a_seq() {
+        let (tracker, events, _) = setup();
+        let usage = |agent: &str, at: u64, partial: bool| TurnUsageEvent {
+            agent_id: agent.into(),
+            session_id: if agent == "a1" { "s1".into() } else { "ds1".into() },
+            at,
+            tokens: Default::default(),
+            partial,
+            subagents_running: false,
+        };
+        events.turn_usage(&usage("a1", 5, false));
+        assert!(tracker.discussion_usage_after("s1", 0).is_empty(), "캐릭터 세션은 모으지 않는다");
+        events.turn_usage(&usage("discuss-d1.ada", 10, true));
+        events.turn_usage(&usage("discuss-d1.ada", 20, false));
+        let all = tracker.discussion_usage_after("ds1", 0);
+        assert_eq!(all.iter().map(|u| (u.seq, u.at, u.partial)).collect::<Vec<_>>(), vec![(1, 10, true), (2, 20, false)]);
+        assert_eq!(tracker.discussion_usage_after("ds1", 1).len(), 1, "이미 읽은 것은 건너뛴다");
+        for n in 0..MAX_USAGE_PER_SESSION + 10 {
+            events.turn_usage(&usage("discuss-d1.ada", 100 + n as u64, true));
+        }
+        let kept = tracker.discussion_usage_after("ds1", 0);
+        assert_eq!(kept.len(), MAX_USAGE_PER_SESSION);
+        assert_eq!(kept.last().unwrap().seq, (MAX_USAGE_PER_SESSION + 12) as u64, "seq는 버린 뒤에도 이어진다");
     }
 
     #[test]

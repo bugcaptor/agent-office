@@ -14,6 +14,9 @@
 //   사용량 대기가 켜져 있으면 차례를 넣기 전마다 그 참가자의 구독을 예측해, 모자라면 한도 창 리셋까지 기다렸다가 스스로 이어 간다.
 // - 마무리: 정리 지시(wrap)의 칸으로 결정 메모를 써 앱 데이터에 저장하고(discussionMemo.ts), 토의 탭을 모두 닫고 OS 알림을 보낸 뒤
 //   결론 확인(review)으로 둔다. 사람이 확인하면 끝남(finished)이다. 사람이 도중에 끝내면 메모 없이 바로 끝남이다.
+// - 머신 연동 호스트면 다른 머신 캐릭터(`기기id:캐릭터id`)도 참가자가 된다. 진행·메모는 여기서 하고, 그 참가자 세션만
+//   그 머신에서 연다(`remoteDiscussion.ts`). 그 머신이 끊기면 그 차례에서 멈추고(link-offline) 다시 붙으면 스스로 이어
+//   간다. 원격 참가자는 이 머신 구독 사용량 대기에 넣지 않고, 턴 토큰은 그 머신에서 받아 비용 누계에 더한다.
 import type {
   AgentProfile, Discussion, DiscussionLimitReason, DiscussionPauseReason, DiscussionRun, DiscussionTurn, DiscussionUsageWait,
   DiscussionUtterance, TurnUsageEvent,
@@ -23,6 +26,7 @@ import { currentLocale, i18n, t } from "../i18n";
 import { tauriApi } from "../ipc/tauriApi";
 import { maybeSendOsNotification } from "../ipc/osNotify";
 import { useAppStore } from "../store/appStore";
+import { useRemoteFloors } from "../link/remoteFloors";
 import { useDiscussionStore } from "./discussionStore";
 import {
   applyDiscussionTurn, closeDiscussionSession, closeDiscussionSessions, collectDiscussionUtterance, liveDiscussionSessions, openDiscussionSession, sendDiscussionTurn,
@@ -34,6 +38,13 @@ import { isLiveStatus as isLive } from "../terminal/sideTabs";
 import { tokensCost } from "../usage/usageForecast";
 import { assessTurn, refreshUsage, workerProvider } from "../usage/usageForecastStore";
 import { composeDecisionMemo, parseWrapMemo, wrapMemoEmpty, type MemoInput, type WrapMemo } from "./discussionMemo";
+import { isRemoteParticipantId, participantName, remoteParticipant } from "./participants";
+import {
+  closeRemoteDiscussionSession, closeRemoteDiscussionSessions, collectRemoteDiscussionUtterance, installRemoteDiscussionPolling,
+  liveRemoteDiscussionSessions, openRemoteDiscussionSession, remoteDiscussionSession, remoteMachineName, remoteParticipantOnline,
+  sendRemoteDiscussionTurn, useRemoteDiscussionStore, type RemoteDiscussionSession,
+} from "./remoteDiscussion";
+import type { DiscussionSession } from "./discussionSessionStore";
 
 /**
  * 정리 지시 형식. summary(결론)만 꼭 있어야 하고 나머지 칸은 결정 메모의 절이 된다. ideas는 아이디어 발산 토의에서
@@ -176,7 +187,7 @@ function keepTailBytes(text: string, max: number): string {
 }
 
 function memberName(agentId: string | undefined, tr: Translate = t): string {
-  return (agentId && useAppStore.getState().agents[agentId]?.name.trim()) || tr("discussion:board.missingAgent");
+  return participantName(agentId) || tr("discussion:board.missingAgent");
 }
 function roleName(d: Discussion, agentId: string): string | undefined {
   const roleId = d.participants.find((p) => p.agentId === agentId)?.roleId;
@@ -316,9 +327,11 @@ export function discussionStartBlockedReason(
   if (d.state !== "ready") return "discussion-not-ready";
   if (discussionProblem(d) || !validDiscussionCwd(d.cwd)) return "discussion-invalid";
   if (all.some((other) => other.id !== d.id && isActiveDiscussion(other))) return "discussion-busy";
-  if (liveDiscussionSessions().some((s) => s.discussionId !== d.id)) return "discussion-busy";
-  if (d.participants.some((p) => !agents[p.agentId])) return "discussion-missing-member";
-  if (d.participants.some((p) => !discussionSessionAgentId(d.id, p.agentId))) return "discussion-invalid";
+  if ([...liveDiscussionSessions(), ...liveRemoteDiscussionSessions()].some((s) => s.discussionId !== d.id)) return "discussion-busy";
+  const remote = d.participants.filter((p) => isRemoteParticipantId(p.agentId));
+  if (d.participants.some((p) => (isRemoteParticipantId(p.agentId) ? !remoteParticipant(p.agentId) : !agents[p.agentId]))) return "discussion-missing-member";
+  if (d.participants.some((p) => !isRemoteParticipantId(p.agentId) && !discussionSessionAgentId(d.id, p.agentId))) return "discussion-invalid";
+  if (remote.some((p) => !remoteParticipantOnline(p.agentId))) return "discussion-remote-offline";
   if (!observerEnabled) return "discussion-observer-off";
   return undefined;
 }
@@ -350,10 +363,10 @@ export function pauseDiscussion(id: string): void {
 export function resumeDiscussion(id: string, options: { auto?: boolean } = {}): string | undefined {
   const d = find(id);
   if (!d?.run || d.state !== "paused") return undefined;
-  if (options.auto && d.run.pauseReason !== "usage-wait") return undefined;
+  if (options.auto && d.run.pauseReason !== "usage-wait" && d.run.pauseReason !== "link-offline") return undefined;
   const usageOverride = d.run.pauseReason === "usage-wait" && !options.auto ? true : undefined;
   if (!useAppStore.getState().appSettings.observerEnabled) return "discussion-observer-off";
-  const live = new Map(liveDiscussionSessions().filter((s) => s.discussionId === id).map((s) => [s.participantAgentId, s.sessionId]));
+  const live = new Map([...liveDiscussionSessions(), ...liveRemoteDiscussionSessions()].filter((s) => s.discussionId === id).map((s) => [s.participantAgentId, s.sessionId]));
   update(id, (latest) => {
     const run = latest.run!;
     const turns = run.turns.map((turn) => {
@@ -420,7 +433,7 @@ async function publishMemo(id: string, markdown: string): Promise<void> {
   } catch (error) {
     console.warn("discussion: memo save failed", error);
   }
-  await closeDiscussionSessions(id);
+  await closeAllSessions(id);
   const d = update(id, (x) => ({ ...x, state: "review", decisionMemoPath, run: undefined }));
   if (d) void maybeSendOsNotification(
     t("discussion:run.notify.concluded", { topic: d.topic }),
@@ -434,7 +447,12 @@ async function finish(id: string, notice?: string): Promise<void> {
     transcript: notice ? [...d.transcript, utterance(d, "notice", notice)] : d.transcript,
   }));
   // 안 닫으면 다음 토의가 discussion-session-other로 막힌다.
-  await closeDiscussionSessions(id);
+  await closeAllSessions(id);
+}
+
+/** 이 머신 탭과 다른 머신 참가자 세션을 모두 닫는다. */
+async function closeAllSessions(id: string): Promise<void> {
+  await Promise.all([closeDiscussionSessions(id), closeRemoteDiscussionSessions(id)]);
 }
 
 // ── 루프 ──────────────────────────────────────────────────────────────
@@ -547,7 +565,8 @@ function waitForUsage(id: string, agentIds: string[]): boolean {
   const d = running(id);
   if (!d?.run || !d.limits.usageGuard || d.run.usageOverride) return false;
   let wait: DiscussionUsageWait | undefined;
-  for (const agentId of agentIds) {
+  // 다른 머신 참가자는 그 머신 구독을 쓴다. 이 머신 사용량으로 판단하지 않는다.
+  for (const agentId of agentIds.filter((x) => !isRemoteParticipantId(x))) {
     const participant = d.participants.find((p) => p.agentId === agentId);
     const block = assessTurn(workerProvider(participant?.agent));
     if (block && (!wait || block.until > wait.until)) {
@@ -561,9 +580,23 @@ function waitForUsage(id: string, agentIds: string[]): boolean {
   return true;
 }
 
-function sessionOf(d: Discussion, agentId: string) {
+function sessionOf(d: Discussion, agentId: string): DiscussionSession | RemoteDiscussionSession | undefined {
+  if (isRemoteParticipantId(agentId)) return remoteDiscussionSession(d.id, agentId);
   const key = discussionSessionAgentId(d.id, agentId);
   return key ? useDiscussionSessionStore.getState().sessions[key] : undefined;
+}
+const isRemoteSession = (s: DiscussionSession | RemoteDiscussionSession): s is RemoteDiscussionSession => "deviceId" in s;
+function sendTurnTo(session: DiscussionSession | RemoteDiscussionSession, text: string): Promise<{ submittedAt: number }> {
+  return isRemoteSession(session) ? sendRemoteDiscussionTurn(session.agentId, text) : sendDiscussionTurn(session.agentId, text);
+}
+function closeSession(session: DiscussionSession | RemoteDiscussionSession): Promise<void> {
+  return isRemoteSession(session) ? closeRemoteDiscussionSession(session.agentId) : closeDiscussionSession(session.agentId);
+}
+/** 다른 머신 참가자의 머신이 끊겼으면 멈추고 true. 다시 붙으면 스스로 이어 간다. */
+function pauseIfOffline(id: string, agentId: string): boolean {
+  if (!isRemoteParticipantId(agentId) || remoteParticipantOnline(agentId)) return false;
+  pause(id, "link-offline", remoteMachineName(agentId));
+  return true;
 }
 
 /**
@@ -577,21 +610,26 @@ async function deliver(id: string, agentId: string): Promise<void> {
   const session = sessionOf(d, agentId);
   let sessionId: string, sentAt: number;
   if (session && isLive(session.status) && (session.turn?.phase === "working" || session.turn?.phase === "waiting")) return;
+  if (pauseIfOffline(id, agentId)) return;
   if (waitForUsage(id, [agentId])) return;
+  const remote = isRemoteParticipantId(agentId);
   if (session && isLive(session.status)) {
     try {
-      ({ submittedAt: sentAt } = await sendDiscussionTurn(session.agentId, turnText(d, turn, session.sessionId)));
+      ({ submittedAt: sentAt } = await sendTurnTo(session, turnText(d, turn, session.sessionId)));
     } catch (error) {
       const code = errorCode(error);
-      if (running(id)) pause(id, code === "work-send-human-input" ? "human-input" : "send-failed", code);
+      if (running(id)) pause(id, code === "work-send-human-input" ? "human-input" : code === "link-device-offline" ? "link-offline" : "send-failed", remote && code === "link-device-offline" ? remoteMachineName(agentId) : code);
       return;
     }
     sessionId = session.sessionId;
   } else {
-    const open = () => openDiscussionSession(d.id, agentId, { turn: turnText(d, turn, undefined), lang: discussionPromptLang(), focus: false });
+    const turnBody = turnText(d, turn, undefined);
+    const open = () => remote
+      ? openRemoteDiscussionSession(d, agentId, { turn: turnBody, lang: discussionPromptLang() })
+      : openDiscussionSession(d.id, agentId, { turn: turnBody, lang: discussionPromptLang(), focus: false });
     let error = await open();
     // 렌더러만 다시 읽혀 네이티브 세션이 남아 있으면 버리고 다시 연다.
-    if (error === "discussion-session-running") {
+    if (!remote && error === "discussion-session-running") {
       const key = discussionSessionAgentId(d.id, agentId)!;
       await tauriApi.disposeSession(key).catch(() => undefined);
       error = await open();
@@ -600,11 +638,13 @@ async function deliver(id: string, agentId: string): Promise<void> {
     // 여는 사이(CLI 기동에 몇 초) 토의가 끝났으면 끝내기의 탭 정리를 지나쳤으므로 여기서 닫는다.
     // 남겨 두면 다음 토의가 discussion-session-other로 막힌다.
     if (!running(id) && !find(id)?.run) {
-      if (opened) await closeDiscussionSession(opened.agentId);
+      if (opened) await closeSession(opened);
       return;
     }
     if (error || !opened) {
-      if (running(id)) pause(id, error === "work-send-human-input" ? "human-input" : "open-failed", error ?? "discussion-session-missing");
+      if (!running(id)) return;
+      if (error === "link-device-offline") pause(id, "link-offline", remoteMachineName(agentId));
+      else pause(id, error === "work-send-human-input" ? "human-input" : "open-failed", error ?? "discussion-session-missing");
       return;
     }
     ({ sessionId, submittedAt: sentAt } = opened);
@@ -624,12 +664,20 @@ async function receive(id: string, agentId: string, options: { nudge?: boolean }
   const turn = d?.run?.turns.find((x) => x.agentId === agentId);
   if (!d || !turn || turn.sentAt === undefined || turn.text !== undefined) return null;
   const session = sessionOf(d, agentId);
+  // 머신이 끊겨도 그 머신 세션은 돌고 있을 수 있다. 멈췄다가 다시 붙으면 같은 차례를 이어 받는다.
+  if (session && isRemoteSession(session) && (session.offline || !remoteParticipantOnline(agentId))) {
+    if (pauseIfOffline(id, agentId)) return null;
+    return null;
+  }
   if (!session || session.sessionId !== turn.sessionId || !isLive(session.status) || session.turn?.phase === "ended") {
     pause(id, "session-ended", memberName(agentId));
     return null;
   }
   if (session.turn?.phase !== "idle" || session.turn.at < turn.sentAt) return null;
-  const got = await collectDiscussionUtterance(session.agentId, turn.sentAt).catch((error: unknown) => {
+  const collect = isRemoteSession(session)
+    ? collectRemoteDiscussionUtterance(session.agentId, turn.sentAt)
+    : collectDiscussionUtterance(session.agentId, turn.sentAt);
+  const got = await collect.catch((error: unknown) => {
     console.warn("discussion: collect failed", error);
     return null;
   });
@@ -650,10 +698,11 @@ async function nudge(id: string, agentId: string, text: string, reason: Discussi
   if (!d || !turn) return;
   if (turn.nudged) return pause(id, reason, detail ?? memberName(agentId));
   const session = sessionOf(d, agentId);
+  if (pauseIfOffline(id, agentId)) return;
   if (!session || !isLive(session.status)) return pause(id, "session-ended", memberName(agentId));
   if (waitForUsage(id, [agentId])) return;
   try {
-    const { submittedAt } = await sendDiscussionTurn(session.agentId, text);
+    const { submittedAt } = await sendTurnTo(session, text);
     patchTurn(id, agentId, { sentAt: submittedAt, nudged: true });
     updateRun(id, (run) => ({ ...run, usageOverride: undefined }));
   } catch (error) {
@@ -765,12 +814,24 @@ async function stepSpeakers(id: string): Promise<void> {
  */
 export function addDiscussionTurnCost(e: Pick<TurnUsageEvent, "agentId" | "tokens" | "at"> & { partial?: boolean }): void {
   const parsed = parseDiscussionSessionAgentId(e.agentId);
-  if (!parsed) return;
-  const d = find(parsed.discussionId);
+  if (parsed) addDiscussionCost(parsed.discussionId, e);
+}
+
+/** 토의 하나의 비용 누계에 턴 토큰을 더한다. 다른 머신 참가자의 턴 토큰(그 머신이 올린 것)도 여기로 온다. */
+export function addDiscussionCost(discussionId: string, e: Pick<TurnUsageEvent, "tokens" | "at"> & { partial?: boolean }): void {
+  const d = find(discussionId);
   if (!d || d.state === "ready") return;
   const cost = tokensCost(e.tokens, e.at);
   if (!(cost > 0)) return;
   update(d.id, (x) => ({ ...x, costUsd: x.costUsd + cost }), undefined, { defer: !!e.partial });
+}
+
+/** 머신이 끊겨 멈춘 토의를, 참가자 머신이 모두 다시 붙었으면 이어 간다. */
+export function resumeLinkOfflineDiscussions(): void {
+  for (const d of useDiscussionStore.getState().discussions) {
+    if (d.state !== "paused" || d.run?.pauseReason !== "link-offline") continue;
+    if (d.participants.every((p) => !isRemoteParticipantId(p.agentId) || remoteParticipantOnline(p.agentId))) resumeDiscussion(d.id, { auto: true });
+  }
 }
 
 /**
@@ -837,12 +898,16 @@ export function installDiscussionRunner(): () => void {
     if (useDiscussionStore.getState().discussions.length) void useRoleStore.getState().ensureLoaded();
   });
   const offSessions = useDiscussionSessionStore.subscribe((s, prev) => { if (s.sessions !== prev.sessions) wake(); });
+  const offRemote = useRemoteDiscussionStore.subscribe((s, prev) => { if (s.sessions !== prev.sessions) wake(); });
+  const offPoll = installRemoteDiscussionPolling((discussionId, u) => addDiscussionCost(discussionId, u));
   const offDiscussions = useDiscussionStore.subscribe((s, prev) => { if (s.discussions !== prev.discussions) wake(); });
   const offCost = tauriApi.onTurnUsage(handleDiscussionTurnUsage);
-  const check = () => { if (installed && restored) { wake(); void checkDiscussionUsageWaits(); } };
+  const check = () => { if (installed && restored) { wake(); void checkDiscussionUsageWaits(); resumeLinkOfflineDiscussions(); } };
+  // 머신이 다시 붙으면 바로 이어 간다.
+  const offFloors = useRemoteFloors.subscribe((s, prev) => { if (s.office !== prev.office) check(); });
   const offUsage = useAppStore.subscribe((state, previous) => { if (state.usage !== previous.usage) check(); });
   const timer = setInterval(check, CHECK_MS);
-  return () => { installed = false; offSessions(); offDiscussions(); offCost(); offUsage(); clearInterval(timer); };
+  return () => { installed = false; offSessions(); offRemote(); offPoll(); offFloors(); offDiscussions(); offCost(); offUsage(); clearInterval(timer); };
 }
 
 /** 테스트 전용. */

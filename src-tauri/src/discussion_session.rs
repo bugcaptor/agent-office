@@ -538,24 +538,79 @@ pub fn validate(request: &DiscussionSessionRequest, discussions: Vec<Discussion>
         .into_iter()
         .find(|d| d.id == request.discussion_id)
         .ok_or("discussion-session-missing")?;
+    validate_discussion(&discussion, &request.agent_id)?;
+    Ok((agent_id, discussion))
+}
+
+/// 그 참가자 세션을 열 수 있는 토의인가(끝나지 않았고, 참가자이고, 작업 폴더·CLI가 맞다).
+pub fn validate_discussion(discussion: &Discussion, participant: &str) -> Result<(), String> {
     if matches!(discussion.state, crate::types::DiscussionState::Finished | crate::types::DiscussionState::Review) {
         return Err("discussion-session-finished".into());
     }
     let participant = discussion
         .participants
         .iter()
-        .find(|p| p.agent_id == request.agent_id)
+        .find(|p| p.agent_id == participant)
         .ok_or("discussion-session-not-participant")?;
     if discussion.cwd.as_deref().is_some_and(|cwd| !Path::new(cwd).is_absolute()) {
         return Err("discussion-session-invalid-cwd".into());
     }
     crate::work_send::validated_command(&participant.agent, crate::work_send::cli_transition::CommandSyntax::Posix)?;
-    Ok((agent_id, discussion))
+    Ok(())
+}
+
+/// 세션 하나를 열 재료. 이 머신 토의와 머신 연동 토의(호스트가 진행하고 이 머신은 참가자 세션만 연다)가 같이 쓴다.
+pub struct OpenInput {
+    /// 토의 세션 agentId(`discuss-<토의 id>.<이 머신 캐릭터>`).
+    pub agent_id: String,
+    /// 토의. `cwd`는 이 머신 폴더다.
+    pub discussion: Discussion,
+    /// `discussion.participants` 안의 이 참가자 id(연동 토의면 호스트가 부르는 원격 id).
+    pub participant: String,
+    /// 이 머신 캐릭터 id(셸).
+    pub profile_id: String,
+    /// 참가자 id → 팀원.
+    pub members: HashMap<String, Member>,
+    pub roles: Vec<DiscussionRole>,
+    pub lang: Option<String>,
+    pub turn: String,
+    pub cols: Option<u16>,
+    pub rows: Option<u16>,
 }
 
 /// 참가자 세션을 만들고 첫 프롬프트를 넣는다. 실패하면 만든 세션을 버린다.
 pub async fn open(app_state: &crate::state::AppState, request: DiscussionSessionRequest) -> Result<DiscussionSessionResult, String> {
     let (agent_id, discussion) = validate(&request, app_state.discussion_store.load()?)?;
+    let members: HashMap<String, Member> = app_state
+        .store
+        .load()
+        .agents
+        .iter()
+        .map(|p| (p.id.clone(), Member { name: p.name.clone(), personality: p.personality_prompt.clone() }))
+        .collect();
+    // 역할 목록이 없거나(아직 시드 전) 읽지 못하면 역할 없이 연다.
+    let roles = app_state.role_store.load().ok().flatten().map(|f| f.roles).unwrap_or_default();
+    open_session(
+        app_state,
+        OpenInput {
+            agent_id,
+            discussion,
+            participant: request.agent_id.clone(),
+            profile_id: request.agent_id,
+            members,
+            roles,
+            lang: request.lang,
+            turn: request.turn,
+            cols: request.cols,
+            rows: request.rows,
+        },
+    )
+    .await
+}
+
+/// 검증을 마친 재료로 세션을 연다.
+pub async fn open_session(app_state: &crate::state::AppState, input: OpenInput) -> Result<DiscussionSessionResult, String> {
+    let OpenInput { agent_id, discussion, participant: me, profile_id, members, roles, lang, turn, cols, rows } = input;
     let _guard = OpeningGuard::acquire(&agent_id)?;
     let manager = &app_state.manager;
     if manager.is_running(&agent_id) {
@@ -564,34 +619,21 @@ pub async fn open(app_state: &crate::state::AppState, request: DiscussionSession
     if let Some(problem) = limit_problem(&manager.live_discussion_session_ids(), &agent_id) {
         return Err(problem.into());
     }
-    let participant = discussion.participants.iter().find(|p| p.agent_id == request.agent_id).cloned().ok_or("discussion-session-not-participant")?;
+    let participant = discussion.participants.iter().find(|p| p.agent_id == me).cloned().ok_or("discussion-session-not-participant")?;
     let profiles = app_state.store.load().agents;
-    let members: HashMap<String, Member> = profiles
-        .iter()
-        .map(|p| (p.id.clone(), Member { name: p.name.clone(), personality: p.personality_prompt.clone() }))
-        .collect();
-    // 역할 목록이 없거나(아직 시드 전) 읽지 못하면 역할 없이 연다.
-    let roles = app_state.role_store.load().ok().flatten().map(|f| f.roles).unwrap_or_default();
     let (lang, observed) = {
         let settings = app_state.settings.read().unwrap();
         // 실행기가 차례 지시와 같은 언어를 실어 보낸다. 없으면(옛 렌더러) 화면 언어.
-        let lang = request.lang.as_deref().map(crate::i18n::resolve_lang).unwrap_or_else(|| crate::i18n::ui_lang(&settings));
+        let lang = lang.as_deref().map(crate::i18n::resolve_lang).unwrap_or_else(|| crate::i18n::ui_lang(&settings));
         (lang, settings.observer_enabled)
     };
     let shim = crate::discussion_cli::shim_path();
     let prompt = build_briefing(
-        &Briefing {
-            discussion: &discussion,
-            participant: &request.agent_id,
-            members: &members,
-            roles: &roles,
-            shim: &shim,
-            turn: &request.turn,
-        },
+        &Briefing { discussion: &discussion, participant: &me, members: &members, roles: &roles, shim: &shim, turn: &turn },
         lang,
     );
-    let profile = profiles.iter().find(|p| p.id == request.agent_id);
-    let name = members.get(&request.agent_id).map(|m| m.name.clone()).unwrap_or_else(|| request.agent_id.clone());
+    let profile = profiles.iter().find(|p| p.id == profile_id);
+    let name = members.get(&me).map(|m| m.name.clone()).unwrap_or_else(|| me.clone());
     let role_name = role_of(&roles, participant.role_id.as_deref()).map(|r| r.name.clone());
     // 지난 토의에서 남은 제출 파일을 이번 차례로 읽지 않게 지운다.
     if let Some(path) = turn_file(&app_state.app_data_dir, &agent_id) {
@@ -604,8 +646,8 @@ pub async fn open(app_state: &crate::state::AppState, request: DiscussionSession
         &app_state.settings,
         crate::types::CreateSessionRequest {
             agent_id: agent_id.clone(),
-            cols: request.cols,
-            rows: request.rows,
+            cols,
+            rows,
             cwd: discussion.cwd.clone(),
             shell: profile.and_then(|p| p.shell.clone()),
             startup_command: None,
@@ -681,6 +723,16 @@ pub async fn collect_utterance(
         .find(|d| d.id == discussion_id)
         .and_then(|d| d.cwd)
         .unwrap_or_default();
+    collect_utterance_in(app_state, request, cwd).await
+}
+
+/// 작업 폴더를 아는 수집(연동 토의는 이 머신 토의 저장소에 없다 — 호스트 토의를 이 머신 폴더로 옮겨 열었다).
+pub async fn collect_utterance_in(
+    app_state: &crate::state::AppState,
+    request: crate::types::DiscussionCollectRequest,
+    cwd: String,
+) -> Result<Option<CollectedUtterance>, String> {
+    parse_session_agent_id(&request.agent_id).ok_or("discussion-session-invalid-id")?;
     let attempt = || {
         let (app_data, replies, request, cwd) = (app_state.app_data_dir.clone(), app_state.discussion_replies.clone(), request.clone(), cwd.clone());
         let lookup: Arc<dyn crate::session_log::agent_transcript::AgentSessionLookup> = app_state.claude_resume_store.clone();

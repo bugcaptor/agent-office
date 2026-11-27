@@ -143,7 +143,8 @@
       "debaters": "Ajoutez au moins un participant au débat.",
       "too-many": "{{max}} participants au débat au maximum.",
       "limits": "Une limite est hors plage. Tours {{rounds}}, durée {{minutes}} min, coût {{cost}} $."
-    }
+    },
+    "remoteHint": "Les personnages d'autres machines ouvrent leur onglet de discussion sur leur machine et lisent le clone local du dépôt contenant ce dossier (ou leur dossier de départ s'il n'y en a pas)."
   },
   "detail": {
     "cwd": "Dossier de travail",
@@ -191,7 +192,9 @@
     "quitNotice_other": "{{count}} onglets de discussion ouverts se fermeront aussi.",
     "tooltip": "Discussion : {{topic}}",
     "tooltipModerator": "Animation de la discussion : {{topic}}",
-    "unknownTopic": "(discussion supprimée)"
+    "unknownTopic": "(discussion supprimée)",
+    "linkedTitle": "{{name}} · discussion de {{host}}",
+    "linkedTooltip": "Discussion menée par {{host}} : {{topic}}"
   },
   "run": {
     "prompt": {
@@ -234,7 +237,8 @@
       "discussion-invalid": "La discussion a un problème et ne peut pas démarrer. Vérifiez-la dans Modifier.",
       "discussion-busy": "Une autre discussion est en cours. Une seule discussion peut avoir lieu à la fois.",
       "discussion-missing-member": "Un membre supprimé fait partie des participants. Retirez-le dans Modifier.",
-      "discussion-observer-off": "Les hooks d'observation sont désactivés : la fin d'un tour ne peut pas être détectée. Activez l'observation dans les réglages."
+      "discussion-observer-off": "Les hooks d'observation sont désactivés : la fin d'un tour ne peut pas être détectée. Activez l'observation dans les réglages.",
+      "discussion-remote-offline": "La machine d'un participant est déconnectée. Démarrez une fois qu'elle est reconnectée."
     },
     "pause": {
       "user": "Mise en pause par une personne.",
@@ -245,7 +249,8 @@
       "session-ended": "Un onglet de discussion qui prenait son tour s'est terminé. Reprenez pour le rouvrir.",
       "no-utterance": "Aucune intervention reçue même après une relance. Vérifiez l'onglet, puis reprenez.",
       "moderator-invalid": "La consigne du modérateur reste illisible après une relance. Vérifiez l'onglet, puis reprenez.",
-      "usage-wait": "L'utilisation de l'abonnement semble insuffisante : la discussion attend la réinitialisation de la fenêtre de limite."
+      "usage-wait": "L'utilisation de l'abonnement semble insuffisante : la discussion attend la réinitialisation de la fenêtre de limite.",
+      "link-offline": "La machine d'un participant s'est déconnectée. La discussion reprend d'elle-même à la reconnexion."
     },
     "phase": {
       "opening": "Premier tour simultané · {{done}}/{{total}} ont parlé",

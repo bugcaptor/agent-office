@@ -196,6 +196,23 @@ impl ClientWork {
         sent
     }
 
+    /// 저장소 클론 안의 폴더(블로킹). 읽기만 하는 토의용이라 브랜치·워크트리는 건드리지 않는다. 하위 경로가 이
+    /// 클론에 없으면 클론 최상위, 클론이 없으면 None.
+    pub fn clone_dir(&self, ctl: &ControlContext, url: &str, subpath: &str, start: Option<&str>) -> Option<PathBuf> {
+        let key = super::repos::normalize_remote(url)?;
+        let roots = match self.repos(ctl, false).get(&key).cloned() {
+            Some(r) => r,
+            None => self.repos(ctl, true).get(&key).cloned()?,
+        };
+        let root = start
+            .and_then(|s| roots.iter().find(|r| Path::new(s).starts_with(r) || r.starts_with(s)))
+            .or(roots.first())?
+            .clone();
+        let sub = subpath.trim().trim_matches('/');
+        let inside = !sub.is_empty() && Path::new(sub).components().all(|c| matches!(c, std::path::Component::Normal(_)));
+        Some(if inside && root.join(sub).is_dir() { root.join(sub) } else { root })
+    }
+
     /// 업무 하나의 작업 폴더(블로킹). 저장소가 없으면 캐릭터 시작 폴더.
     fn work_dir(&self, ctl: &ControlContext, task_id: &str, repo: Option<&Value>, start: Option<&str>) -> Result<String, String> {
         let Some(repo) = repo.filter(|r| r.get("url").and_then(Value::as_str).is_some_and(|u| !u.trim().is_empty())) else {

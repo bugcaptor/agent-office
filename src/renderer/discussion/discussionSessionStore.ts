@@ -11,6 +11,7 @@ import {
   turnUsageEndsTurn,
 } from "@shared/types";
 import type {
+  LinkDiscussionSessionEvent,
   CollectedUtterance,
   DiscussionCollection,
   SessionStateEvent,
@@ -50,6 +51,11 @@ export interface DiscussionSession {
   submittedAt: number;
   /** 마지막 턴 단계와 그 시각(관찰 신호의 at). 첫 신호 전에는 없다. */
   turn?: { phase: DiscussionTurnPhase; at: number };
+  /**
+   * 머신 연동 클라이언트: 호스트가 이 머신에 연 참가자 세션(진행은 호스트가 한다 — 이 머신 토의 목록에 없다).
+   * 탭으로 보이기만 하고, 닫으면 호스트 토의가 그 차례에서 멈춘다.
+   */
+  linked?: { hostName: string; topic: string };
 }
 
 interface DiscussionSessionState {
@@ -99,8 +105,9 @@ export function discussionSessionErrorText(error: string): string {
 }
 
 /** 탭 이름: 캐릭터 이름 · 역할 이름. 역할이 없는 사회자는 "사회자"를 쓰고, 그 밖은 카드와 같은 역할 표시다. */
-export function discussionSessionTitle(session: Pick<DiscussionSession, "discussionId" | "participantAgentId">): string {
+export function discussionSessionTitle(session: Pick<DiscussionSession, "discussionId" | "participantAgentId" | "linked">): string {
   const name = useAppStore.getState().agents[session.participantAgentId]?.name || t("discussion:board.missingAgent");
+  if (session.linked) return t("discussion:session.linkedTitle", { name, host: session.linked.hostName });
   const discussion = useDiscussionStore.getState().discussions.find((d) => d.id === session.discussionId);
   const roleId = discussion?.participants.find((p) => p.agentId === session.participantAgentId)?.roleId;
   const role = !roleId && discussion?.moderatorAgentId === session.participantAgentId
@@ -109,7 +116,8 @@ export function discussionSessionTitle(session: Pick<DiscussionSession, "discuss
   return `${name} · ${role}`;
 }
 /** 탭 툴팁: 주제와 사회자 여부. */
-export function discussionSessionTooltip(session: Pick<DiscussionSession, "discussionId" | "participantAgentId">): string {
+export function discussionSessionTooltip(session: Pick<DiscussionSession, "discussionId" | "participantAgentId" | "linked">): string {
+  if (session.linked) return t("discussion:session.linkedTooltip", { host: session.linked.hostName, topic: session.linked.topic.trim() || t("discussion:session.unknownTopic") });
   const discussion = useDiscussionStore.getState().discussions.find((d) => d.id === session.discussionId);
   const topic = discussion?.topic.trim() || t("discussion:session.unknownTopic");
   return discussion?.moderatorAgentId === session.participantAgentId
@@ -264,6 +272,31 @@ export function applyDiscussionTurn(agentId: string, sessionId: string, phase: D
   });
 }
 
+/**
+ * 머신 연동 클라이언트: 호스트가 이 머신에 연 참가자 세션을 탭으로 받는다(닫힘이면 탭을 없앤다). 첫 화면은 탭이 생기기
+ * 전에 지나갔을 수 있지만 CLI가 크기 바뀜에 다시 그린다. 진행은 하지 않는다 — 이 머신 실행기는 이 머신 토의만 돈다.
+ */
+export function applyLinkDiscussionSession(e: LinkDiscussionSessionEvent): void {
+  if (!e.opened) {
+    const session = useDiscussionSessionStore.getState().sessions[e.agentId];
+    if (session?.linked) void closeSideTab(e.agentId, { order: useDiscussionSessionStore.getState().order, live: false, forget, logTag: "discussion" });
+    return;
+  }
+  const seen = latest.get(e.agentId);
+  const same = seen?.sessionId === e.sessionId;
+  terminalRegistry.ensure(e.agentId);
+  const session: DiscussionSession = {
+    agentId: e.agentId, discussionId: e.discussionId, participantAgentId: e.participantAgentId, sessionId: e.sessionId, cli: e.cli,
+    status: same ? seen.status : "running", collection: e.collection, observed: e.observed, openedAt: Date.now(), submittedAt: e.submittedAt,
+    ...(same && seen.turn ? { turn: seen.turn } : {}),
+    linked: { hostName: e.hostName, topic: e.topic },
+  };
+  useDiscussionSessionStore.setState((s) => ({
+    sessions: { ...s.sessions, [e.agentId]: session },
+    order: [...s.order.filter((id) => id !== e.agentId), e.agentId],
+  }));
+}
+
 /** 토의 세션 상태·턴 신호를 받는다. 캐릭터 중심 스토어는 이 접두사를 무시한다(sessionBridge 등). */
 export function installDiscussionSessionTracking(): () => void {
   const offState = tauriApi.onSessionState((e) => { if (isDiscussionSessionId(e.agentId)) applyDiscussionSessionState(e); });
@@ -280,7 +313,8 @@ export function installDiscussionSessionTracking(): () => void {
   const offUsage = tauriApi.onTurnUsage((e) => {
     if (isDiscussionSessionId(e.agentId) && turnUsageEndsTurn(e)) applyDiscussionTurn(e.agentId, e.sessionId, "idle", e.at);
   });
-  return () => { offState(); offActivity(); offNotification(); offUsage(); };
+  const offLinked = tauriApi.onLinkDiscussionSession(applyLinkDiscussionSession);
+  return () => { offState(); offActivity(); offNotification(); offUsage(); offLinked(); };
 }
 
 /** 테스트 전용. */

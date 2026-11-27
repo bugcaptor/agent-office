@@ -14,6 +14,7 @@
 pub mod address;
 pub mod client;
 mod client_tls;
+pub mod discuss;
 pub mod host;
 pub mod outbox;
 pub mod protocol;
@@ -162,6 +163,7 @@ impl LinkState {
             ));
             let client = Arc::new(LinkClient::new(dir.clone(), machine_id.clone(), name(), changed));
             let remote = Arc::new(RemoteView::new(host.clone(), dir.as_ref().map(|d| d.join(remote::FILE))));
+            remote::register(&remote);
             let task_states = Arc::new(Mutex::new(std::collections::HashMap::new()));
             {
                 let remote = Arc::downgrade(&remote);

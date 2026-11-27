@@ -183,6 +183,29 @@ const SCENARIOS: Record<string, (lang: string) => Scenario> = {
       discussions: [meeting],
     };
   },
+  /**
+   * 머신 간 토의: 회의실 장면에 연동 머신(studio-pc의 Ada·Bo)을 붙이고, 토론자 둘을 그 머신 캐릭터로 둔다. 스크립트가
+   * 진행 중 모습(원격 참가자가 말하는 중)으로 바꿔 회의실 분신과 회의록 보드를 본다.
+   */
+  "meeting-machines": (lang) => {
+    const m = SCENARIOS.meeting(lang);
+    const [d] = m.discussions;
+    return {
+      ...m,
+      remote: linkRemoteFixture as RemoteOffice,
+      discussions: [{
+        ...d, id: "disc-machines", topic: "Which machine builds the release?",
+        participants: [
+          { agentId: "p1", agent: { cli: "claude" } },
+          { agentId: "p3", agent: { cli: "codex" } },
+          { agentId: "d-1a2b3c4d:agent-a", agent: { cli: "claude" } },
+          { agentId: "d-1a2b3c4d:agent-b", agent: { cli: "codex" } },
+        ],
+      }],
+    };
+  },
+  /** 토의 열기 대화상자에서 다른 머신 캐릭터를 고르는 장면(업무 패널 + 연동 머신). */
+  "discussions-machines": (lang) => ({ ...SCENARIOS.discussions(lang), remote: linkRemoteFixture as RemoteOffice }),
   /** 첫 실행: 캐릭터 없음, 온보딩 다이얼로그. */
   fresh: (lang) => ({ ...base(lang), state: { version: 1, agents: [] }, settings: settings(true, lang) }),
   /** 온보딩을 마친 사무실, 세션 없음. */

@@ -101,7 +101,37 @@ export interface RemoteMachine {
 }
 
 /** 호스트가 원격 캐릭터 머신에 묻는 업무 일(`link_work`). */
-export type LinkWorkKind = "work-send" | "work-followup" | "work-reply" | "usage";
+export type LinkWorkKind =
+  | "work-send" | "work-followup" | "work-reply" | "usage"
+  // 팀 토의(Rust `link::discuss`): 호스트가 진행하는 토의의 그 머신 참가자 세션.
+  | "discuss-open" | "discuss-turn" | "discuss-collect" | "discuss-state" | "discuss-close";
+
+/** 클라이언트: 호스트가 이 머신에 연(`opened`)·닫은 토의 참가자 세션(Rust `link::discuss::EVENT`). 이 머신은 탭으로 보이기만 한다. */
+export type LinkDiscussionSessionEvent =
+  | {
+      opened: true;
+      /** 토의 세션 agentId(`discuss-<토의 id>.<이 머신 캐릭터>`). */
+      agentId: string;
+      sessionId: string;
+      discussionId: string;
+      /** 이 머신 캐릭터 id. */
+      participantAgentId: string;
+      cli: import("./discussion").DiscussionParticipant["agent"]["cli"];
+      collection: import("./discussion").DiscussionCollection;
+      observed: boolean;
+      submittedAt: number;
+      hostName: string;
+      topic: string;
+    }
+  | { opened: false; agentId: string };
+
+/** 그 머신 토의 세션의 지금(Rust `link::discuss` `discuss-state`). 시각은 그 머신 시계다. */
+export interface LinkDiscussionState {
+  alive: boolean;
+  turn: { phase: "working" | "needs-human" | "idle" | "ended"; at: number } | null;
+  /** `after` 뒤의 턴 토큰(Rust `control::turns::DiscussionUsage`). */
+  usage: { seq: number; at: number; tokens: import("./session").SessionEventTokens; partial: boolean }[];
+}
 
 /** 클라이언트가 올리는 받은 업무 하나의 진행 상태(`link_task_report`). 끊겨 있으면 쌓였다가 최신 하나가 간다. */
 export interface LinkTaskReport {

@@ -9,7 +9,7 @@
 // - 내보내기는 필터와 상관없이 전체를, 긴 발언도 펼친 전문으로 엮는다.
 import type { Discussion, DiscussionUtterance, DiscussionUtteranceKind } from "@shared/types";
 import { t } from "../i18n";
-import { useAppStore } from "../store/appStore";
+import { participantName } from "./participants";
 import { useRoleStore } from "./roleStore";
 import { discussionElapsedMs, isActiveDiscussion, participantRoleLabel } from "./discussionModel";
 import { participantLines, stamp } from "./discussionMemo";
@@ -71,7 +71,7 @@ export function openingProgress(d: Discussion): { submitted: number; total: numb
 /** 화자 이름(지금 이름). 사람의 답·알림처럼 화자가 없으면 그 종류의 이름. */
 export function speakerName(u: Pick<DiscussionUtterance, "agentId" | "kind">): string {
   if (!u.agentId) return u.kind === "answer" ? t("discussion:transcript.human") : t("discussion:transcript.system");
-  return useAppStore.getState().agents[u.agentId]?.name.trim() || t("discussion:board.missingAgent");
+  return participantName(u.agentId) || t("discussion:board.missingAgent");
 }
 
 /** 화자의 토의 역할 이름. 참가자가 아니면 없다. */

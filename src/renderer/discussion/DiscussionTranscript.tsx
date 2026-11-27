@@ -8,7 +8,7 @@ import { openUrl } from "@tauri-apps/plugin-opener";
 import { useTranslation } from "react-i18next";
 
 import type { Discussion, DiscussionUtterance } from "@shared/types";
-import { useAppStore } from "../store/appStore";
+import { useParticipantLabel } from "./participants";
 import { tauriApi } from "../ipc/tauriApi";
 import { renderMarkdown } from "../markdown/renderMarkdown";
 import { useNow } from "../workpanels/AutoRunUsage";
@@ -35,7 +35,7 @@ export function openMarkdownLink(e: MouseEvent<HTMLElement>): void {
 
 export function DiscussionTranscript({ discussion: d, focus }: { discussion: Discussion; focus?: number }) {
   const { t } = useTranslation("discussion");
-  const agents = useAppStore((s) => s.agents);
+  const label = useParticipantLabel();
   // 역할 이름이 바뀌면 다시 그린다.
   useRoleStore((s) => s.roles);
   const [groups, setGroups] = useState<ReadonlySet<TranscriptGroup>>(() => new Set(TRANSCRIPT_GROUPS));
@@ -94,7 +94,7 @@ export function DiscussionTranscript({ discussion: d, focus }: { discussion: Dis
     <div className="discussion-transcript-chips" role="group" aria-label={t("transcript.speakerFilter")}>
       <button type="button" className="pixel-btn transcript-chip" aria-pressed={speaker === undefined} onClick={() => setSpeaker(undefined)}>{t("transcript.speakerAll")}</button>
       {people.map((id) => <button key={id} type="button" className="pixel-btn transcript-chip" aria-pressed={speaker === id}
-        onClick={() => setSpeaker(speaker === id ? undefined : id)}>{agents[id]?.name ?? t("board.missingAgent")}</button>)}
+        onClick={() => setSpeaker(speaker === id ? undefined : id)}>{label(id)}</button>)}
     </div>
     {exportFailed && <p className="work-send-hint" role="alert">{t("transcript.exportError")}</p>}
     <ol className="discussion-transcript-list" ref={listRef} onScroll={(e) => {
@@ -138,7 +138,7 @@ function TranscriptEntry({ discussion: d, index, utterance: u, flash }: { discus
 /** 진행 중 표시: 비공개 첫 라운드의 제출 수와 말하는 중인 참가자. */
 function TranscriptLive({ discussion: d }: { discussion: Discussion }) {
   const { t } = useTranslation("discussion");
-  const agents = useAppStore((s) => s.agents);
+  const label = useParticipantLabel();
   const now = useNow(30_000);
   const pending = openingProgress(d);
   const speaking = [...speakingSince(d)];
@@ -146,7 +146,7 @@ function TranscriptLive({ discussion: d }: { discussion: Discussion }) {
   return <li className="transcript-live" role="status">
     {pending && <span>{t("transcript.openingPending", pending)}</span>}
     {speaking.map(([agentId, since]) => {
-      const name = agents[agentId]?.name ?? t("board.missingAgent");
+      const name = label(agentId);
       const minutes = Math.floor(Math.max(0, now - since) / 60_000);
       return <span key={agentId}>{minutes < 1 ? t("transcript.speaking", { name }) : t("transcript.speakingFor", { name, minutes })}</span>;
     })}

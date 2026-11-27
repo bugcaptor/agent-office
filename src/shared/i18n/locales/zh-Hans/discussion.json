@@ -143,7 +143,8 @@
       "debaters": "请至少添加一位讨论者。",
       "too-many": "讨论者最多 {{max}} 人。",
       "limits": "上限超出范围。轮数 {{rounds}}，时间 {{minutes}} 分钟，费用 ${{cost}}。"
-    }
+    },
+    "remoteHint": "其他机器上的角色会在那台机器上打开讨论标签页，读取那台机器上包含此文件夹的仓库克隆（没有则读取该角色的起始文件夹）。"
   },
   "detail": {
     "cwd": "工作文件夹",
@@ -191,7 +192,9 @@
     "quitNotice_other": "打开的 {{count}} 个讨论标签页也会一起结束。",
     "tooltip": "讨论：{{topic}}",
     "tooltipModerator": "讨论主持：{{topic}}",
-    "unknownTopic": "（已删除的讨论）"
+    "unknownTopic": "（已删除的讨论）",
+    "linkedTitle": "{{name}} · {{host}} 的讨论",
+    "linkedTooltip": "由 {{host}} 主持的讨论：{{topic}}"
   },
   "run": {
     "prompt": {
@@ -234,7 +237,8 @@
       "discussion-invalid": "讨论内容有问题，无法开始。请在编辑中检查。",
       "discussion-busy": "另一个讨论正在进行。一次只能进行一个讨论。",
       "discussion-missing-member": "参与者中有已删除的成员。请在编辑中移除。",
-      "discussion-observer-off": "观察钩子已关闭，无法得知一轮何时结束。请在设置中开启观察。"
+      "discussion-observer-off": "观察钩子已关闭，无法得知一轮何时结束。请在设置中开启观察。",
+      "discussion-remote-offline": "有参与者的机器已断开。请等该机器重新连接后再开始。"
     },
     "pause": {
       "user": "已被人暂停。",
@@ -245,7 +249,8 @@
       "session-ended": "正在进行这一轮的讨论标签页已结束。继续时会重新打开。",
       "no-utterance": "再次请求后仍未收到发言。请检查标签页后再继续。",
       "moderator-invalid": "再次请求后仍无法读取主持人的指示。请检查标签页后再继续。",
-      "usage-wait": "订阅用量看起来不够，正在等待限额窗口重置。"
+      "usage-wait": "订阅用量看起来不够，正在等待限额窗口重置。",
+      "link-offline": "参与者的机器已断开。重新连接后会自动继续。"
     },
     "phase": {
       "opening": "同时进行的第一轮 · {{done}}/{{total}} 人已发言",

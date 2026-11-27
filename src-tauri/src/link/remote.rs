@@ -164,6 +164,25 @@ fn office_character(device_id: &str, online: bool, c: &Value) -> RemoteCharacter
     }
 }
 
+/// 앱의 호스트 쪽 원격 보기(이름 찾기용). `LinkState::new`가 건다.
+static CURRENT: std::sync::OnceLock<RwLock<std::sync::Weak<RemoteView>>> = std::sync::OnceLock::new();
+
+/// 이름 찾기에 쓸 원격 보기를 건다.
+pub fn register(view: &Arc<RemoteView>) {
+    *CURRENT.get_or_init(Default::default).write().unwrap() = Arc::downgrade(view);
+}
+
+/// 원격 캐릭터 id(`기기id:캐릭터id`)의 이름(`이름 · 머신`). 모르는 id면 None. 토의 상태·웹 상태판의 참가자 이름에 쓴다.
+pub fn remote_name(id: &str) -> Option<String> {
+    if !id.contains(':') {
+        return None;
+    }
+    let view = CURRENT.get()?.read().unwrap().upgrade()?;
+    view.office_view().machines.into_iter().find_map(|m| {
+        m.characters.iter().find(|c| c.id == id).map(|c| format!("{} · {}", c.name, m.name))
+    })
+}
+
 impl RemoteView {
     pub fn new(host: Arc<LinkHost>, path: Option<PathBuf>) -> Self {
         let roster = path

@@ -8,7 +8,7 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperti
 import { useTranslation } from "react-i18next";
 
 import type { OfficeBus, ScreenRect } from "../office/bus";
-import { useAppStore } from "../store/appStore";
+import { useParticipantLabel } from "./participants";
 import { useNow } from "../workpanels/AutoRunUsage";
 import { useDiscussionStore } from "./discussionStore";
 import { boardAge, meetingBoardRows, type BoardAge, type MeetingBoardRow } from "./meetingBoardModel";
@@ -41,7 +41,7 @@ function writeCollapsed(v: boolean): void {
 export function MeetingBoard({ bus }: { bus: OfficeBus }) {
   const { t } = useTranslation("discussion");
   const discussions = useDiscussionStore((s) => s.discussions);
-  const agents = useAppStore((s) => s.agents);
+  const label = useParticipantLabel();
   const discussion = useMemo(() => stagedDiscussion(discussions), [discussions]);
   const rows = useMemo(() => (discussion ? meetingBoardRows(discussion) : []), [discussion]);
   const now = useNow(TICK_MS);
@@ -83,7 +83,7 @@ export function MeetingBoard({ bus }: { bus: OfficeBus }) {
         {!collapsed && (
           <ul className="meeting-board-rows">
             {rows.map((row) => (
-              <BoardRow key={row.agentId} row={row} name={agents[row.agentId]?.name ?? t("board.missingAgent")} now={now} age={age}
+              <BoardRow key={row.agentId} row={row} name={label(row.agentId)} now={now} age={age}
                 onOpen={() => useDiscussionStore.getState().openDialog({ kind: "view", id: discussion.id, tab: "transcript", focus: row.last?.index })} />
             ))}
           </ul>

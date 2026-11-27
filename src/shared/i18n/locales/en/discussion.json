@@ -143,7 +143,8 @@
       "debaters": "Add at least one debater.",
       "too-many": "Up to {{max}} debaters.",
       "limits": "A limit is out of range. Rounds {{rounds}}, time {{minutes}} min, cost ${{cost}}."
-    }
+    },
+    "remoteHint": "Characters on other machines open their discussion tab on that machine and read that machine's clone of the repository holding this folder (or the character's start folder if there is none)."
   },
   "detail": {
     "cwd": "Working folder",
@@ -191,7 +192,9 @@
     "quitNotice_other": "{{count}} open discussion tabs will end too.",
     "tooltip": "Discussion: {{topic}}",
     "tooltipModerator": "Discussion moderator: {{topic}}",
-    "unknownTopic": "(deleted discussion)"
+    "unknownTopic": "(deleted discussion)",
+    "linkedTitle": "{{name}} · {{host}} discussion",
+    "linkedTooltip": "Discussion run by {{host}}: {{topic}}"
   },
   "run": {
     "prompt": {
@@ -234,7 +237,8 @@
       "discussion-invalid": "The discussion has a problem and cannot start. Check it in Edit.",
       "discussion-busy": "Another discussion is in progress. Only one discussion can run at a time.",
       "discussion-missing-member": "A deleted member is among the participants. Remove them in Edit.",
-      "discussion-observer-off": "Observation hooks are off, so the end of a turn cannot be detected. Turn observation on in Settings."
+      "discussion-observer-off": "Observation hooks are off, so the end of a turn cannot be detected. Turn observation on in Settings.",
+      "discussion-remote-offline": "A participant's machine is disconnected. Start after that machine reconnects."
     },
     "pause": {
       "user": "Paused by a person.",
@@ -245,7 +249,8 @@
       "session-ended": "A discussion tab that was taking its turn has ended. Resume to open it again.",
       "no-utterance": "No utterance arrived even after asking again. Check the tab, then resume.",
       "moderator-invalid": "The moderator's instruction could not be read even after asking again. Check the tab, then resume.",
-      "usage-wait": "Subscription usage looks too low, so the discussion waits for the limit window to reset."
+      "usage-wait": "Subscription usage looks too low, so the discussion waits for the limit window to reset.",
+      "link-offline": "A participant's machine disconnected. The discussion continues on its own when it reconnects."
     },
     "phase": {
       "opening": "Simultaneous first round · {{done}}/{{total}} spoke",

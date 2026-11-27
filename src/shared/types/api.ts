@@ -36,7 +36,7 @@ import type {
 } from './settings';
 import type { ApiKeyStatus } from './apiKeys';
 import type { ShellAssistConfig, ShellAssistEndpoint, ShellSuggestion } from './shellAssist';
-import type { LinkConfig, LinkStatus, LinkTaskEvent, LinkTaskReport, LinkWorkKind, RemoteOffice } from './link';
+import type { LinkConfig, LinkDiscussionSessionEvent, LinkStatus, LinkTaskEvent, LinkTaskReport, LinkWorkKind, RemoteOffice } from './link';
 import type { AwardRecord, AwardSpeech, AwardsFile } from './awards';
 import type { DiaryEntry, WorkLogItem } from './diary';
 import type { MemoSheet, MemoSheetMeta } from './memo';
@@ -333,6 +333,8 @@ export interface AgentOfficeApi {
   onTurnUsage(cb: (e: TurnUsageEvent) => void): () => void;
   /** 호스트: 붙은 머신이 받은 업무의 진행 상태를 올렸다. */
   onLinkTask(cb: (e: LinkTaskEvent) => void): () => void;
+  /** 클라이언트: 호스트가 이 머신에 토의 참가자 세션을 열었다·닫았다. */
+  onLinkDiscussionSession(cb: (e: LinkDiscussionSessionEvent) => void): () => void;
   /** app-settings-changed(백엔드가 저장한 새 설정 전체) 구독. Returns an unsubscribe function. */
   onAppSettingsChanged(cb: (settings: AppSettings) => void): () => void;
   /** 완료된 턴 1건을 로컬 시계열 로그에 append (fire-and-forget). */

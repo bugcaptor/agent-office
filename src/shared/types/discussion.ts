@@ -69,13 +69,15 @@ export const DISCUSSION_PHASES: readonly DiscussionPhase[] = ["opening", "modera
  * 멈춘 이유. user = 사람이 멈춤, restarted = 앱을 다시 열었다(토의 세션은 재시작 때 버려진다),
  * human-input = 탭에 쓰다 만 사람 입력이 있다, open-failed·send-failed = 세션 열기·차례 보내기 실패,
  * session-ended = 차례를 기다리던 세션이 끝났다, no-utterance = 재촉해도 발언이 없다,
- * moderator-invalid = 재촉해도 사회자 지시를 읽을 수 없다, usage-wait = 구독 사용량이 모자랄 것 같아 한도 창 리셋을 기다린다.
+ * moderator-invalid = 재촉해도 사회자 지시를 읽을 수 없다, usage-wait = 구독 사용량이 모자랄 것 같아 한도 창 리셋을 기다린다,
+ * link-offline = 다른 머신 참가자의 머신이 끊겼다(다시 붙으면 스스로 이어 간다).
  */
 export type DiscussionPauseReason =
   | "user" | "restarted" | "human-input" | "open-failed" | "send-failed" | "session-ended" | "no-utterance" | "moderator-invalid"
-  | "usage-wait";
+  | "usage-wait" | "link-offline";
 export const DISCUSSION_PAUSE_REASONS: readonly DiscussionPauseReason[] = [
   "user", "restarted", "human-input", "open-failed", "send-failed", "session-ended", "no-utterance", "moderator-invalid", "usage-wait",
+  "link-offline",
 ];
 
 /** 강제 정리를 부른 상한. Rust `DiscussionLimitReason` 미러. */

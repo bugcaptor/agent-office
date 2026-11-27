@@ -9,6 +9,8 @@ import { useTranslation } from "react-i18next";
 
 import type { Discussion } from "@shared/types";
 import { useAppStore } from "../store/appStore";
+import { useParticipantLabel } from "./participants";
+import { useRemoteFloors } from "../link/remoteFloors";
 import { tauriApi } from "../ipc/tauriApi";
 import { renderMarkdown } from "../markdown/renderMarkdown";
 import { useWorkGroupStore } from "../workpanels/panelLayoutStore";
@@ -92,11 +94,11 @@ function RunMeter({ discussion: d }: { discussion: Discussion }) {
 /** 진행 중인 단계 한 줄. 시작 전·끝난 뒤에는 없다. */
 function RunStatus({ discussion: d }: { discussion: Discussion }) {
   const { t } = useTranslation("discussion");
-  const agents = useAppStore((s) => s.agents);
+  const label = useParticipantLabel();
   const run = d.run;
   if (d.state === "review") return <small className="discussion-run-status">{t("run.phase.review")}</small>;
   if (!run) return null;
-  const name = (id: string | undefined) => (id && agents[id]?.name) || t("board.missingAgent");
+  const name = label;
   let text: string;
   if (run.phase === "opening") text = t("run.phase.opening", { done: run.turns.filter((x) => x.text !== undefined).length, total: run.turns.length });
   else if (run.phase === "speakers") {
@@ -110,7 +112,7 @@ function RunStatus({ discussion: d }: { discussion: Discussion }) {
 
 function DiscussionCard({ discussion: d, selected, onOpen }: { discussion: Discussion; selected: boolean; onOpen(): void }) {
   const { t } = useTranslation("discussion");
-  const agents = useAppStore((s) => s.agents);
+  const label = useParticipantLabel();
   const debaters = d.participants.filter((p) => p.agentId !== d.moderatorAgentId);
   // 사회자가 사람에게 묻거나 결론 확인을 기다리면 카드를 강조한다.
   const attention = d.state === "waiting_user" || d.state === "review";
@@ -120,9 +122,9 @@ function DiscussionCard({ discussion: d, selected, onOpen }: { discussion: Discu
         <span className={`work-status-chip discussion-state-chip state-${d.state}`}>{t(`states.${d.state}`)}</span>
         <strong>{d.topic}</strong>
       </span>
-      <span className="discussion-card-faces" aria-label={t("board.participants", { names: d.participants.map((p) => agents[p.agentId]?.name ?? t("board.missingAgent")).join(", ") })}>
-        <span className="discussion-card-moderator" title={t("board.moderatorOf", { name: agents[d.moderatorAgentId]?.name ?? t("board.missingAgent") })}><AgentFace agentId={d.moderatorAgentId} /></span>
-        {debaters.map((p) => <span key={p.agentId} title={agents[p.agentId]?.name ?? t("board.missingAgent")}><AgentFace agentId={p.agentId} /></span>)}
+      <span className="discussion-card-faces" aria-label={t("board.participants", { names: d.participants.map((p) => label(p.agentId)).join(", ") })}>
+        <span className="discussion-card-moderator" title={t("board.moderatorOf", { name: label(d.moderatorAgentId) })}><AgentFace agentId={d.moderatorAgentId} /></span>
+        {debaters.map((p) => <span key={p.agentId} title={label(p.agentId)}><AgentFace agentId={p.agentId} /></span>)}
       </span>
       {d.state === "ready" ? <small>{limitsText(t, d)}</small> : <RunMeter discussion={d} />}
       <RunStatus discussion={d} />
@@ -140,7 +142,7 @@ function ReadOnlyBadge() {
 function DiscussionDetail({ discussion: d, tab: initialTab, focus, onClose }: { discussion: Discussion; tab?: DiscussionDetailTab; focus?: number; onClose(): void }) {
   const { t } = useTranslation("discussion");
   const [tab, setTab] = useState<DiscussionDetailTab>(initialTab ?? "overview");
-  const agents = useAppStore((s) => s.agents);
+  const label = useParticipantLabel();
   const roles = useRoleStore((s) => s.roles);
   const openDialog = useDiscussionStore((s) => s.openDialog);
   const [confirming, setConfirming] = useState(false);
@@ -184,7 +186,7 @@ function DiscussionDetail({ discussion: d, tab: initialTab, focus, onClose }: { 
     <ul className="discussion-people">
       {participantsModeratorFirst(d).map((p) => <li key={p.agentId}>
         <AgentFace agentId={p.agentId} />
-        <span><strong>{agents[p.agentId]?.name ?? t("board.missingAgent")}</strong>
+        <span><strong>{label(p.agentId)}</strong>
           {p.agentId === d.moderatorAgentId && <small className="discussion-moderator-badge">{t("detail.moderator")}</small>}
           <small>{participantRoleLabel(p.roleId, roles)} · {workAgentLabel(p.agent)}</small></span>
       </li>)}
@@ -207,8 +209,9 @@ function RunPanel({ discussion: d }: { discussion: Discussion }) {
   const agents = useAppStore((s) => s.agents);
   const observerEnabled = useAppStore((s) => s.appSettings.observerEnabled);
   const discussions = useDiscussionStore((s) => s.discussions);
-  // 시작 막힘 판정이 살아 있는 토의 탭을 본다. 앞 토의를 끝낸 뒤 탭이 닫히면 다시 그린다.
+  // 시작 막힘 판정이 살아 있는 토의 탭과 연동 머신(끊김)을 본다. 앞 토의를 끝낸 뒤 탭이 닫히면 다시 그린다.
   useDiscussionSessionStore((s) => s.sessions);
+  useRemoteFloors((s) => s.office);
   const [answer, setAnswer] = useState("");
   const [ending, setEnding] = useState(false);
   const [error, setError] = useState<string>();
@@ -257,11 +260,11 @@ function UsageWaitLine({ discussion: d }: { discussion: Discussion }) {
   const { t } = useTranslation("discussion");
   const { t: tWork } = useTranslation("workpanels");
   const { t: tActivity } = useTranslation("activity");
-  const agents = useAppStore((s) => s.agents);
+  const label = useParticipantLabel();
   const now = useNow(30_000);
   const wait = d.run?.usageWait;
   if (!wait) return null;
-  const stage = t("run.usageStage", { name: agents[wait.agentId]?.name ?? t("board.missingAgent") });
+  const stage = t("run.usageStage", { name: label(wait.agentId) });
   return <span className="discussion-run-usage"> {usageBlockText(tWork, tActivity, wait, stage, now)}</span>;
 }
 

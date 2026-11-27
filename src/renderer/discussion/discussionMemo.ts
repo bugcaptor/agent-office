@@ -7,6 +7,7 @@ import type { Discussion, DiscussionLimitReason } from "@shared/types";
 import { t } from "../i18n";
 import { useAppStore } from "../store/appStore";
 import { useRoleStore } from "./roleStore";
+import { participantName } from "./participants";
 import { participantRoleLabel, participantsModeratorFirst } from "./discussionModel";
 import { workAgentLabel } from "../profile/generate";
 
@@ -77,7 +78,7 @@ export function participantLines(d: Discussion): string {
   const agents = useAppStore.getState().agents;
   const roles = useRoleStore.getState().roles;
   return participantsModeratorFirst(d).map((p) => {
-    const name = agents[p.agentId]?.name.trim() || t("discussion:board.missingAgent");
+    const name = participantName(p.agentId, agents) || t("discussion:board.missingAgent");
     const role = participantRoleLabel(p.roleId, roles);
     const duty = p.agentId === d.moderatorAgentId ? t("discussion:memo.moderator") : t("discussion:memo.debater");
     return item(`**${name}** — ${duty} · ${role} · ${workAgentLabel(p.agent)}`);

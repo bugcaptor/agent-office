@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type {
-  ActivityEvent, Discussion, DiscussionSessionRequest, NotificationEvent, SessionStateEvent, TurnUsageEvent,
+  ActivityEvent, Discussion, DiscussionSessionRequest, LinkDiscussionSessionEvent, NotificationEvent, SessionStateEvent, TurnUsageEvent,
 } from "@shared/types";
 import type { CollectedUtterance, DiscussionCollectRequest, DiscussionSessionResult } from "@shared/types";
 import requestFixture from "@shared/contract-fixtures/open-discussion-session-request.json";
@@ -16,6 +16,7 @@ const { api, registry, cbs } = vi.hoisted(() => ({
     activity: new Set<(e: ActivityEvent) => void>(),
     notification: new Set<(e: NotificationEvent) => void>(),
     usage: new Set<(e: TurnUsageEvent) => void>(),
+    linked: new Set<(e: LinkDiscussionSessionEvent) => void>(),
   },
 }));
 vi.mock("../../ipc/tauriApi", () => {
@@ -23,6 +24,7 @@ vi.mock("../../ipc/tauriApi", () => {
   return { tauriApi: {
     ...api,
     onSessionState: sub(cbs.state), onActivity: sub(cbs.activity), onNotification: sub(cbs.notification), onTurnUsage: sub(cbs.usage),
+    onLinkDiscussionSession: sub(cbs.linked),
   } };
 });
 vi.mock("../../terminal/TerminalRegistry", () => ({ terminalRegistry: registry }));
@@ -227,5 +229,27 @@ describe("턴 단계와 발언 수집", () => {
     expect(await collectDiscussionUtterance(sid("d1", "c"), 0)).toBeNull();
     emitState({ agentId: id, sessionId: "sid-1", state: "exited" });
     await expect(sendDiscussionTurn(id, "again")).rejects.toThrow("work-send-session-changed");
+  });
+});
+
+describe("호스트가 이 머신에 연 토의 세션(머신 연동 클라이언트)", () => {
+  const linked = (e: LinkDiscussionSessionEvent) => cbs.linked.forEach((cb) => cb(e));
+  it("탭으로 받고 이름은 호스트 토의로 보이며, 먼저 온 끝 신호를 반영하고, 닫힘 알림이면 탭을 없앤다", () => {
+    const agentId = sid("disc-h", "a");
+    emitState({ agentId, sessionId: "s-9", state: "running" });
+    linked({
+      opened: true, agentId, sessionId: "s-9", discussionId: "disc-h", participantAgentId: "a", cli: "codex", collection: "last-reply",
+      observed: true, submittedAt: now, hostName: "Studio", topic: "Pick a format",
+    });
+    const session = useDiscussionSessionStore.getState().sessions[agentId];
+    expect(session).toMatchObject({ sessionId: "s-9", status: "running", linked: { hostName: "Studio" } });
+    expect(useDiscussionSessionStore.getState().order).toContain(agentId);
+    expect(registry.ensure).toHaveBeenCalledWith(agentId);
+    expect(discussionSessionTitle(session)).toContain("Studio");
+    expect(liveDiscussionSessionCount()).toBe(1);
+    expect(discussionSessionBlockedReason("d-local", "a")).toBe("discussion-session-other");
+    linked({ opened: false, agentId });
+    expect(useDiscussionSessionStore.getState().sessions[agentId]).toBeUndefined();
+    expect(api.disposeSession).not.toHaveBeenCalled();
   });
 });

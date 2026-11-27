@@ -16,6 +16,8 @@ import {
   defaultAgent, discussionFromDraft, draftFromDiscussion, newDiscussionDraft, participantDraft, roleChoices, validDiscussionCwd, withRole,
   type DiscussionDraft, type ParticipantDraft,
 } from "./discussionModel";
+import { isRemoteParticipantId, remoteParticipantChoices, useParticipantLabel } from "./participants";
+import { useRemoteFloors } from "../link/remoteFloors";
 import "./discussion.css";
 
 export function DiscussionEditor({ base, onClose }: { base?: Discussion; onClose(): void }) {
@@ -34,8 +36,12 @@ export function DiscussionEditor({ base, onClose }: { base?: Discussion; onClose
     if (!draft && (roleStatus === "ready" || roleStatus === "error")) setDraft(newDiscussionDraft(agentOrder, agents, roles));
   }, [draft, roleStatus, agentOrder, agents, roles]);
 
-  const order = [...new Set([...agentOrder.filter((id) => agents[id]), ...Object.keys(agents)])];
-  const name = (id: string) => agents[id]?.name ?? t("board.missingAgent");
+  // 머신 연동 호스트면 붙은(또는 마지막으로 본) 다른 머신 캐릭터도 고를 수 있다. 이 머신 캐릭터 뒤에 둔다.
+  const office = useRemoteFloors((s) => s.office);
+  const remoteIds = remoteParticipantChoices(office).map((c) => c.id);
+  const order = [...new Set([...agentOrder.filter((id) => agents[id]), ...Object.keys(agents), ...remoteIds])];
+  const name = useParticipantLabel();
+  const hasRemote = !!draft && [draft.moderator, ...draft.debaters].some((r) => r && isRemoteParticipantId(r.agentId));
 
   if (!draft) {
     return <WorkDialog key="loading" title={t(base ? "editor.editTitle" : "editor.newTitle")} onClose={onClose} className="discussion-editor">
@@ -145,6 +151,7 @@ export function DiscussionEditor({ base, onClose }: { base?: Discussion; onClose
       <p className="form-hint">{t("editor.limitsHint")}</p>
     </details>
     <p className="form-hint">{t("editor.readOnlyHint")}</p>
+    {hasRemote && <p className="form-hint">{t("editor.remoteHint")}</p>}
 
     <div className="work-dialog-actions work-dialog-run">
       <button type="button" className="pixel-btn" onClick={onClose}>{t("editor.cancel")}</button>

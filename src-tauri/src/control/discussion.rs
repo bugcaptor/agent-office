@@ -260,7 +260,7 @@ pub(crate) fn current_status(ctx: &ControlContext, id: &str) -> Result<Value, St
         &discussions,
         &pending,
         id,
-        &|agent_id| profiles.agents.iter().find(|a| a.id == agent_id).map(|a| a.name.clone()),
+        &|agent_id| profiles.agents.iter().find(|a| a.id == agent_id).map(|a| a.name.clone()).or_else(|| crate::link::remote::remote_name(agent_id)),
         &|id| store.existing_memo_path(id).ok().map(|p| p.to_string_lossy().into_owned()),
         writes_allowed(ctx),
     )
