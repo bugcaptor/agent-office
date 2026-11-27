@@ -23,14 +23,19 @@ use tokio::sync::oneshot;
 use crate::chat_queue::check_limits;
 use crate::control::ControlContext;
 use crate::httpapi::{fail, ok, session_state_str};
-use crate::types::{is_office_agent_id, AgentProfile, WorkAgent, WorkCli, OFFICE_AGENT_ID};
+use crate::types::{is_office_agent_id, AgentProfile, WorkAgent, WorkCli, WorkStatus, OFFICE_AGENT_ID};
 
 use super::WebDashState;
 
 const PAGE: &str = include_str!("../../web/dash.html");
-/// 업무 본문·토의 발언을 웹으로 보낼 때의 글자 상한.
+const STYLE: &str = include_str!("../../web/dash.css");
+const APP_JS: &str = include_str!("../../web/dash.js");
+const TASKS_JS: &str = include_str!("../../web/tasks.js");
+/// 토의 발언을 웹으로 보낼 때의 글자 상한.
 const BODY_CHARS: usize = 4000;
-/// 끝난 업무는 최근 것만 보인다.
+/// 업무 본문 바이트 상한(수신함 `.md` 상한 64 KiB와 맞춤).
+const TASK_BODY_MAX_BYTES: usize = 64 * 1024;
+/// 끝난 업무는 기본으로 최근 것만 보인다(`?allDone=1`이면 전체).
 const DONE_TASKS: usize = 20;
 /// 토의 속기록은 최근 발언만 보인다.
 const TRANSCRIPT_ITEMS: usize = 200;
@@ -86,10 +91,15 @@ fn router(ctx: Arc<Dash>) -> Router {
         .route("/file/:agent/:epoch/:seq/:index", get(download_file))
         .route("/asks/:id", post(answer_ask))
         .route("/usage", get(usage))
+        .route("/models/:cli", get(models))
         .route("/tasks", get(tasks).post(create_task))
+        .route("/tasks/:id/edit", post(edit_task))
+        .route("/tasks/:id/delete", post(delete_task))
+        .route("/tasks/:id/reorder", post(reorder_task))
         .route("/tasks/:id/send", post(send_task))
         .route("/tasks/:id/autorun", post(autorun_task))
         .route("/tasks/:id/done", post(done_task))
+        .route("/tasks/:id/schedule", post(schedule_task))
         .route("/discussions", get(discussions))
         .route("/discussions/:id", get(discussion))
         .route("/discussions/:id/start", post(start_discussion))
@@ -100,6 +110,9 @@ fn router(ctx: Arc<Dash>) -> Router {
         .layer(axum::middleware::from_fn_with_state(ctx.clone(), auth));
     Router::new()
         .route("/", get(page))
+        .route("/dash.css", get(style_asset))
+        .route("/dash.js", get(app_js_asset))
+        .route("/tasks.js", get(tasks_js_asset))
         .route("/ca.crt", get(lan_ca))
         .nest("/api", api)
         .with_state(ctx)
@@ -152,9 +165,30 @@ async fn page() -> Response {
     h.insert(header::REFERRER_POLICY, HeaderValue::from_static("no-referrer"));
     h.insert(
         header::CONTENT_SECURITY_POLICY,
-        HeaderValue::from_static("default-src 'self'; img-src 'self' data:; style-src 'unsafe-inline'; script-src 'unsafe-inline'; connect-src 'self'; frame-ancestors 'none'"),
+        HeaderValue::from_static("default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'; connect-src 'self'; frame-ancestors 'none'"),
     );
     res
+}
+
+fn static_asset(body: &'static str, content_type: &'static str) -> Response {
+    let mut res = Response::new(Body::from(body));
+    let h = res.headers_mut();
+    h.insert(header::CONTENT_TYPE, HeaderValue::from_static(content_type));
+    h.insert(header::CACHE_CONTROL, HeaderValue::from_static("no-store"));
+    h.insert(header::X_CONTENT_TYPE_OPTIONS, HeaderValue::from_static("nosniff"));
+    res
+}
+
+async fn style_asset() -> Response {
+    static_asset(STYLE, "text/css; charset=utf-8")
+}
+
+async fn app_js_asset() -> Response {
+    static_asset(APP_JS, "text/javascript; charset=utf-8")
+}
+
+async fn tasks_js_asset() -> Response {
+    static_asset(TASKS_JS, "text/javascript; charset=utf-8")
 }
 
 // ── 읽기 ─────────────────────────────────────────────────────────────
@@ -266,8 +300,10 @@ async fn state(State(ctx): Ctx) -> Json<Value> {
                 "role": a.role,
                 "cwd": a.cwd,
                 "clockedOut": a.clocked_out,
+                "hasStartupCommand": a.startup_command.as_ref().is_some_and(|c| !c.trim().is_empty()),
                 "portrait": a.portrait_updated_at,
                 "defaultCli": a.default_agent.as_ref().map(|w| w.cli.clone()),
+                "defaultAgent": a.default_agent,
                 "session": session.map(|(sid, st)| json!({ "sessionId": sid, "state": session_state_str(*st) })),
                 "turn": turn,
                 "waiting": waiting,
@@ -437,37 +473,70 @@ async fn usage(State(ctx): Ctx) -> Json<Value> {
     ok(snapshot)
 }
 
-async fn tasks(State(ctx): Ctx) -> Json<Value> {
+async fn models(Path(cli): Path<String>) -> Json<Value> {
+    if parse_work_cli(&cli).is_none() {
+        return fail("unknown-cli");
+    }
+    ok(crate::summarizer::list_cli_models(&cli).await)
+}
+
+#[derive(Deserialize, Default)]
+struct TasksQuery {
+    #[serde(rename = "allDone", default)]
+    all_done: Option<bool>,
+}
+
+async fn tasks(State(ctx): Ctx, Query(q): Query<TasksQuery>) -> Json<Value> {
     let items = match ctx.ctl.work_panels.load_work_items() {
         Ok(items) => items,
         Err(e) => return fail(e),
+    };
+    let (observer_enabled, session_cost_enabled) = {
+        let s = ctx.ctl.settings.read().unwrap();
+        (s.observer_enabled, s.session_cost_enabled)
     };
     let names = agent_names(&ctx);
     let mut open: Vec<_> = items.iter().filter(|i| !is_done(i)).collect();
     open.sort_by(|a, b| a.order.partial_cmp(&b.order).unwrap_or(std::cmp::Ordering::Equal));
     let mut done: Vec<_> = items.iter().filter(|i| is_done(i)).collect();
     done.sort_by(|a, b| b.updated_at.cmp(&a.updated_at));
-    done.truncate(DONE_TASKS);
+    let done_total = done.len();
+    let all_done = q.all_done.unwrap_or(false);
+    if !all_done {
+        done.truncate(DONE_TASKS);
+    }
     let row = |i: &crate::types::WorkItem| {
         json!({
             "id": i.id,
             "title": i.title,
-            "body": clip(&i.body, BODY_CHARS),
+            "body": i.body,
             "status": i.status,
+            "order": i.order,
             "assigneeAgentId": i.assignee_agent_id,
             "assigneeName": i.assignee_agent_id.as_ref().and_then(|id| names.get(id)),
+            "agent": i.agent,
             "cli": i.agent.as_ref().map(|a| a.cli.clone()),
             "plan": i.plan,
             "dependsOn": i.depends_on,
-            "autoRun": i.auto_run.as_ref().and_then(|a| a.get("state")).cloned(),
+            "maxFollowUps": i.max_follow_ups,
+            "permissionWaitMinutes": i.permission_wait_minutes,
+            "autoRun": i.auto_run,
+            "schedule": i.schedule,
             "scheduled": i.schedule.is_some(),
+            "scheduledFrom": i.scheduled_from,
+            "sessionIds": i.session_ids,
             "lastError": i.last_error,
+            "createdAt": i.created_at,
             "updatedAt": i.updated_at,
         })
     };
     ok(with_rev(json!({
         "open": open.into_iter().map(row).collect::<Vec<_>>(),
         "done": done.into_iter().map(row).collect::<Vec<_>>(),
+        "doneTotal": done_total,
+        "allDone": all_done,
+        "observerEnabled": observer_enabled,
+        "sessionCostEnabled": session_cost_enabled,
     })))
 }
 
@@ -803,9 +872,55 @@ fn first_line(text: &str) -> String {
     clip(text.lines().map(str::trim).find(|l| !l.is_empty()).unwrap_or(""), 80)
 }
 
+fn parse_work_cli(name: &str) -> Option<WorkCli> {
+    Some(match name {
+        "claude" => WorkCli::Claude,
+        "codex" => WorkCli::Codex,
+        "pi" => WorkCli::Pi,
+        "kilo" => WorkCli::Kilo,
+        "agy" => WorkCli::Agy,
+        _ => return None,
+    })
+}
+
+fn check_task_text(text: &str, max_bytes: usize) -> Result<(), &'static str> {
+    if text.len() > max_bytes {
+        return Err("too-large");
+    }
+    if text.bytes().any(|b| b < 0x20 && !matches!(b, b'\n' | b'\r' | b'\t')) {
+        return Err("control-char");
+    }
+    Ok(())
+}
+
+fn validate_work_agent(agent: &WorkAgent) -> Result<(), &'static str> {
+    if let Some(m) = agent.model.as_deref() {
+        check_task_text(m, 256)?;
+    }
+    if let Some(e) = agent.effort.as_deref() {
+        check_task_text(e, 64)?;
+    }
+    Ok(())
+}
+
+fn validate_auto_run_limits(max_follow_ups: Option<u32>, permission_wait_minutes: Option<u32>) -> Result<(), &'static str> {
+    if let Some(n) = max_follow_ups {
+        if n > 99 {
+            return Err("bad-request");
+        }
+    }
+    if let Some(m) = permission_wait_minutes {
+        if !(1..=1440).contains(&m) {
+            return Err("bad-request");
+        }
+    }
+    Ok(())
+}
+
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct NewTask {
+    #[serde(default)]
     title: String,
     #[serde(default)]
     body: String,
@@ -813,6 +928,18 @@ struct NewTask {
     assignee_agent_id: Option<String>,
     #[serde(default)]
     cli: Option<String>,
+    #[serde(default)]
+    agent: Option<WorkAgent>,
+    #[serde(default)]
+    status: Option<WorkStatus>,
+    #[serde(default)]
+    depends_on: Option<Vec<String>>,
+    #[serde(default)]
+    plan: Option<bool>,
+    #[serde(default)]
+    max_follow_ups: Option<u32>,
+    #[serde(default)]
+    permission_wait_minutes: Option<u32>,
     #[serde(default)]
     send: bool,
     /// 터미널에 CLI가 돌고 있어 재시작해야 보낼 수 있을 때, 웹에서 "이전 세션이
@@ -826,21 +953,38 @@ async fn create_task(State(ctx): Ctx, Json(t): Json<NewTask>) -> Json<Value> {
     if title.is_empty() && t.body.trim().is_empty() {
         return fail("empty");
     }
-    if let Err(e) = check_limits(title).and_then(|_| check_limits(&t.body)) {
+    if let Err(e) = check_limits(title) {
         return fail(e);
     }
-    if let Some(id) = &t.assignee_agent_id {
+    if let Err(e) = check_task_text(&t.body, TASK_BODY_MAX_BYTES) {
+        return fail(e);
+    }
+    if let Err(e) = validate_auto_run_limits(t.max_follow_ups, t.permission_wait_minutes) {
+        return fail(e);
+    }
+    let assignee = t.assignee_agent_id.filter(|s| !s.trim().is_empty());
+    if let Some(id) = &assignee {
         if profile(&ctx, id).is_none() {
             return fail("unknown-agent");
         }
     }
-    if t.cli.as_deref().is_some_and(|c| !matches!(c, "claude" | "codex" | "agy")) {
-        return fail("unknown-cli");
-    }
+    let agent = match (t.agent, t.cli.as_deref().filter(|c| !c.is_empty())) {
+        (Some(a), _) => {
+            if let Err(e) = validate_work_agent(&a) {
+                return fail(e);
+            }
+            Some(a)
+        }
+        (None, Some(c)) => match parse_work_cli(c) {
+            Some(cli) => Some(WorkAgent { cli, model: None, effort: None }),
+            None => return fail("unknown-cli"),
+        },
+        (None, None) => None,
+    };
     // 보내기가 터미널 재시작을 부르면(CLI가 돌고 있음) 웹에서 확인을 받은 뒤에만 한다.
     // 앱 확인창은 띄우지 않는다 — 폰에서 보낸 일이 책상 앞 확인을 기다리며 멈추지 않게.
-    let send = t.send && t.assignee_agent_id.is_some();
-    if let (true, Some(id)) = (send, t.assignee_agent_id.as_deref()) {
+    let send = t.send && assignee.is_some();
+    if let (true, Some(id)) = (send, assignee.as_deref()) {
         let target = match ctx.ctl.work_send.inspect(&ctx.ctl.gate, id) {
             Ok(target) => target,
             Err(e) => return fail(e),
@@ -856,26 +1000,245 @@ async fn create_task(State(ctx): Ctx, Json(t): Json<NewTask>) -> Json<Value> {
         "op": "work-create",
         "title": title,
         "body": t.body,
-        "assigneeAgentId": t.assignee_agent_id,
-        "cli": t.cli,
+        "assigneeAgentId": assignee,
+        "agent": agent,
+        "status": t.status,
+        "dependsOn": t.depends_on,
+        "plan": t.plan,
+        "maxFollowUps": t.max_follow_ups,
+        "permissionWaitMinutes": t.permission_wait_minutes,
         "send": send,
         "restartConfirmed": send && t.restart,
     });
+    let label = if title.is_empty() { first_line(&t.body) } else { title.to_string() };
     match bridged(&ctx, payload).await {
         Ok(v) => {
-            activity(&ctx, if send { "work-create-send" } else { "work-create" }, t.assignee_agent_id.as_deref(), Some(title));
+            activity(&ctx, if send { "work-create-send" } else { "work-create" }, assignee.as_deref(), Some(&label));
             ok(v)
         }
         Err(e) => fail(e),
     }
 }
 
-async fn send_task(State(ctx): Ctx, Path(id): Path<String>) -> Json<Value> {
-    task_op(&ctx, "work-send", &id).await
+async fn edit_task(State(ctx): Ctx, Path(id): Path<String>, Json(body): Json<Value>) -> Json<Value> {
+    let Some(obj) = body.as_object() else {
+        return fail("bad-request");
+    };
+    let item = ctx.ctl.work_panels.load_work_items().ok().and_then(|items| items.into_iter().find(|i| i.id == id));
+    let Some(item) = item else {
+        return fail("task-not-found");
+    };
+    let mut patch = serde_json::Map::new();
+    for (k, v) in obj {
+        match k.as_str() {
+            "title" => {
+                let Some(s) = v.as_str() else { return fail("bad-request"); };
+                if let Err(e) = check_limits(s.trim()) { return fail(e); }
+                patch.insert(k.clone(), json!(s.trim()));
+            }
+            "body" => {
+                let Some(s) = v.as_str() else { return fail("bad-request"); };
+                if let Err(e) = check_task_text(s, TASK_BODY_MAX_BYTES) { return fail(e); }
+                patch.insert(k.clone(), json!(s));
+            }
+            "status" => {
+                let Ok(st) = serde_json::from_value::<WorkStatus>(v.clone()) else { return fail("bad-request"); };
+                patch.insert(k.clone(), json!(st));
+            }
+            "assigneeAgentId" => {
+                if v.is_null() || v.as_str().is_some_and(|s| s.trim().is_empty()) {
+                    patch.insert(k.clone(), Value::Null);
+                } else if let Some(s) = v.as_str() {
+                    if profile(&ctx, s).is_none() { return fail("unknown-agent"); }
+                    patch.insert(k.clone(), json!(s));
+                } else {
+                    return fail("bad-request");
+                }
+            }
+            "agent" => {
+                if v.is_null() {
+                    patch.insert(k.clone(), Value::Null);
+                } else {
+                    let Ok(a) = serde_json::from_value::<WorkAgent>(v.clone()) else { return fail("unknown-cli"); };
+                    if let Err(e) = validate_work_agent(&a) { return fail(e); }
+                    patch.insert(k.clone(), json!(a));
+                }
+            }
+            "dependsOn" => {
+                if v.is_null() {
+                    patch.insert(k.clone(), Value::Null);
+                } else {
+                    let Ok(deps) = serde_json::from_value::<Vec<String>>(v.clone()) else { return fail("bad-request"); };
+                    patch.insert(k.clone(), json!(deps));
+                }
+            }
+            "plan" => {
+                let Some(b) = v.as_bool() else { return fail("bad-request"); };
+                patch.insert(k.clone(), json!(b));
+            }
+            "maxFollowUps" => {
+                if v.is_null() {
+                    patch.insert(k.clone(), Value::Null);
+                } else if let Some(n) = v.as_u64().and_then(|n| u32::try_from(n).ok()) {
+                    if let Err(e) = validate_auto_run_limits(Some(n), None) { return fail(e); }
+                    patch.insert(k.clone(), json!(n));
+                } else {
+                    return fail("bad-request");
+                }
+            }
+            "permissionWaitMinutes" => {
+                if v.is_null() {
+                    patch.insert(k.clone(), Value::Null);
+                } else if let Some(m) = v.as_u64().and_then(|m| u32::try_from(m).ok()) {
+                    if let Err(e) = validate_auto_run_limits(None, Some(m)) { return fail(e); }
+                    patch.insert(k.clone(), json!(m));
+                } else {
+                    return fail("bad-request");
+                }
+            }
+            _ => return fail("bad-request"),
+        }
+    }
+    let next_title = patch.get("title").and_then(|v| v.as_str()).unwrap_or(&item.title);
+    let next_body = patch.get("body").and_then(|v| v.as_str()).unwrap_or(&item.body);
+    if next_title.trim().is_empty() && next_body.trim().is_empty() {
+        return fail("empty");
+    }
+    let next_assignee = match patch.get("assigneeAgentId") {
+        Some(Value::Null) => None,
+        Some(Value::String(s)) => Some(s.as_str()),
+        _ => item.assignee_agent_id.as_deref(),
+    };
+    let label = if next_title.trim().is_empty() { first_line(next_body) } else { next_title.to_string() };
+    match bridged(&ctx, json!({ "op": "work-edit", "itemId": id, "patch": patch })).await {
+        Ok(v) => {
+            activity(&ctx, "work-edit", next_assignee, Some(&label));
+            ok(v)
+        }
+        Err(e) => fail(e),
+    }
 }
 
-async fn autorun_task(State(ctx): Ctx, Path(id): Path<String>) -> Json<Value> {
-    task_op(&ctx, "autorun-start", &id).await
+async fn delete_task(State(ctx): Ctx, Path(id): Path<String>) -> Json<Value> {
+    task_op(&ctx, "work-delete", &id).await
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ReorderBody {
+    target_id: String,
+    #[serde(default)]
+    after: bool,
+}
+
+async fn reorder_task(State(ctx): Ctx, Path(id): Path<String>, Json(b): Json<ReorderBody>) -> Json<Value> {
+    match bridged(&ctx, json!({ "op": "work-reorder", "itemId": id, "targetId": b.target_id, "after": b.after })).await {
+        Ok(v) => ok(v),
+        Err(e) => fail(e),
+    }
+}
+
+#[derive(Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+struct SendTaskBody {
+    #[serde(default)]
+    restart: bool,
+}
+
+async fn send_task(State(ctx): Ctx, Path(id): Path<String>, body: Option<Json<SendTaskBody>>) -> Json<Value> {
+    let restart = body.map(|Json(b)| b.restart).unwrap_or(false);
+    let item = ctx.ctl.work_panels.load_work_items().ok().and_then(|items| items.into_iter().find(|i| i.id == id));
+    let Some(item) = item else {
+        return fail("task-not-found");
+    };
+    let Some(assignee) = item.assignee_agent_id.as_deref() else {
+        return fail("work-send-agent-missing");
+    };
+    if profile(&ctx, assignee).is_none() {
+        return fail("work-send-agent-missing");
+    }
+    let target = match ctx.ctl.work_send.inspect(&ctx.ctl.gate, assignee) {
+        Ok(target) => target,
+        Err(e) => return fail(e),
+    };
+    if target.has_uncommitted {
+        return fail("human-input-pending");
+    }
+    if target.restart_required && !restart {
+        return fail("restart-required");
+    }
+    let label = if item.title.trim().is_empty() { first_line(&item.body) } else { item.title.clone() };
+    match bridged(&ctx, json!({ "op": "work-send", "itemId": id, "restartConfirmed": restart })).await {
+        Ok(v) => {
+            activity(&ctx, "work-send", Some(assignee), Some(&label));
+            ok(v)
+        }
+        Err(e) => fail(e),
+    }
+}
+
+#[derive(Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+struct AutoRunBody {
+    #[serde(default)]
+    action: Option<String>,
+    #[serde(default)]
+    usage_guard: Option<bool>,
+}
+
+async fn autorun_task(State(ctx): Ctx, Path(id): Path<String>, body: Option<Json<AutoRunBody>>) -> Json<Value> {
+    let body = body.map(|Json(b)| b).unwrap_or_default();
+    let op = match body.action.as_deref().unwrap_or("start") {
+        "start" => "autorun-start",
+        "pause" => "autorun-pause",
+        "resume" => "autorun-resume",
+        "end" => "autorun-end",
+        "usage-guard" => "autorun-usage-guard",
+        _ => return fail("bad-request"),
+    };
+    let item = ctx.ctl.work_panels.load_work_items().ok().and_then(|items| items.into_iter().find(|i| i.id == id));
+    let Some(item) = item else {
+        return fail("task-not-found");
+    };
+    let label = if item.title.trim().is_empty() { first_line(&item.body) } else { item.title.clone() };
+    match bridged(&ctx, json!({ "op": op, "itemId": id, "usageGuard": body.usage_guard })).await {
+        Ok(v) => {
+            if op != "autorun-usage-guard" {
+                activity(&ctx, op, item.assignee_agent_id.as_deref(), Some(&label));
+            }
+            ok(v)
+        }
+        Err(e) => fail(e),
+    }
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ScheduleBody {
+    action: String,
+    #[serde(default)]
+    rule: Option<Value>,
+}
+
+async fn schedule_task(State(ctx): Ctx, Path(id): Path<String>, Json(b): Json<ScheduleBody>) -> Json<Value> {
+    if !matches!(b.action.as_str(), "set" | "enable" | "disable" | "remove") {
+        return fail("bad-request");
+    }
+    if b.action == "set" && b.rule.is_none() {
+        return fail("bad-request");
+    }
+    let item = ctx.ctl.work_panels.load_work_items().ok().and_then(|items| items.into_iter().find(|i| i.id == id));
+    let Some(item) = item else {
+        return fail("task-not-found");
+    };
+    let label = if item.title.trim().is_empty() { first_line(&item.body) } else { item.title.clone() };
+    match bridged(&ctx, json!({ "op": "work-schedule", "itemId": id, "action": b.action, "rule": b.rule })).await {
+        Ok(v) => {
+            activity(&ctx, "work-schedule", item.assignee_agent_id.as_deref(), Some(&label));
+            ok(v)
+        }
+        Err(e) => fail(e),
+    }
 }
 
 /// 끝난 업무를 완료로 옮기고, 담당 캐릭터에 떠 있는 알림(완료 카드·배지)도 내린다.
@@ -888,9 +1251,10 @@ async fn task_op(ctx: &Dash, op: &str, id: &str) -> Json<Value> {
     let Some(item) = item else {
         return fail("task-not-found");
     };
+    let label = if item.title.trim().is_empty() { first_line(&item.body) } else { item.title.clone() };
     match bridged(ctx, json!({ "op": op, "itemId": id })).await {
         Ok(v) => {
-            activity(ctx, op, item.assignee_agent_id.as_deref(), Some(&item.title));
+            activity(ctx, op, item.assignee_agent_id.as_deref(), Some(&label));
             ok(v)
         }
         Err(e) => fail(e),
@@ -998,6 +1362,26 @@ mod tests {
         assert!(matches!(launch_cli("opencode"), Some(LaunchCli::Opencode)));
         assert!(launch_cli("bash").is_none());
         assert!(launch_cli("Claude").is_none());
+    }
+
+    #[test]
+    fn task_validation_guards_cli_text_and_auto_run_limits() {
+        use super::{check_task_text, parse_work_cli, validate_auto_run_limits, validate_work_agent, TASK_BODY_MAX_BYTES};
+        use crate::types::{WorkAgent, WorkCli};
+        for cli in ["claude", "codex", "agy", "kilo", "pi"] {
+            assert!(parse_work_cli(cli).is_some(), "{cli}");
+        }
+        assert!(parse_work_cli("opencode").is_none());
+        assert!(check_task_text("정상 본문\n\t줄바꿈", TASK_BODY_MAX_BYTES).is_ok());
+        assert_eq!(check_task_text("bad\x07bell", TASK_BODY_MAX_BYTES), Err("control-char"));
+        assert_eq!(check_task_text(&"a".repeat(TASK_BODY_MAX_BYTES + 1), TASK_BODY_MAX_BYTES), Err("too-large"));
+        assert!(validate_auto_run_limits(Some(0), Some(1)).is_ok());
+        assert!(validate_auto_run_limits(Some(99), Some(1440)).is_ok());
+        assert_eq!(validate_auto_run_limits(Some(100), None), Err("bad-request"));
+        assert_eq!(validate_auto_run_limits(None, Some(0)), Err("bad-request"));
+        assert_eq!(validate_auto_run_limits(None, Some(1441)), Err("bad-request"));
+        assert!(validate_work_agent(&WorkAgent { cli: WorkCli::Claude, model: Some("opus".into()), effort: Some("high".into()) }).is_ok());
+        assert_eq!(validate_work_agent(&WorkAgent { cli: WorkCli::Claude, model: Some("\x00".into()), effort: None }), Err("control-char"));
     }
 
     #[test]

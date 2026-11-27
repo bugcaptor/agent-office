@@ -10,11 +10,22 @@ import { tauriApi } from "../ipc/tauriApi";
 import { useAppStore } from "../store/appStore";
 import { useWorkItemStore } from "../workpanels/workItemStore";
 import { requestWorkSend, workSendDisabledReason } from "../workpanels/workSendStore";
-import { endAutoRun, startAutoRun } from "../workpanels/autoRun";
+import { endAutoRun, pauseAutoRun, resumeAutoRun, setAutoRunUsageGuard, startAutoRun } from "../workpanels/autoRun";
+import { validWorkLimits } from "../workpanels/autoRunLimits";
+import { pendingPrerequisites } from "../workpanels/workDependencies";
+import { hasWorkContent, type WorkItemDraft } from "../workpanels/workItemDraft";
+import { disabledSchedule, enabledSchedule, scheduleTemplateOf } from "../workpanels/workSchedule";
 import { handleDiscussionControl } from "../discussion/discussionControl";
 
 function fireAndForget(label: string, work: Promise<unknown>): void {
   work.catch((err: unknown) => console.warn(`web dash: ${label} failed`, err));
+}
+
+async function ensureWorkLoaded(): Promise<boolean> {
+  const work = useWorkItemStore.getState();
+  if (work.loaded) return true;
+  await work.load();
+  return useWorkItemStore.getState().loaded;
 }
 
 /** 요청 하나를 처리한다. 거절이면 이유 코드를, 성공이면 돌려줄 값을 준다. */
@@ -44,39 +55,105 @@ export async function handleWebDashControl(request: WebDashControlRequest): Prom
       return {};
     }
     case "work-create": {
+      if (!await ensureWorkLoaded()) return { error: "work-not-loaded" };
       const work = useWorkItemStore.getState();
-      if (!work.loaded) return { error: "work-not-loaded" };
       const assignee = request.assigneeAgentId ?? undefined;
       if (assignee && !app.agents[assignee]) return { error: "unknown-agent" };
-      // `add`는 새 업무를 골라 앱에 업무 팝업을 띄운다. 웹에서 만든 업무는 앱 화면을 바꾸지 않게 고르던 것을 되돌린다.
-      const selected = work.selectedId;
-      const id = work.add({
+      const draft: WorkItemDraft = {
         title: request.title ?? "",
         body: request.body ?? "",
-        status: "todo",
+        status: request.status ?? "todo",
         assigneeAgentId: assignee,
-        agent: request.cli ? { cli: request.cli } : undefined,
-      });
+        agent: request.agent ?? (request.cli ? { cli: request.cli } : undefined),
+        dependsOn: request.dependsOn?.length ? request.dependsOn : undefined,
+        plan: request.plan || undefined,
+        maxFollowUps: request.maxFollowUps ?? undefined,
+        permissionWaitMinutes: request.permissionWaitMinutes ?? undefined,
+      };
+      if (!hasWorkContent(draft)) return { error: "empty" };
+      if (!validWorkLimits(draft)) return { error: "bad-request" };
+      // `add`는 새 업무를 골라 앱에 업무 팝업을 띄운다. 웹에서 만든 업무는 앱 화면을 바꾸지 않게 고르던 것을 되돌린다.
+      const selected = work.selectedId;
+      const id = work.add(draft);
       if (!id) return { error: "empty" };
       if (useWorkItemStore.getState().selectedId === id) useWorkItemStore.getState().select(selected);
       await useWorkItemStore.getState().flush();
       if (request.send && assignee) {
-        const blocked = workSendDisabledReason(app.agents[assignee]);
-        if (blocked) return { error: blocked, data: { itemId: id } };
+        const created = useWorkItemStore.getState().items.find((i) => i.id === id);
+        if (created) {
+          const all = useWorkItemStore.getState().items;
+          const blocked = created.plan ? "work-send-plan-root"
+            : pendingPrerequisites(created, all).length ? "work-send-blocked"
+            : workSendDisabledReason(app.agents[assignee]);
+          if (blocked) return { error: blocked, data: { itemId: id } };
+        }
         fireAndForget("work send", requestWorkSend(id, { restartConfirmed: request.restartConfirmed === true }));
       }
       return { data: { itemId: id } };
     }
+    case "work-edit": {
+      if (!await ensureWorkLoaded()) return { error: "work-not-loaded" };
+      const work = useWorkItemStore.getState();
+      const item = work.items.find((i) => i.id === request.itemId);
+      if (!item) return { error: "task-not-found" };
+      const raw = request.patch;
+      if (!raw) return { error: "bad-request" };
+      const patch: Partial<WorkItemDraft> = {};
+      if ("title" in raw && raw.title !== undefined) patch.title = raw.title;
+      if ("body" in raw && raw.body !== undefined) patch.body = raw.body;
+      if ("status" in raw && raw.status !== undefined) patch.status = raw.status;
+      if ("assigneeAgentId" in raw) {
+        const nextAssignee = raw.assigneeAgentId || undefined;
+        if (nextAssignee && !app.agents[nextAssignee]) return { error: "unknown-agent" };
+        patch.assigneeAgentId = nextAssignee;
+      }
+      if ("agent" in raw) patch.agent = raw.agent ?? undefined;
+      if ("dependsOn" in raw) patch.dependsOn = raw.dependsOn?.length ? raw.dependsOn : undefined;
+      if ("plan" in raw) patch.plan = raw.plan || undefined;
+      if ("maxFollowUps" in raw) patch.maxFollowUps = raw.maxFollowUps ?? undefined;
+      if ("permissionWaitMinutes" in raw) patch.permissionWaitMinutes = raw.permissionWaitMinutes ?? undefined;
+      const merged = { ...item, ...patch };
+      if (!hasWorkContent(merged)) return { error: "empty" };
+      if (!validWorkLimits(merged)) return { error: "bad-request" };
+      work.edit(item.id, patch);
+      await useWorkItemStore.getState().flush();
+      return {};
+    }
+    case "work-delete": {
+      if (!await ensureWorkLoaded()) return { error: "work-not-loaded" };
+      const work = useWorkItemStore.getState();
+      const item = work.items.find((i) => i.id === request.itemId);
+      if (!item) return { error: "task-not-found" };
+      work.remove(item.id);
+      await useWorkItemStore.getState().flush();
+      return {};
+    }
+    case "work-reorder": {
+      if (!await ensureWorkLoaded()) return { error: "work-not-loaded" };
+      const work = useWorkItemStore.getState();
+      const id = request.itemId ?? "";
+      const targetId = request.targetId ?? "";
+      if (!work.items.some((i) => i.id === id) || !work.items.some((i) => i.id === targetId)) return { error: "task-not-found" };
+      work.reorder(id, targetId, request.after === true);
+      await useWorkItemStore.getState().flush();
+      return {};
+    }
     case "work-send": {
-      const item = useWorkItemStore.getState().items.find((i) => i.id === request.itemId);
+      if (!await ensureWorkLoaded()) return { error: "work-not-loaded" };
+      const all = useWorkItemStore.getState().items;
+      const item = all.find((i) => i.id === request.itemId);
       if (!item) return { error: "task-not-found" };
       if (!item.assigneeAgentId) return { error: "work-send-agent-missing" };
-      const blocked = workSendDisabledReason(app.agents[item.assigneeAgentId]);
+      const blocked = scheduleTemplateOf(item, all) ? "work-send-schedule-template"
+        : item.plan ? "work-send-plan-root"
+        : pendingPrerequisites(item, all).length ? "work-send-blocked"
+        : workSendDisabledReason(app.agents[item.assigneeAgentId]);
       if (blocked) return { error: blocked };
-      fireAndForget("work send", requestWorkSend(item.id));
+      fireAndForget("work send", requestWorkSend(item.id, { restartConfirmed: request.restartConfirmed === true }));
       return {};
     }
     case "work-done": {
+      if (!await ensureWorkLoaded()) return { error: "work-not-loaded" };
       const work = useWorkItemStore.getState();
       const item = work.items.find((i) => i.id === request.itemId);
       if (!item) return { error: "task-not-found" };
@@ -93,14 +170,84 @@ export async function handleWebDashControl(request: WebDashControlRequest): Prom
       }
       return {};
     }
+    case "work-schedule": {
+      if (!await ensureWorkLoaded()) return { error: "work-not-loaded" };
+      const work = useWorkItemStore.getState();
+      const item = work.items.find((i) => i.id === request.itemId);
+      if (!item) return { error: "task-not-found" };
+      const now = Date.now();
+      switch (request.action) {
+        case "remove":
+          work.setSchedule(item.id, undefined);
+          break;
+        case "disable":
+          if (!item.schedule) return { error: "bad-request" };
+          work.setSchedule(item.id, disabledSchedule(item.schedule));
+          break;
+        case "enable": {
+          if (!item.schedule || item.status === "done") return { error: "bad-request" };
+          const next = enabledSchedule(item.schedule.rule, now, item.schedule);
+          if (!next) return { error: "schedule-invalid" };
+          work.setSchedule(item.id, next);
+          break;
+        }
+        case "set": {
+          if (item.status === "done" || item.scheduledFrom || !request.rule) return { error: "bad-request" };
+          const next = enabledSchedule(request.rule, now, item.schedule);
+          if (!next) return { error: "schedule-invalid" };
+          work.setSchedule(item.id, next);
+          break;
+        }
+        default:
+          return { error: "bad-request" };
+      }
+      await useWorkItemStore.getState().flush();
+      return {};
+    }
     case "autorun-start": {
+      if (!await ensureWorkLoaded()) return { error: "work-not-loaded" };
       const root = useWorkItemStore.getState().items.find((i) => i.id === request.itemId);
       if (!root) return { error: "auto-run-no-plan" };
       if (root.autoRun && root.autoRun.state !== "finished") return { error: "auto-run-already-running" };
       // 끝난 실행은 앱 버튼처럼 기록을 지우고 새로 시작한다.
       if (root.autoRun) endAutoRun(root.id);
-      const error = startAutoRun(root.id, { usageGuard: true });
+      const error = startAutoRun(root.id, { usageGuard: request.usageGuard !== false });
+      if (!error) await useWorkItemStore.getState().flush();
       return error ? { error } : {};
+    }
+    case "autorun-pause": {
+      if (!await ensureWorkLoaded()) return { error: "work-not-loaded" };
+      const root = useWorkItemStore.getState().items.find((i) => i.id === request.itemId);
+      if (!root?.autoRun) return { error: "auto-run-no-run" };
+      pauseAutoRun(root.id);
+      await useWorkItemStore.getState().flush();
+      return {};
+    }
+    case "autorun-resume": {
+      if (!await ensureWorkLoaded()) return { error: "work-not-loaded" };
+      const root = useWorkItemStore.getState().items.find((i) => i.id === request.itemId);
+      if (!root?.autoRun) return { error: "auto-run-no-run" };
+      if (root.autoRun.state !== "paused") return { error: "auto-run-not-paused" };
+      resumeAutoRun(root.id);
+      await useWorkItemStore.getState().flush();
+      return {};
+    }
+    case "autorun-end": {
+      if (!await ensureWorkLoaded()) return { error: "work-not-loaded" };
+      const root = useWorkItemStore.getState().items.find((i) => i.id === request.itemId);
+      if (!root?.autoRun) return { error: "auto-run-no-run" };
+      if (root.autoRun.state === "running") return { error: "auto-run-already-running" };
+      endAutoRun(root.id);
+      await useWorkItemStore.getState().flush();
+      return {};
+    }
+    case "autorun-usage-guard": {
+      if (!await ensureWorkLoaded()) return { error: "work-not-loaded" };
+      const root = useWorkItemStore.getState().items.find((i) => i.id === request.itemId);
+      if (!root?.autoRun) return { error: "auto-run-no-run" };
+      setAutoRunUsageGuard(root.id, request.usageGuard !== false);
+      await useWorkItemStore.getState().flush();
+      return {};
     }
     case "discuss-start":
     case "discuss-answer": {
@@ -118,11 +265,12 @@ export async function handleWebDashControl(request: WebDashControlRequest): Prom
       const prompt = request.prompt ?? "";
       if (!prompt.trim()) return { error: "empty" };
       const restart = request.restartConfirmed === true;
+      const cli = request.cli === "codex" ? "codex" : "claude";
       // 터미널(xterm)을 끌어오므로 쓸 때만 읽는다.
       const { officeAgentBlockedReason, openOfficeAgent } = await import("../officeAgent/officeAgentStore");
       const blocked = officeAgentBlockedReason(restart);
       if (blocked) return { error: blocked };
-      fireAndForget("office agent open", openOfficeAgent({ prompt, cli: request.cli ?? "claude", restart, ...(request.cwd ? { cwd: request.cwd } : {}) })
+      fireAndForget("office agent open", openOfficeAgent({ prompt, cli, restart, ...(request.cwd ? { cwd: request.cwd } : {}) })
         .then((error) => { if (error) console.warn("web dash: office agent open failed", error); }));
       return {};
     }

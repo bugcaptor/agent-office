@@ -2,6 +2,7 @@
 //
 // Domain slice: app-wide opt-in settings, summarizer provider/purpose,
 // and CLI control status. See src/shared/types.ts for the frozen-contract overview.
+import type { WorkAgent, WorkScheduleRule, WorkStatus } from "./workPanels";
 
 /**
  * 요약(라벨·일기·학습자료)에 사용할 provider. Rust `SummaryProvider` 미러.
@@ -237,20 +238,50 @@ export interface WebDashActivity {
   detail?: string | null;
 }
 
+/** 웹에서 업무 하나를 고칠 때 넘기는 변경 필드. null은 값 비우기다. */
+export interface WebDashWorkEditPatch {
+  title?: string;
+  body?: string;
+  status?: WorkStatus;
+  assigneeAgentId?: string | null;
+  agent?: WorkAgent | null;
+  dependsOn?: string[] | null;
+  plan?: boolean;
+  maxFollowUps?: number | null;
+  permissionWaitMinutes?: number | null;
+}
+
 /** 웹 명령(`web-dash-control` 이벤트). 렌더러가 처리하고 webDashControlReply로 답한다. */
 export interface WebDashControlRequest {
   requestId: string;
-  op: "restart" | "terminate" | "resume" | "work-create" | "work-send" | "work-done" | "autorun-start" | "discuss-start" | "discuss-answer" | "office-agent-open" | "office-agent-close";
+  op:
+    | "restart" | "terminate" | "resume"
+    | "work-create" | "work-edit" | "work-delete" | "work-reorder" | "work-send" | "work-done" | "work-schedule"
+    | "autorun-start" | "autorun-pause" | "autorun-resume" | "autorun-end" | "autorun-usage-guard"
+    | "discuss-start" | "discuss-answer"
+    | "office-agent-open" | "office-agent-close";
   agentId?: string;
   itemId?: string;
+  targetId?: string;
+  after?: boolean;
   discussionId?: string;
   title?: string;
   body?: string;
+  status?: WorkStatus;
   assigneeAgentId?: string | null;
-  cli?: "claude" | "codex" | null;
+  cli?: WorkAgent["cli"] | null;
+  agent?: WorkAgent | null;
+  dependsOn?: string[] | null;
+  plan?: boolean;
+  maxFollowUps?: number | null;
+  permissionWaitMinutes?: number | null;
+  patch?: WebDashWorkEditPatch;
   send?: boolean;
   /** 웹에서 "터미널을 재시작하면 이전 세션이 끊긴다"를 확인했다. 앱 확인창 없이 재시작해 보낸다. */
   restartConfirmed?: boolean;
+  usageGuard?: boolean | null;
+  action?: "set" | "enable" | "disable" | "remove";
+  rule?: WorkScheduleRule | null;
   text?: string;
   /** office-agent-open: 첫 프롬프트와 작업 폴더. */
   prompt?: string;

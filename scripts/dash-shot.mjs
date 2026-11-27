@@ -15,6 +15,9 @@ import { resolve } from "node:path";
 
 const outDir = resolve(process.argv[2] || "/tmp/dash-shot");
 const page = await readFile(resolve("src-tauri/web/dash.html"), "utf8");
+const dashCss = await readFile(resolve("src-tauri/web/dash.css"), "utf8");
+const dashJs = await readFile(resolve("src-tauri/web/dash.js"), "utf8");
+const tasksJs = await readFile(resolve("src-tauri/web/tasks.js"), "utf8");
 const now = Date.now();
 const characters = [
   {
@@ -70,14 +73,27 @@ const items = [
     html: `<p>아래 명령을 실행하세요.</p>\n<pre><code>${code.replace(/&/g, "&amp;").replace(/</g, "&lt;")}</code></pre>\n<p>결과</p>\n` },
 ];
 const png = await readFile(resolve("scripts/icon-source-small.png"));
+let taskSeq = 10;
 const tasks = {
   open: [
-    { id: "w1", title: "로그 정렬 고치기", body: "", status: "review", assigneeAgentId: "a", plan: false, updatedAt: now - 60000 },
-    { id: "w2", title: "", body: "토큰 갱신 버튼 문구 바꾸기\n자세히", status: "in_progress", assigneeAgentId: "a", plan: false, updatedAt: now },
-    { id: "w3", title: "남의 업무", body: "", status: "review", assigneeAgentId: "b", plan: false, updatedAt: now },
+    { id: "w1", title: "로그 정렬 고치기", body: "대화 로그를 최신순으로 정렬한다.", status: "review", order: 0, assigneeAgentId: "a", plan: false, dependsOn: [], updatedAt: now - 60000 },
+    { id: "w2", title: "", body: "토큰 갱신 버튼 문구 바꾸기\n자세히", status: "in_progress", order: 1, assigneeAgentId: "a", plan: false, dependsOn: [], updatedAt: now },
+    { id: "w3", title: "남의 업무", body: "", status: "review", order: 0, assigneeAgentId: "b", plan: false, dependsOn: [], updatedAt: now },
+    { id: "p1", title: "API 계약 정리", body: "라우트 스키마 확인", status: "done", order: 0, assigneeAgentId: "b", plan: false, dependsOn: [], updatedAt: now - 120000 },
+    { id: "p2", title: "작업보드 UI 구현", body: "모바일·PC 반응형 보드 구현", status: "todo", order: 1, assigneeAgentId: "b", plan: false, dependsOn: ["p1"], updatedAt: now - 30000 },
+    { id: "proot", title: "웹 작업보드 출시 플랜", body: "목표: 웹에서도 업무 관리와 자동 진행 제어", status: "todo", order: 2, assigneeAgentId: "b", plan: true, dependsOn: ["p2"],
+      autoRun: { state: "paused", judgeSessionId: "j1", judgeStarted: true, currentId: "p2", followUps: 1, pauseReason: "judge-stop", pauseDetail: "완료된 업무 기본 표시 건수를 20건으로 둘까요?", costUsd: 0.42, startedAt: now - 300000, usageGuard: true,
+        log: [{ at: now - 300000, kind: "start" }, { at: now - 240000, kind: "send", taskId: "p1" }, { at: now - 120000, kind: "next", taskId: "p1", text: "라우트 정의 완료" }, { at: now - 60000, kind: "pause", text: "judge-stop" }] },
+      updatedAt: now - 10000 },
+    { id: "sc1", title: "아침 저장소 점검", body: "git 상태 확인", status: "todo", order: 3, assigneeAgentId: "d", plan: false, dependsOn: [],
+      schedule: { rule: { kind: "daily", time: "09:00" }, enabled: true, nextAt: now + 7200000, lastRunAt: now - 86400000 }, updatedAt: now - 50000 },
   ],
-  done: [],
+  done: [
+    { id: "d1", title: "이전 완료 업무 1", body: "완료됨", status: "done", order: 0, assigneeAgentId: "a", plan: false, dependsOn: [], updatedAt: now - 200000 },
+    { id: "d2", title: "이전 완료 업무 2", body: "완료됨", status: "done", order: 1, assigneeAgentId: "a", plan: false, dependsOn: [], updatedAt: now - 400000 },
+  ],
 };
+let tasksRev = 1;
 const posts = [];
 const logReqs = [];
 let rev = 1;
@@ -94,10 +110,18 @@ const server = createServer(async (req, res) => {
   const url = new URL(req.url, "http://x");
   const send = (data) => { res.setHeader("content-type", "application/json"); res.end(JSON.stringify({ ok: true, data })); };
   if (url.pathname === "/") { res.setHeader("content-type", "text/html; charset=utf-8"); return res.end(page); }
+  if (url.pathname === "/dash.css") { res.setHeader("content-type", "text/css; charset=utf-8"); return res.end(dashCss); }
+  if (url.pathname === "/dash.js") { res.setHeader("content-type", "text/javascript; charset=utf-8"); return res.end(dashJs); }
+  if (url.pathname === "/tasks.js") { res.setHeader("content-type", "text/javascript; charset=utf-8"); return res.end(tasksJs); }
   if (url.pathname === "/api/state") {
     return send({ app: "0.0.0", host: "회사 맥북 프로", rev: `r${rev}`, characters, officeAgent, folders, home: "/Users/me", outputAt: { a: Date.now() - aOutputAgo }, now: Date.now() });
   }
   if (url.pathname === "/api/usage") return send(usage);
+  if (url.pathname.startsWith("/api/models/")) {
+    const cli = url.pathname.split("/").pop();
+    const list = cli === "claude" ? ["claude-sonnet-4-6", "claude-opus-4-6"] : cli === "codex" ? ["gpt-5.4", "gpt-5.4-mini"] : [];
+    return send(list);
+  }
   if (url.pathname.startsWith("/api/log/")) {
     logReqs.push(url.pathname + url.search);
     const tail = Number(url.searchParams.get("tail")) || items.length;
@@ -114,12 +138,82 @@ const server = createServer(async (req, res) => {
   if (url.pathname === "/api/file/a/1/17/0" && req.headers.authorization === "Bearer abc") {
     res.setHeader("content-type", "application/octet-stream"); return res.end(fileBytes);
   }
-  if (url.pathname === "/api/tasks" && req.method === "GET") return send(tasks);
+  if (url.pathname === "/api/tasks" && req.method === "GET") {
+    const allDone = url.searchParams.get("allDone") === "1" || url.searchParams.get("allDone") === "true";
+    const done = allDone ? tasks.done : tasks.done.slice(0, 1);
+    return send({ open: tasks.open, done, doneTotal: tasks.done.length, allDone, observerEnabled: true, sessionCostEnabled: true, rev: `t${tasksRev}-${allDone}` });
+  }
   if (req.method === "POST") {
     let body = ""; for await (const chunk of req) body += chunk;
-    posts.push({ path: url.pathname, body: JSON.parse(body || "{}") });
+    const parsed = JSON.parse(body || "{}");
+    posts.push({ path: url.pathname, body: parsed });
+    if (url.pathname === "/api/tasks") {
+      const id = `new-${++taskSeq}`;
+      const item = {
+        id, title: parsed.title || "", body: parsed.body || "", status: parsed.status || "todo", order: tasks.open.length,
+        assigneeAgentId: parsed.assigneeAgentId || undefined, agent: parsed.agent || (parsed.cli ? { cli: parsed.cli } : undefined),
+        dependsOn: parsed.dependsOn || [], plan: !!parsed.plan, maxFollowUps: parsed.maxFollowUps ?? undefined,
+        permissionWaitMinutes: parsed.permissionWaitMinutes ?? undefined, updatedAt: Date.now(),
+      };
+      if (item.status === "done") tasks.done.unshift(item); else tasks.open.push(item);
+      tasksRev++;
+      return send({ itemId: id });
+    }
+    const editM = url.pathname.match(/^\/api\/tasks\/([^/]+)\/edit$/);
+    if (editM) {
+      const id = decodeURIComponent(editM[1]);
+      const item = [...tasks.open, ...tasks.done].find((t) => t.id === id);
+      if (item) {
+        Object.assign(item, parsed, { updatedAt: Date.now() });
+        if (parsed.assigneeAgentId === null) delete item.assigneeAgentId;
+        if (parsed.agent === null) delete item.agent;
+        if (parsed.dependsOn === null) item.dependsOn = [];
+        tasksRev++;
+      }
+      return send(null);
+    }
+    const delM = url.pathname.match(/^\/api\/tasks\/([^/]+)\/delete$/);
+    if (delM) {
+      const id = decodeURIComponent(delM[1]);
+      tasks.open = tasks.open.filter((t) => t.id !== id);
+      tasks.done = tasks.done.filter((t) => t.id !== id);
+      tasksRev++;
+      return send(null);
+    }
+    const arM = url.pathname.match(/^\/api\/tasks\/([^/]+)\/autorun$/);
+    if (arM) {
+      const id = decodeURIComponent(arM[1]);
+      const item = tasks.open.find((t) => t.id === id);
+      if (item) {
+        if (parsed.action === "resume" && item.autoRun) { item.autoRun.state = "running"; delete item.autoRun.pauseReason; delete item.autoRun.pauseDetail; }
+        else if (parsed.action === "pause" && item.autoRun) { item.autoRun.state = "paused"; item.autoRun.pauseReason = "user"; }
+        else if (parsed.action === "end") delete item.autoRun;
+        else if (parsed.action === "start" || !parsed.action) item.autoRun = { state: "running", followUps: 0, costUsd: 0, log: [{ at: Date.now(), kind: "start" }], startedAt: Date.now(), usageGuard: parsed.usageGuard !== false };
+        item.updatedAt = Date.now();
+        tasksRev++;
+      }
+      return send(null);
+    }
+    const scM = url.pathname.match(/^\/api\/tasks\/([^/]+)\/schedule$/);
+    if (scM) {
+      const id = decodeURIComponent(scM[1]);
+      const item = tasks.open.find((t) => t.id === id);
+      if (item) {
+        if (parsed.action === "remove") delete item.schedule;
+        else if (parsed.action === "disable" && item.schedule) { item.schedule.enabled = false; delete item.schedule.nextAt; }
+        else if (parsed.action === "enable" && item.schedule) { item.schedule.enabled = true; item.schedule.nextAt = Date.now() + 3600000; }
+        else if (parsed.action === "set" && parsed.rule) { item.schedule = { rule: parsed.rule, enabled: true, nextAt: Date.now() + 3600000 }; }
+        item.updatedAt = Date.now();
+        tasksRev++;
+      }
+      return send(null);
+    }
     const done = url.pathname.match(/^\/api\/tasks\/([^/]+)\/done$/);
-    if (done) tasks.open = tasks.open.filter((t) => t.id !== decodeURIComponent(done[1]));
+    if (done) {
+      const id = decodeURIComponent(done[1]);
+      const found = tasks.open.find((t) => t.id === id);
+      if (found) { tasks.open = tasks.open.filter((t) => t.id !== id); found.status = "done"; found.updatedAt = Date.now(); tasks.done.unshift(found); tasksRev++; }
+    }
     const ask = url.pathname.match(/^\/api\/asks\/([^/]+)$/);
     if (ask) { for (const c of characters) c.asks = (c.asks || []).filter((a) => a.id !== decodeURIComponent(ask[1])); rev++; }
     const a = characters[0];
@@ -338,6 +432,53 @@ await p.reload();
 await p.locator('#panes .pane[data-agent="e"]').waitFor();
 await p.getByRole("switch", { name: "스플릿뷰" }).click();
 await pvLines("a").first().waitFor();
+
+// ── 작업보드(업무 탭): 모바일 1열 + PC 마스터-디테일 + 플랜/자동진행/예약/편집/양방향 이동 ──
+await p.setViewportSize({ width: 390, height: 844 });
+await p.locator("#nav button", { hasText: "업무" }).click();
+await p.locator("#tb-list .tb-group").first().waitFor();
+await p.screenshot({ path: `${outDir}/tasks-mobile.png`, fullPage: true });
+// 완료된 업무 '더 보기'로 전체 확장
+await p.locator(".tb-more-done").click();
+await p.waitForFunction(() => !document.querySelector(".tb-more-done"));
+// 플랜 루트 열기 → 자동 진행 일시정지 사유·로그 확인 → 계속 누르기
+await p.locator('.tb-card[data-id="proot"] .tb-card-btn').click();
+await p.locator("#tb-autorun .tb-ar-paused").filter({ hasText: "20건" }).waitFor();
+await p.screenshot({ path: `${outDir}/tasks-autorun-mobile.png`, fullPage: true });
+await p.locator("#tb-autorun").getByRole("button", { name: "계속" }).click();
+await p.locator("#tb-autorun").getByRole("button", { name: "일시정지" }).waitFor();
+// PC 넓은 화면 마스터-디테일
+await p.setViewportSize({ width: 1440, height: 900 });
+await p.locator(".tb-layout #tb-list").waitFor();
+await p.locator(".tb-layout #tb-detail").waitFor();
+await p.screenshot({ path: `${outDir}/tasks-wide.png` });
+// 예약 카드 열어 끄기 → 다시 켜기
+await p.locator('.tb-card[data-id="sc1"] .tb-card-btn').click();
+await p.locator("#tb-sched").filter({ hasText: "매일 09:00" }).waitFor();
+await p.locator("#tb-sched").getByRole("button", { name: "끄기" }).click();
+await p.locator("#tb-sched").getByRole("button", { name: "켜기" }).waitFor();
+// 새 업무 생성 (CLI/모델/추론 강도 포함)
+await p.locator("#tb-list").getByRole("button", { name: "+ 새 업무" }).click();
+await p.locator('#tb-detail input[type="text"]').first().fill("웹에서 만든 새 태스크");
+await p.locator("#tb-detail textarea").fill("웹 작업보드 생성 검증");
+await p.locator("#tb-detail select").first().selectOption("a");
+await p.locator("#tb-detail select").nth(2).selectOption("claude");
+await p.locator('#tb-detail input[list^="tb-models-"]').fill("claude-sonnet-4-6");
+await p.locator("#tb-save-btn").click();
+await p.locator(".tb-card", { hasText: "웹에서 만든 새 태스크" }).waitFor();
+// 수정 중 폴링이 와도 작성 중인 초안이 덮어써지지 않는지 확인
+await p.locator('#tb-detail input[type="text"]').first().fill("수정 중인 제목");
+tasksRev++;
+await p.waitForTimeout(400);
+assert.equal(await p.locator('#tb-detail input[type="text"]').first().inputValue(), "수정 중인 제목");
+await p.locator("#tb-save-btn").click();
+await p.locator(".tb-card", { hasText: "수정 중인 제목" }).waitFor();
+// 양방향 이동: 업무 상세 → 담당 캐릭터 대화 로그 → 보낸 업무 클릭 → 업무 상세
+await p.locator("#tb-head-chips").getByRole("button", { name: /대화 로그/ }).click();
+await p.locator("#sent .sent-row").first().waitFor();
+await p.locator("#sent .sent-row").first().click();
+await p.locator('#tb-detail[data-id="w2"]').waitFor();
+
 console.log(JSON.stringify(posts));
 await browser.close();
 server.close();
