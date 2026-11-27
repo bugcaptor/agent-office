@@ -29,6 +29,10 @@ const S = {
     cost: (tokens, cost, turns) => `이 세션 추정 사용량 · 토큰 ${tokens} · ${cost} · ${turns}턴`, costHint: "공개 API 요율로 환산한 추정치입니다. 구독제 실제 청구액과 다릅니다. CH(…)는 캐시 포함 전체 토큰.",
     live: { thinking: (t) => `생각 중… ${t}`, tool: (tool, t) => `${tool} 실행 중… ${t}`, stalled: (t) => `작업 중이지만 ${t}째 화면 출력이 없습니다 — 멈췄을 수 있습니다`, human: "답을 기다리는 중 — 멈춘 게 아닙니다", idle: "턴이 끝났습니다 · 입력을 기다림", off: "CLI가 돌고 있지 않습니다", sec: (s) => `${s}초`, minSec: (m, s) => `${m}분 ${s}초` },
     stalled: "응답 없음", shellChip: "셸 캐릭터",
+    machineLocal: (name) => name ? `이 머신 · ${name}` : "이 머신", machineOff: "끊김", machineCount: (n) => `캐릭터 ${n}`,
+    remoteNote: (m) => `${m}의 캐릭터입니다. 지금은 보기만 합니다 — 입력·권한 응답·재시작은 그 머신에서 하세요.`,
+    remoteOffNote: (m) => `${m}이(가) 끊겼습니다. 마지막으로 본 명단만 보입니다.`,
+    remoteAskNote: "그 머신의 앱이나 터미널에서 답하세요.",
     askPermission: (tool) => `권한 요청 · ${tool}`, askQuestion: "질문에 답해 주세요", askPlan: "계획 승인 요청",
     askNote: "터미널에도 같은 대화상자가 떠 있습니다. 먼저 답한 쪽이 반영되고, 터미널에서 답하면 이 카드는 잠시 뒤 사라집니다.",
     allow: "허용", allowAlways: "허용하고 다시 묻지 않기", deny: "거부", dismiss: "웹에서 닫기", denyPh: "거부 사유(선택, 에이전트에게 전함)",
@@ -51,7 +55,8 @@ const S = {
       "not-running": "터미널이 꺼져 있습니다", "not-at-shell-prompt": "셸 프롬프트가 아닙니다(CLI가 이미 실행 중이거나 입력 중)", "human-input-pending": "앱에 쓰다 만 입력이 있습니다", "renderer-unavailable": "앱 화면이 응답하지 않습니다", "busy": "다른 입력이 진행 중입니다", "shell-unsupported": "지원하지 않는 셸입니다", "empty": "내용이 비었습니다",
       "queue-full": "대기열이 가득 찼습니다(최대 20건)", "queue-gone": "이미 보냈거나 사라진 메시지입니다", "queue-dropped-session": "세션이 바뀌어 대기열을 비웠습니다", "chat-view-no-cli": "이 터미널에서 Claude·Codex가 입력을 기다리는지 알 수 없습니다", "work-send-session-changed": "세션이 바뀌었습니다",
       "restart-required": "터미널에서 CLI가 실행 중입니다. 재시작 경고를 확인하고 다시 보내세요", "work-send-busy": "이 캐릭터에 보내는 중인 업무가 있습니다", "work-send-clocked-out": "퇴근한 캐릭터입니다", "work-send-auto-run": "자동 진행 중인 캐릭터입니다", "work-send-profile-unsupported": "시작 명령이 있는 캐릭터에는 보낼 수 없습니다", "work-send-agent-missing": "담당 캐릭터를 먼저 고르세요", "work-send-blocked": "선행 작업이 모두 완료된 뒤에 보낼 수 있습니다", "work-send-plan-root": "플랜 루트는 메모 전용입니다. 아래 자동 진행으로 실행하세요", "work-send-schedule-template": "반복 예약 템플릿은 회차마다 복사해 실행합니다", "work-not-loaded": "앱이 아직 업무를 불러오지 않았습니다", "task-not-found": "업무를 찾을 수 없습니다", "unknown-agent": "알 수 없는 캐릭터입니다", "unknown-cli": "지원하지 않는 CLI입니다",
-      "auto-run-root-done": "완료된 업무는 자동 진행할 수 없습니다", "auto-run-no-assignee": "루트 업무의 담당 캐릭터를 먼저 지정하세요", "auto-run-no-plan": "진행할 남은 태스크가 없습니다", "auto-run-root-busy": "루트만 남았습니다. 다시 진행하려면 상태를 할 일로 바꾸세요", "auto-run-schedule-template": "반복 예약 템플릿은 직접 자동 진행할 수 없습니다", "auto-run-runner-busy": "담당 캐릭터가 다른 자동 진행을 실행 중입니다", "auto-run-observer-off": "설정에서 에이전트 관찰을 켜야 자동 진행할 수 있습니다", "auto-run-foreign-task": "다른 캐릭터에게 배정된 단계가 있어 시작할 수 없습니다", "auto-run-already-running": "이미 자동 진행 중입니다", "auto-run-no-run": "진행 중인 자동 실행 기록이 없습니다", "auto-run-not-paused": "일시정지 상태가 아닙니다", "auto-run-judge-output": "판단자 응답을 읽지 못했습니다", "schedule-invalid": "예약 규칙이 올바르지 않습니다" },
+      "auto-run-root-done": "완료된 업무는 자동 진행할 수 없습니다", "auto-run-no-assignee": "루트 업무의 담당 캐릭터를 먼저 지정하세요", "auto-run-no-plan": "진행할 남은 태스크가 없습니다", "auto-run-root-busy": "루트만 남았습니다. 다시 진행하려면 상태를 할 일로 바꾸세요", "auto-run-schedule-template": "반복 예약 템플릿은 직접 자동 진행할 수 없습니다", "auto-run-runner-busy": "담당 캐릭터가 다른 자동 진행을 실행 중입니다", "auto-run-observer-off": "설정에서 에이전트 관찰을 켜야 자동 진행할 수 있습니다", "auto-run-foreign-task": "다른 캐릭터에게 배정된 단계가 있어 시작할 수 없습니다", "auto-run-already-running": "이미 자동 진행 중입니다", "auto-run-no-run": "진행 중인 자동 실행 기록이 없습니다", "auto-run-not-paused": "일시정지 상태가 아닙니다", "auto-run-judge-output": "판단자 응답을 읽지 못했습니다", "schedule-invalid": "예약 규칙이 올바르지 않습니다",
+      "link-remote-read-only": "다른 머신의 캐릭터는 아직 보기만 할 수 있습니다", "link-device-offline": "그 머신이 끊겼습니다", "link-request-timeout": "그 머신이 제때 답하지 않았습니다" },
   },
   en: {
     tabs: { chars: "Characters", tasks: "Tasks", talks: "Discussions", usage: "Usage" },
@@ -80,6 +85,10 @@ const S = {
     cost: (tokens, cost, turns) => `Estimated session usage · ${tokens} tokens · ${cost} · ${turns} ${turns === 1 ? "turn" : "turns"}`, costHint: "Estimated at public API rates; not your subscription bill. CH(…) is the total including cache.",
     live: { thinking: (t) => `Thinking… ${t}`, tool: (tool, t) => `Running ${tool}… ${t}`, stalled: (t) => `Working, but no terminal output for ${t} — it may be stuck`, human: "Waiting for an answer — not stuck", idle: "Turn finished · waiting for input", off: "No CLI is running", sec: (s) => `${s}s`, minSec: (m, s) => `${m}m ${s}s` },
     stalled: "No response", shellChip: "Shell",
+    machineLocal: (name) => name ? `This machine · ${name}` : "This machine", machineOff: "Offline", machineCount: (n) => `${n} ${n === 1 ? "character" : "characters"}`,
+    remoteNote: (m) => `A character on ${m}. View only for now — type, answer permissions and restart on that machine.`,
+    remoteOffNote: (m) => `${m} is offline. Showing the last roster seen.`,
+    remoteAskNote: "Answer in that machine's app or terminal.",
     askPermission: (tool) => `Permission request · ${tool}`, askQuestion: "Please answer", askPlan: "Plan approval",
     askNote: "The same dialog is open in the terminal. Whichever answers first wins; if you answer in the terminal, this card goes away shortly.",
     allow: "Allow", allowAlways: "Allow and don't ask again", deny: "Deny", dismiss: "Close here", denyPh: "Reason (optional, sent to the agent)",
@@ -102,7 +111,8 @@ const S = {
       "not-running": "Terminal is not running", "not-at-shell-prompt": "Not at a shell prompt (CLI running or input pending)", "human-input-pending": "Unsent input is pending in the app", "renderer-unavailable": "App window is not responding", "busy": "Another input is in progress", "shell-unsupported": "Unsupported shell", "empty": "Empty",
       "queue-full": "The queue is full (20 max)", "queue-gone": "Already sent or gone", "queue-dropped-session": "The session changed, so the queue was cleared", "chat-view-no-cli": "Can't tell whether Claude/Codex is waiting for input in this terminal", "work-send-session-changed": "The session changed",
       "restart-required": "A CLI is running in the terminal. Confirm the restart warning and send again", "work-send-busy": "A task is already being sent to this character", "work-send-clocked-out": "This character has clocked out", "work-send-auto-run": "This character is running an auto-run", "work-send-profile-unsupported": "Characters with a startup command can't receive tasks", "work-send-agent-missing": "Assign a character first", "work-send-blocked": "Complete prerequisites before sending", "work-send-plan-root": "Plan roots are notes only. Use Auto-run below", "work-send-schedule-template": "Recurring templates clone a new card on each run", "work-not-loaded": "The app hasn't loaded tasks yet", "task-not-found": "Task not found", "unknown-agent": "Unknown character", "unknown-cli": "Unsupported CLI",
-      "auto-run-root-done": "Completed tasks can't start auto-run", "auto-run-no-assignee": "Assign a character to the root task first", "auto-run-no-plan": "No remaining tasks to run", "auto-run-root-busy": "Only the root remains. Move it back to To do to run again", "auto-run-schedule-template": "Recurring templates can't be auto-run directly", "auto-run-runner-busy": "This character is already running another plan", "auto-run-observer-off": "Enable agent observer in settings to use auto-run", "auto-run-foreign-task": "Some steps are assigned to another character", "auto-run-already-running": "Auto-run is already active", "auto-run-no-run": "No auto-run record found", "auto-run-not-paused": "Auto-run is not paused", "auto-run-judge-output": "Couldn't read judge output", "schedule-invalid": "Invalid schedule rule" },
+      "auto-run-root-done": "Completed tasks can't start auto-run", "auto-run-no-assignee": "Assign a character to the root task first", "auto-run-no-plan": "No remaining tasks to run", "auto-run-root-busy": "Only the root remains. Move it back to To do to run again", "auto-run-schedule-template": "Recurring templates can't be auto-run directly", "auto-run-runner-busy": "This character is already running another plan", "auto-run-observer-off": "Enable agent observer in settings to use auto-run", "auto-run-foreign-task": "Some steps are assigned to another character", "auto-run-already-running": "Auto-run is already active", "auto-run-no-run": "No auto-run record found", "auto-run-not-paused": "Auto-run is not paused", "auto-run-judge-output": "Couldn't read judge output", "schedule-invalid": "Invalid schedule rule",
+      "link-remote-read-only": "Characters on other machines are view-only for now", "link-device-offline": "That machine is offline", "link-request-timeout": "That machine did not answer in time" },
   },
 }[L];
 document.documentElement.lang = L;
@@ -260,6 +270,8 @@ let chars = null, charsRev = null;
 let talksData = null, talkDetail = null, usageData = null;
 let tasksData = null, tasksRev = null;
 let officeData = null, folders = [], homeDir = "";
+// 머신 연동 호스트: 붙은 머신들(`[{id, name, online, count}]`)과 이 머신 이름.
+let machines = [], hostName = "";
 const OFFICE = "office-agent";
 const logs = new Map();
 let outputAt = {}, serverNow = 0, serverNowAt = 0, stalledKey = "";
@@ -311,7 +323,7 @@ function leaf(path) {
 }
 function placeOf(c) {
   const branch = c.label && c.label.branch;
-  return [leaf(cwdOf(c)), branch && "⎇ " + branch].filter(Boolean).join(" ");
+  return [c.remote && c.machine && "💻 " + c.machine.name, leaf(cwdOf(c)), branch && "⎇ " + branch].filter(Boolean).join(" ");
 }
 const USAGE_KEYS = ["claude", "codex", "antigravity", "opencode"];
 const USAGE_NAMES = { claude: "Claude", codex: "Codex", antigravity: "Antigravity", opencode: "Opencode" };
@@ -323,7 +335,7 @@ function chips(c) {
   const [cls, label] = phaseOf(c);
   const live = liveOf(c);
   return el("div", { class: "chips" },
-    el("span", { class: "chip " + cls, text: label }),
+    c.remote && c.machine && !c.machine.online ? el("span", { class: "chip off", text: S.machineOff }) : el("span", { class: "chip " + cls, text: label }),
     live && live.kind === "stalled" && el("span", { class: "chip stalled", text: S.stalled }),
     c.cli && c.session && c.session.state === "running" && el("span", { class: "chip cli working", text: S.cliRunning(CLI_NAMES[c.cli] || c.cli) }),
     c.shellAssist && el("span", { class: "chip cli", text: S.shellChip }));
@@ -344,7 +356,9 @@ function workBox(c, compact) {
   if (!w) return null;
   const p = w.plan && w.plan.total > 0 ? w.plan : null;
   const auto = p && p.autoRun && S.workAuto[p.autoRun];
-  return el("div", { class: "work" + (compact ? " compact" : ""), title: S.workOpen, role: "link", onclick: (e) => { e.stopPropagation(); openTask(w.id); } },
+  // 다른 머신의 업무는 그 머신 보드에 있다 — 이 상태판 업무 탭으로 가지 않는다.
+  const open = c.remote ? {} : { title: S.workOpen, role: "link", onclick: (e) => { e.stopPropagation(); openTask(w.id); } };
+  return el("div", { class: "work" + (compact ? " compact" : ""), ...open },
     el("div", { class: "work-h" },
       el("span", { class: "work-tag", text: "📋 " + S.workNow }),
       el("span", { class: "work-t", title: w.title, text: w.title }),
@@ -436,8 +450,36 @@ function sortedChars() {
   const at = (c) => (c.turn && c.turn.at) || 0;
   return [...chars].sort((a, b) => rank(a) - rank(b) || at(b) - at(a));
 }
+function charCard(c) {
+  const [cls] = phaseOf(c);
+  const wait = cls === "human" ? waitingMessage(c) : null;
+  const goal = goalOf(c);
+  return el("div", { class: "card clickable" + (c.remote && c.machine && !c.machine.online ? " offline" : ""), onclick: () => openAgent(c.agentId) },
+    el("div", { class: "row" }, avatar(c),
+      el("div", { class: "grow" }, el("div", { class: "name", text: c.name }), el("div", { class: "sub", title: cwdOf(c), text: placeOf(c) })),
+      chips(c)),
+    goal && el("div", { class: "goal", text: goal }),
+    workBox(c),
+    wait && el("div", { class: "wait", text: wait }),
+    previewSlot(c));
+}
+function machineHead(name, online, count) {
+  return el("div", { class: "machine-h" + (online ? "" : " off") },
+    el("span", { class: "machine-dot" + (online ? " on" : "") }), el("b", { text: name }),
+    el("span", { class: "sub", text: online ? S.machineCount(count) : S.machineOff }));
+}
 function renderChars() {
   if (!chars) return [el("div", { class: "empty", text: "…" })];
+  // 머신 연동 호스트: 이 머신 캐릭터 뒤에 붙은 머신마다 구역을 둔다(`machines`, 이름 순).
+  if (machines.length) {
+    const mine = sortedChars().filter((c) => !c.remote);
+    const out = [renderListBar(), machineHead(S.machineLocal(hostName), true, mine.length), renderOfficeCard(), ...mine.map(charCard)];
+    for (const m of machines) {
+      const list = sortedChars().filter((c) => c.remote && c.machine && c.machine.id === m.id);
+      out.push(machineHead(m.name, m.online, list.length), ...list.map(charCard));
+    }
+    return out;
+  }
   return [renderListBar(), renderOfficeCard(), ...sortedChars().map((c) => {
     const [cls] = phaseOf(c);
     const wait = cls === "human" ? waitingMessage(c) : null;
@@ -670,6 +712,8 @@ function renderAgent() {
   const c = currentChar();
   if (!c) return [back];
   if (c.office) return [back, renderHead(c), renderAsks(c), renderOfficeForm(c), renderCost(c), renderLive(c), renderLog(c.agentId)];
+  // 다른 머신 캐릭터: 보기만(대화 로그·권한 요청·지금 상태). 입력·업무·조작은 그 머신에서.
+  if (c.remote) return [back, renderHead(c), renderAsks(c), renderCost(c), renderLive(c), renderLog(c.agentId)];
   if (c.shellAssist && window.Dash.shell) return [back, renderHead(c), window.Dash.shell.render(c)];
   return [back, renderHead(c), renderAsks(c), renderSent(c), renderMsgForm(c), renderTaskForm(c), renderCost(c), renderLive(c), renderLog(c.agentId)];
 }
@@ -685,8 +729,20 @@ function renderAsks(c) {
   const asks = c.asks || [];
   for (const id of [...askDrafts.keys()]) if (!asks.some((a) => a.id === id)) askDrafts.delete(id);
   const box = el("div", { id: "asks", "data-key": JSON.stringify(asks.map((a) => [a.id, !!(askDrafts.get(a.id) || {}).busy])) });
-  for (const a of asks) box.append(renderAsk(a));
+  for (const a of asks) box.append(c.remote ? renderRemoteAsk(a) : renderAsk(a));
   return box;
+}
+/** 다른 머신의 권한 요청·질문(보기만). */
+function renderRemoteAsk(a) {
+  const question = a.toolName === "AskUserQuestion";
+  const title = question ? S.askQuestion : a.toolName === "ExitPlanMode" ? S.askPlan : S.askPermission(a.toolName);
+  const i = a.toolInput || {};
+  const lines = question ? (i.questions || []).map((q) => q.question)
+    : [i.command || i.file_path || i.path || i.url || i.plan || ""].map((t) => firstLine(String(t), 400));
+  return el("div", { class: "card ask remote" },
+    el("div", { class: "row" }, el("div", { class: "grow name", text: (a.sidechain ? "⤷ " : "") + title }), el("span", { class: "sub", text: fmtTime(a.at) })),
+    ...lines.filter(Boolean).map((t) => el("div", { class: "ask-line", text: t })),
+    el("div", { class: "note", text: S.remoteAskNote }));
 }
 function refreshAsks() {
   const c = currentChar();
@@ -833,12 +889,13 @@ function renderHead(c) {
     goalOf(c) && el("div", { class: "goal", text: goalOf(c) }),
     workBox(c),
     wait && el("div", { class: "wait", text: wait }),
+    c.remote && el("div", { class: "note", text: c.machine && !c.machine.online ? S.remoteOffNote(c.machine.name) : S.remoteNote(c.machine ? c.machine.name : "") }),
     // 셸 캐릭터는 CLI를 띄우지 않는다 — 끊기(Ctrl-C)는 셸 화면의 실행 중 칸에 있다.
-    !c.shellAssist && el("div", { class: "btns" },
+    !c.remote && !c.shellAssist && el("div", { class: "btns" },
       el("button", { class: "b", disabled: !running, text: S.interrupt, onclick: () => act(`/agents/${id}/interrupt`) }),
       el("button", { class: "b", disabled: !running, text: S.ctrlc, onclick: () => act(`/agents/${id}/ctrl-c`) }),
       renderLaunch(c, running)),
-    el("div", { class: "btns" },
+    !c.remote && el("div", { class: "btns" },
       confirmBtn(S.restart, () => act(`/agents/${id}/restart`), "b"),
       !c.shellAssist && confirmBtn(S.resume, () => act(`/agents/${id}/resume`), "b"),
       running && confirmBtn(S.terminate, () => act(`/agents/${id}/terminate`))));
@@ -1413,6 +1470,7 @@ async function refreshChars() {
   if (d.rev !== charsRev) {
     charsRev = d.rev; chars = d.characters;
     officeData = d.officeAgent || null; folders = d.folders || []; homeDir = d.home || "";
+    machines = d.machines || []; hostName = d.host || "";
     changed = true;
   }
   const key = [...(chars || []), ...(officeData ? [officeChar()] : [])].filter((c) => (liveOf(c) || {}).kind === "stalled").map((c) => c.agentId).join(",");
@@ -1566,7 +1624,8 @@ window.Dash = {
   store, load, sstore, sload, avatar, phaseOf, waitingMessage, busyShell,
   leaf, cwdOf, placeOf, CLI_NAMES, WIDE, view, openAgent, openTask, render, nowMs, tildePath,
   refreshNow, setHeaderVar, boot, previewSlot,
-  getChars: () => chars,
+  // 업무 탭은 이 머신 캐릭터만 담당으로 고른다(다른 머신 업무 분배는 다음 단계).
+  getChars: () => chars && chars.filter((c) => !c.remote),
   charOf,
   getTasks: () => tasksData,
   refreshTasksNow: async (allDone) => { tasksRev = null; await refreshTasks(allDone); },

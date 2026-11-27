@@ -37,6 +37,7 @@ const { mockApi } = vi.hoisted(() => ({
     webDashStatus: vi.fn().mockResolvedValue({ config: { enabled: false, bind: "tailnet", port: 7788, images: true }, running: false, urls: [], clients: 0 }),
     webDashPublishLabels: vi.fn().mockResolvedValue(undefined),
     linkStatus: vi.fn().mockResolvedValue({ config: { mode: "off", hostAddress: "" }, protocol: 1, appVersion: "0.0.0", machineId: "m" }),
+    linkRemote: vi.fn().mockResolvedValue({ machines: [] }),
     onData: vi.fn(),
     onSessionState: vi.fn(() => vi.fn()),
     onNotification: vi.fn(),

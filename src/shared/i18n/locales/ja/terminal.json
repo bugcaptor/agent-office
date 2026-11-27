@@ -141,10 +141,17 @@
       "queue-full": "キューがいっぱいです(最大 20 件)",
       "queue-gone": "送信済みか消えたメッセージです",
       "queue-dropped-session": "セッションが変わったためキューを空にしました",
-      "control-char": "送れない文字が含まれています"
+      "control-char": "送れない文字が含まれています",
+      "link-remote-read-only": "別のマシンのキャラクターはまだ表示のみです",
+      "link-device-offline": "そのマシンは切断されています",
+      "link-request-timeout": "そのマシンが時間内に応答しませんでした"
     },
     "toChat": "会話ビューに切り替え(CLI はそのまま動作)",
-    "toTerminal": "ターミナルビューに切り替え"
+    "toTerminal": "ターミナルビューに切り替え",
+    "remoteTitle": "会話 · {{machine}}",
+    "remoteHint": "別のマシンのキャラクターです。ここでは表示のみです。",
+    "close": "閉じる",
+    "remoteAskNote": "そのマシンのアプリかターミナルで答えてください。"
   },
   "shellAssist": {
     "placeholder": "言葉で頼む — 例: このフォルダーの大きいファイル10個(入力行に入るので Enter は自分で)",

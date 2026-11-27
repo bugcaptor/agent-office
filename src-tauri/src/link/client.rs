@@ -32,6 +32,35 @@ const MISMATCH_RETRY: Duration = Duration::from_secs(10 * 60);
 
 /// 호스트가 보낸 일을 받는 쪽(다음 단계들이 건다). 인자: 종류, 데이터.
 pub type CommandHandler = Arc<dyn Fn(&str, &serde_json::Value) + Send + Sync>;
+/// 호스트의 물음(`Down::Request`)에 답하는 쪽. 인자: 종류, 데이터.
+pub type RequestHandler =
+    Arc<dyn Fn(String, serde_json::Value) -> futures_util::future::BoxFuture<'static, Result<serde_json::Value, String>> + Send + Sync>;
+/// 붙어 있는 동안만 보내는 것(상태 스냅숏·답)의 상한. 넘치면 오래된 것부터 버린다.
+const LIVE_MAX: usize = 256;
+
+/// 쌓지 않고 지금 연결로만 보내는 것. 연결이 바뀌면 비운다.
+#[derive(Default)]
+struct LiveQueue {
+    items: Mutex<std::collections::VecDeque<Up>>,
+    ready: Notify,
+}
+
+impl LiveQueue {
+    fn push(&self, up: Up) {
+        {
+            let mut items = self.items.lock().unwrap();
+            if items.len() >= LIVE_MAX {
+                items.pop_front();
+            }
+            items.push_back(up);
+        }
+        self.ready.notify_one();
+    }
+
+    fn take(&self) -> Vec<Up> {
+        self.items.lock().unwrap().drain(..).collect()
+    }
+}
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -123,6 +152,10 @@ pub struct LinkClient {
     /// outbox에 새 것이 들어왔다.
     queued: Notify,
     on_command: RwLock<Option<CommandHandler>>,
+    on_request: RwLock<Option<RequestHandler>>,
+    live: Arc<LiveQueue>,
+    /// 호스트와 붙은 횟수(welcome마다 1씩). 다시 붙었는지 가르는 데 쓴다.
+    connections: std::sync::atomic::AtomicU64,
     changed: Changed,
 }
 
@@ -143,8 +176,30 @@ impl LinkClient {
             kick: Notify::new(),
             queued: Notify::new(),
             on_command: RwLock::new(None),
+            on_request: RwLock::new(None),
+            live: Arc::new(LiveQueue::default()),
+            connections: 0.into(),
             changed,
         }
+    }
+
+    pub fn set_request_handler(&self, handler: RequestHandler) {
+        *self.on_request.write().unwrap() = Some(handler);
+    }
+
+    /// 지금 붙어 있으면 이번 연결의 번호(붙을 때마다 바뀐다), 아니면 None.
+    pub fn connection(&self) -> Option<u64> {
+        let connected = self.inner.lock().unwrap().state == Some(LinkClientState::Connected);
+        connected.then(|| self.connections.load(std::sync::atomic::Ordering::SeqCst))
+    }
+
+    /// 지금 연결로만 보낸다(쌓지 않음). 붙어 있지 않으면 버리고 false.
+    pub fn send_live(&self, kind: &str, data: serde_json::Value) -> bool {
+        if self.connection().is_none() {
+            return false;
+        }
+        self.live.push(Up::Live { kind: kind.into(), data });
+        true
     }
 
     pub fn set_command_handler(&self, handler: CommandHandler) {
@@ -478,6 +533,9 @@ impl LinkClient {
                     return End::HostChanged;
                 }
                 self.outbox.lock().unwrap().reconnected(acked);
+                // 지난 연결에 보내려던 스냅숏·답은 이제 의미가 없다.
+                self.live.take();
+                self.connections.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
                 self.set_state(|i| {
                     i.state = Some(LinkClientState::Connected);
                     i.error = None;
@@ -506,6 +564,11 @@ impl LinkClient {
                     return End::Dropped;
                 }
             }
+            for up in self.live.take() {
+                if ws.send(Message::Text(serde_json::to_string(&up).unwrap_or_default())).await.is_err() {
+                    return End::Dropped;
+                }
+            }
             tokio::select! {
                 msg = ws.next() => {
                     let Some(Ok(msg)) = msg else { return End::Dropped };
@@ -522,12 +585,14 @@ impl LinkClient {
                                     h(&kind, &data);
                                 }
                             }
+                            Ok(Down::Request { id, kind, data }) => self.answer(id, kind, data),
                             Ok(Down::Revoked) => return End::Unauthorized,
                             _ => {}
                         }
                     }
                 }
                 _ = self.queued.notified() => {}
+                _ = self.live.ready.notified() => {}
                 _ = tick.tick() => {
                     if heard.elapsed() > SILENCE_LIMIT {
                         return End::Dropped;
@@ -535,6 +600,25 @@ impl LinkClient {
                 }
             }
         }
+    }
+}
+
+impl LinkClient {
+    /// 호스트의 물음에 답한다. 처리기는 따로 돌리고 답은 지금 연결로 보낸다(그 사이 끊기면 버린다).
+    fn answer(&self, id: u64, kind: String, data: serde_json::Value) {
+        let handler = self.on_request.read().unwrap().clone();
+        let live = self.live.clone();
+        let Some(handler) = handler else {
+            live.push(Up::Reply { id, data: serde_json::Value::Null, error: Some("link-unsupported".into()) });
+            return;
+        };
+        tokio::spawn(async move {
+            let up = match handler(kind, data).await {
+                Ok(data) => Up::Reply { id, data, error: None },
+                Err(e) => Up::Reply { id, data: serde_json::Value::Null, error: Some(e) },
+            };
+            live.push(up);
+        });
     }
 }
 

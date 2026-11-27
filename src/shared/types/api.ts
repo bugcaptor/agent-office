@@ -36,7 +36,7 @@ import type {
 } from './settings';
 import type { ApiKeyStatus } from './apiKeys';
 import type { ShellAssistConfig, ShellAssistEndpoint, ShellSuggestion } from './shellAssist';
-import type { LinkConfig, LinkStatus } from './link';
+import type { LinkConfig, LinkStatus, RemoteOffice } from './link';
 import type { AwardRecord, AwardSpeech, AwardsFile } from './awards';
 import type { DiaryEntry, WorkLogItem } from './diary';
 import type { MemoSheet, MemoSheetMeta } from './memo';
@@ -270,6 +270,8 @@ export interface AgentOfficeApi {
   linkPair(address: string, code: string): Promise<LinkStatus>;
   /** 클라이언트: 이 기기의 페어링을 지운다. */
   linkForgetHost(): Promise<LinkStatus>;
+  /** 호스트: 붙은 머신들의 캐릭터(오피스 머신별 층). 호스트 모드가 아니면 빈 목록. */
+  linkRemote(): Promise<RemoteOffice>;
   /** 셸 캐릭터 LLM 설정(`shell-assist.json`). */
   shellAssistGetConfig(): Promise<ShellAssistConfig>;
   /** 저장하고 다듬은 값을 돌려준다. */

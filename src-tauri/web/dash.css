@@ -387,3 +387,12 @@ main.tasks-wide { max-width: 1380px; }
 .sh-origin { flex: none; font-size: 13px; }
 .sh-block .sub { margin-top: 2px; }
 .sh-out { margin: 6px 0 0; }
+/* 머신 연동 호스트: 머신별 구역 머리, 끊긴 머신 카드, 원격 권한 요청(보기만) */
+.machine-h { display: flex; align-items: center; gap: 8px; margin: 18px 2px 6px; font-size: 13px; }
+.machine-h:first-of-type { margin-top: 6px; }
+.machine-h .sub { margin-left: auto; }
+.machine-h.off b { color: var(--muted); }
+.machine-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--idle); opacity: 0.6; flex: none; }
+.machine-dot.on { background: var(--ok); opacity: 1; }
+.card.offline { opacity: 0.55; }
+.ask.remote .ask-line { margin-top: 6px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; white-space: pre-wrap; word-break: break-word; }

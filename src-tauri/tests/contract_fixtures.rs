@@ -761,3 +761,56 @@ fn link_status_serializes_to_fixture() {
     let config: LinkConfig = serde_json::from_value(serde_json::from_str::<Value>(fixture).unwrap()["config"].clone()).unwrap();
     assert_eq!(config, status.config);
 }
+
+#[test]
+fn link_remote_serializes_to_fixture() {
+    use agent_office_lib::link::remote::{RemoteCharacter, RemoteMachine, RemoteOffice};
+    let fixture = include_str!("../../src/shared/contract-fixtures/link-remote.json");
+    let office = RemoteOffice {
+        machines: vec![
+            RemoteMachine {
+                device_id: "d-5e6f7a8b".into(),
+                name: "laptop".into(),
+                online: false,
+                characters: vec![RemoteCharacter {
+                    id: "d-5e6f7a8b:agent-c".into(),
+                    agent_id: "agent-c".into(),
+                    name: "Cleo".into(),
+                    role: "".into(),
+                    appearance: Value::Null,
+                    session_state: None,
+                    needs_human: false,
+                    clocked_out: false,
+                }],
+            },
+            RemoteMachine {
+                device_id: "d-1a2b3c4d".into(),
+                name: "studio-pc".into(),
+                online: true,
+                characters: vec![
+                    RemoteCharacter {
+                        id: "d-1a2b3c4d:agent-a".into(),
+                        agent_id: "agent-a".into(),
+                        name: "Ada".into(),
+                        role: "backend".into(),
+                        appearance: serde_json::json!({ "archetype": "human", "seed": "ada-seed", "colors": { "hair": "#aa3311" } }),
+                        session_state: Some("running".into()),
+                        needs_human: true,
+                        clocked_out: false,
+                    },
+                    RemoteCharacter {
+                        id: "d-1a2b3c4d:agent-b".into(),
+                        agent_id: "agent-b".into(),
+                        name: "Bo".into(),
+                        role: "".into(),
+                        appearance: serde_json::json!({ "archetype": null, "seed": "bo-seed", "colors": null }),
+                        session_state: Some("exited".into()),
+                        needs_human: false,
+                        clocked_out: false,
+                    },
+                ],
+            },
+        ],
+    };
+    assert_value_eq(fixture, serde_json::to_value(&office).unwrap());
+}

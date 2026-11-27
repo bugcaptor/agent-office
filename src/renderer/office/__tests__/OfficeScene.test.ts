@@ -238,7 +238,8 @@ describe("OfficeScene <-> OfficeWorld wiring (Task 3H)", () => {
     void scene.init();
     scene.destroy();
 
-    expect(spy).toHaveBeenCalledTimes(1);
+    // 이 머신 월드 + 머신 연동의 다른 머신 층 월드(`RemoteFloor`) — 둘 다 구독을 푼다.
+    expect(spy).toHaveBeenCalledTimes(2);
     spy.mockRestore();
   });
 });

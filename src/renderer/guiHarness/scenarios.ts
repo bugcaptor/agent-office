@@ -14,6 +14,7 @@ import type {
   GetAppSettingsResult,
   NotificationEvent,
   PersistedState,
+  RemoteOffice,
   UsageSnapshot,
   WorkItem,
 } from "@shared/types";
@@ -21,6 +22,7 @@ import settingsFixture from "@shared/contract-fixtures/get-app-settings-result.j
 import awardsFixture from "@shared/contract-fixtures/awards-file.json";
 import discussionsFixture from "@shared/contract-fixtures/discussions-file.json";
 import usageFixture from "@shared/contract-fixtures/usage-snapshot.json";
+import linkRemoteFixture from "@shared/contract-fixtures/link-remote.json";
 
 export interface Scenario {
   state: PersistedState;
@@ -37,6 +39,8 @@ export interface Scenario {
   workItems: WorkItem[];
   /** 저장된 팀 토의. */
   discussions: Discussion[];
+  /** 머신 연동 호스트가 받은 다른 머신 캐릭터(없으면 이 머신만). */
+  remote?: RemoteOffice;
 }
 
 const harnessCwd = IS_WINDOWS ? "C:/tmp/gui-harness" : "/tmp/gui-harness";
@@ -183,6 +187,8 @@ const SCENARIOS: Record<string, (lang: string) => Scenario> = {
   fresh: (lang) => ({ ...base(lang), state: { version: 1, agents: [] }, settings: settings(true, lang) }),
   /** 온보딩을 마친 사무실, 세션 없음. */
   office: base,
+  /** 머신 연동 호스트: 붙은 머신 하나·끊긴 머신 하나의 층이 생긴다. */
+  machines: (lang) => ({ ...base(lang), remote: linkRemoteFixture as RemoteOffice }),
   /** 세션 둘이 돌고 하나는 입력을 기다리는 상태. */
   working: (lang) => ({
     ...base(lang),

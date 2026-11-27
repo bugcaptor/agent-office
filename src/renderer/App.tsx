@@ -35,6 +35,9 @@ import { resolveXtermTheme } from "./terminal/theme";
 import { terminalRegistry } from "./terminal/TerminalRegistry";
 import { TaskLabelLayer } from "./labels/TaskLabelLayer";
 import { MeetingBoard } from "./discussion/MeetingBoard";
+import { RemoteFloorBar, RemoteHoverCard } from "./link/RemoteFloorBar";
+import { RemoteChatDialog } from "./link/RemoteChatDialog";
+import { openRemoteChat, remoteFloorView, setRemoteHover, useRemoteFloors } from "./link/remoteFloors";
 import { DiscussionDialogs } from "./discussion/DiscussionSection";
 import { TerminalOverlay } from "./terminal/TerminalOverlay";
 import { MarkdownPalette } from "./markdown/MarkdownPalette";
@@ -122,6 +125,13 @@ function App() {
   }, [themeId, xtermOverride]);
   // 에이전트가 하나 이상 있으나 전원 퇴근했을 때만 true(빈 새 사무실은 제외).
   const lightsOff = useLightsOff();
+  // 머신 연동 호스트: 지금 보는 다른 머신 층(없으면 이 머신). 스냅숏이 바뀔 때만 새 참조가 된다.
+  const remoteOffice = useRemoteFloors((s) => s.office);
+  const floor = useRemoteFloors((s) => s.floor);
+  const remoteFloor = useMemo(
+    () => ({ view: remoteFloorView(remoteOffice, floor), onClick: openRemoteChat, onHover: setRemoteHover }),
+    [remoteOffice, floor],
+  );
 
   return (
     <div className={`app-root${workPanelsEnabled ? " work-panels-enabled" : ""}`} style={{ "--work-left": `${panelExtent(panelLayout.left)}px`, "--work-right": `${panelExtent(panelLayout.right)}px` } as CSSProperties}>
@@ -132,8 +142,9 @@ function App() {
           resyncSignal={appearanceSignal}
           theme={theme}
           scene={scene}
+          remoteFloor={remoteFloor}
         />
-        {lightsOff && (
+        {lightsOff && !remoteFloor.view && (
           <div className="office-lights-off" aria-hidden="true">
             <span className="office-lights-off-label">{t("shell.lightsOff")}</span>
           </div>
@@ -142,9 +153,13 @@ function App() {
         <MeetingBoard bus={officeBus} />
       </div>
       <UIChrome />
+      {/* 머신 연동 호스트의 층 단추. 상단 바 아래에 뜨므로 UIChrome 뒤에 둔다. */}
+      <RemoteFloorBar />
       {/* 토의 열기·보기 대화상자(포털). 업무 패널을 접거나 꺼도 회의록 보드에서 열 수 있게 여기에 둔다. */}
       <DiscussionDialogs />
       <AgentHoverCard />
+      <RemoteHoverCard />
+      <RemoteChatDialog />
       <DeskAssignMenu />
       <TerminalOverlay />
       {/* 마크다운 문서 탐색·편집(이슈 #10). 항상 마운트, 각자 store 상태로

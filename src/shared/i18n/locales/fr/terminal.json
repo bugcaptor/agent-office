@@ -141,10 +141,17 @@
       "queue-full": "La file est pleine (20 au maximum)",
       "queue-gone": "Déjà envoyé ou disparu",
       "queue-dropped-session": "La session a changé, la file a été vidée",
-      "control-char": "Le texte contient des caractères impossibles à envoyer"
+      "control-char": "Le texte contient des caractères impossibles à envoyer",
+      "link-remote-read-only": "Les personnages des autres machines sont en lecture seule pour l'instant",
+      "link-device-offline": "Cette machine est hors ligne",
+      "link-request-timeout": "Cette machine n'a pas répondu à temps"
     },
     "toChat": "Passer à la vue conversation (la CLI continue de tourner)",
-    "toTerminal": "Passer à la vue terminal"
+    "toTerminal": "Passer à la vue terminal",
+    "remoteTitle": "Conversation · {{machine}}",
+    "remoteHint": "Personnage d'une autre machine. Lecture seule ici.",
+    "close": "Fermer",
+    "remoteAskNote": "Répondez dans l'app ou le terminal de cette machine."
   },
   "shellAssist": {
     "placeholder": "Demandez avec des mots — ex. les 10 plus gros fichiers ici (remplit la ligne ; vous appuyez sur Entrée)",

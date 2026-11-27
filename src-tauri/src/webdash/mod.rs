@@ -28,9 +28,10 @@ pub mod log;
 mod markdown;
 pub mod net;
 mod routes;
+pub(crate) mod snapshot;
 mod work_progress;
 pub(crate) mod tls;
-pub(crate) use routes::foreground_cli;
+pub(crate) use routes::{foreground_cli, remote_image};
 
 use std::collections::HashMap;
 use std::net::{IpAddr, Ipv4Addr};
@@ -180,6 +181,10 @@ pub struct WebDashState {
     events: Arc<dyn WebDashEvents>,
     /// 머신 연동 호스트(`crate::link`). 걸려 있으면 `/link/pair`·`/link/ws`를 같은 서버에서 받는다.
     link: std::sync::OnceLock<Arc<crate::link::LinkHost>>,
+    /// 호스트가 받은 다른 머신들의 캐릭터(`link::remote`). `/api/state`에 함께 싣는다.
+    remote: std::sync::OnceLock<Arc<crate::link::RemoteView>>,
+    /// 터미널 포그라운드 조회 캐시(웹 라우트와 연동 클라이언트가 함께 쓴다).
+    pub(crate) probes: snapshot::ProbeCache,
 }
 
 impl WebDashState {
@@ -218,6 +223,8 @@ impl WebDashState {
             bridge,
             events,
             link: std::sync::OnceLock::new(),
+            remote: std::sync::OnceLock::new(),
+            probes: snapshot::ProbeCache::default(),
         }
     }
 
@@ -228,6 +235,15 @@ impl WebDashState {
 
     pub fn link_host(&self) -> Option<Arc<crate::link::LinkHost>> {
         self.link.get().cloned()
+    }
+
+    /// 다른 머신 캐릭터 보기를 건다(앱 시작 때 한 번).
+    pub fn set_link_remote(&self, remote: Arc<crate::link::RemoteView>) {
+        let _ = self.remote.set(remote);
+    }
+
+    pub fn link_remote(&self) -> Option<Arc<crate::link::RemoteView>> {
+        self.remote.get().cloned()
     }
 
     /// LAN 자체 서명 HTTPS의 CA 지문(열지 않았으면 None). 연동 페어링이 클라이언트가 본 지문과 맞춰 본다.

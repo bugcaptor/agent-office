@@ -112,6 +112,10 @@ export class OfficeWorld {
   // 분신을 다시 만들어야 하는지 가르는 키(외형 + 의자). 같으면 역할(말풍선·의사봉)만 고친다.
   private avatarKeys = new Map<string, string>();
   private unsub: Array<() => void> = [];
+  // 다른 층(머신)을 보는 동안 이 월드의 캐릭터를 통째로 숨긴다. 움직임은 계속 돈다.
+  private hidden = false;
+  // 캐릭터별 불투명도(끊긴 머신의 캐릭터를 흐리게). 엔티티를 다시 만들어도 남는다.
+  private alphas = new Map<string, number>();
 
   constructor(private o: OfficeWorldOptions) {
     this.unsub.push(
@@ -219,7 +223,23 @@ export class OfficeWorld {
 
   /** 분신은 본체가 그 의자에 앉아 있지 않을 때만 보인다 — 의자가 비는 순간도, 둘이 겹치는 순간도 없다. */
   private refreshAvatarVisibility(): void {
-    for (const [id, avatar] of this.avatars) avatar.setVisible(!this.entities.get(id)?.seatedInMeeting);
+    for (const [id, avatar] of this.avatars) avatar.setVisible(!this.hidden && !this.entities.get(id)?.seatedInMeeting);
+  }
+
+  /** 다른 층을 보는 동안 이 월드를 숨긴다(라벨 앵커도 내지 않는다). */
+  setHidden(hidden: boolean): void {
+    if (this.hidden === hidden) return;
+    this.hidden = hidden;
+    for (const e of this.entities.values()) e.root.visible = !hidden;
+    this.refreshAvatarVisibility();
+  }
+
+  /** 캐릭터 하나의 불투명도(1 = 그대로). */
+  setAgentAlpha(agentId: string, alpha: number): void {
+    if (alpha === 1) this.alphas.delete(agentId);
+    else this.alphas.set(agentId, alpha);
+    const e = this.entities.get(agentId);
+    if (e) e.root.alpha = alpha;
   }
 
   /** Diff the live entity set against `profiles`: destroy dropped agents, create new ones,
@@ -249,6 +269,7 @@ export class OfficeWorld {
       this.appearanceKeys.delete(id);
       this.sessionActive.delete(id);
       this.subagentCounts.delete(id);
+      this.alphas.delete(id);
     }
 
     // 외형 키가 바뀐 기존 엔티티는 파괴해 아래 생성 루프에서 재생성한다.
@@ -301,6 +322,8 @@ export class OfficeWorld {
       entity.setDiscussionRole(this.discussionRoleFor(p.id));
       entity.onClicked((id) => this.o.bus.emitAgentClicked(id));
       entity.onHover((id, x, y) => this.o.bus.emitAgentHoverChanged(id, x, y));
+      entity.root.visible = !this.hidden;
+      entity.root.alpha = this.alphas.get(p.id) ?? 1;
       this.o.characterLayer.addChild(entity.root);
       this.entities.set(p.id, entity);
       this.appearanceKeys.set(p.id, appearanceKey(p));
@@ -385,6 +408,7 @@ export class OfficeWorld {
   /** 라벨 앵커(머리 위, 월드좌표)를 out에 채운다. out은 호출자가 재사용(per-frame 할당 최소화). */
   collectLabelAnchors(out: Map<string, LabelAnchor>): void {
     out.clear();
+    if (this.hidden) return;
     for (const [id, e] of this.entities) {
       out.set(id, { x: e.root.x, y: e.root.y - LABEL_ANCHOR_OFFSET_Y });
     }

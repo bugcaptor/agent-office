@@ -50,5 +50,22 @@
   "desk": {
     "ownerHeader": "Occupant du bureau {{index}}",
     "unassign": "Libérer"
+  },
+  "floors": {
+    "aria": "Étages par machine",
+    "local": "Cette machine",
+    "summary": "{{working}} au travail · {{waiting}} en attente de réponse",
+    "waiting": "{{count}} en attente",
+    "offline": "Hors ligne — dernière liste vue",
+    "offlineNote": "Cette machine est hors ligne. Seuls les derniers personnages vus sont affichés, estompés.",
+    "empty": "Aucun personnage sur cette machine.",
+    "openChat": "Cliquer pour voir la conversation",
+    "state": {
+      "working": "Au travail",
+      "waiting": "Attend une réponse",
+      "idle": "Attend une saisie",
+      "off": "Éteint",
+      "offline": "Hors ligne"
+    }
   }
 }

@@ -342,6 +342,10 @@ const impl: Partial<AgentOfficeApi> = {
     const { client: _client, ...status } = linkStatusFixture as LinkStatus;
     return { ...status, host: status.host && { ...status.host, pairing: { code: "ABCDEFGH", expiresAt: Date.now() + 5 * 60_000 } } };
   },
+  async linkRemote() {
+    // `machines` 시나리오: 붙은 머신 하나(답을 기다리는 캐릭터 포함)·끊긴 머신 하나.
+    return scenario.remote ?? { machines: [] };
+  },
   async shellAssistGetConfig() {
     return {
       endpoints: [{ label: "4090 PC", baseUrl: "http://pc.tailnet:11434", model: "qwen2.5-coder:14b", apiKey: "", enabled: true }],
@@ -424,6 +428,8 @@ let chatAsks: PendingAsk[] = [
     { question: "Which fix?", header: "Fix", multiSelect: false, options: [{ label: "Grid", description: "Rewrite with CSS grid" }, { label: "Flex", description: "Keep flexbox" }] },
   ] } },
   { id: "p1:ask-2", toolName: "Bash", canAlways: true, sidechain: false, at: Date.now(), toolInput: { command: "rm -rf dist && npm run build", description: "Clean build" } },
+  // `machines` 시나리오: 다른 머신(studio-pc) 캐릭터 Ada의 권한 요청(원격 대화 보기는 보기만).
+  { id: "d-1a2b3c4d:agent-a:ask-1", toolName: "Bash", canAlways: true, sidechain: false, at: Date.now(), toolInput: { command: "cargo test --lib", description: "Run tests" } },
 ];
 const chatAnswers: unknown[] = [];
 const chatDownloads: unknown[] = [];

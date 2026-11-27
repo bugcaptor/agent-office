@@ -3,7 +3,7 @@
 // 머신 연동(`crate::link`) 설정·페어링 커맨드.
 use tauri::State;
 
-use crate::link::{LinkConfig, LinkStatus};
+use crate::link::{LinkConfig, LinkStatus, RemoteOffice};
 use crate::state::AppState;
 
 #[tauri::command(rename_all = "camelCase")]
@@ -49,4 +49,10 @@ pub async fn link_pair(address: String, code: String, app_state: State<'_, AppSt
 pub fn link_forget_host(app_state: State<'_, AppState>) -> Result<LinkStatus, String> {
     app_state.link.client.forget()?;
     Ok(app_state.link.status())
+}
+
+/// 호스트: 붙은 머신들의 캐릭터(오피스 씬의 머신별 층). 호스트 모드가 아니면 비어 있다.
+#[tauri::command(rename_all = "camelCase")]
+pub fn link_remote(app_state: State<'_, AppState>) -> RemoteOffice {
+    app_state.link.remote.office_view()
 }

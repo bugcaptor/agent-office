@@ -33,6 +33,12 @@ const HELLO_TIMEOUT: Duration = Duration::from_secs(10);
 /// 호스트가 ping을 보내는 간격. 클라이언트가 이만큼의 몇 배 동안 말이 없으면 끊는다.
 pub const PING_INTERVAL: Duration = Duration::from_secs(20);
 pub const DEAD_AFTER: Duration = Duration::from_secs(60);
+/// 클라이언트에 물은 것(`request`)의 기본 기다림.
+pub const REQUEST_TIMEOUT: Duration = Duration::from_secs(20);
+/// 받을 메시지 하나의 상한(대화 로그 백필·이미지 한 장이 한 프레임에 온다).
+const MAX_MESSAGE: usize = 64 * 1024 * 1024;
+
+type Pending = tokio::sync::oneshot::Sender<Result<serde_json::Value, String>>;
 
 /// 붙은 기기가 보낸 이벤트를 받는 쪽(다음 단계들이 건다). 인자: 기기 id, 종류, 데이터.
 pub type EventHandler = Arc<dyn Fn(&str, &str, &serde_json::Value) + Send + Sync>;
@@ -118,6 +124,9 @@ pub struct LinkHost {
     /// 기기별 (outbox epoch, 받은 마지막 seq). 메모리에만 둔다.
     seqs: Mutex<HashMap<String, (String, u64)>>,
     next_conn: std::sync::atomic::AtomicU64,
+    /// 답을 기다리는 물음(id → (기기, 받을 곳)).
+    pending: Mutex<HashMap<u64, (String, Pending)>>,
+    next_request: std::sync::atomic::AtomicU64,
     on_event: RwLock<Option<EventHandler>>,
     changed: Changed,
 }
@@ -151,6 +160,8 @@ impl LinkHost {
             conns: Mutex::new(HashMap::new()),
             seqs: Mutex::new(HashMap::new()),
             next_conn: 1.into(),
+            pending: Mutex::new(HashMap::new()),
+            next_request: 1.into(),
             on_event: RwLock::new(None),
             changed,
         }
@@ -388,6 +399,52 @@ impl LinkHost {
         LinkHostStatus { pairing, devices }
     }
 
+    pub fn is_connected(&self, device_id: &str) -> bool {
+        self.conns.lock().unwrap().contains_key(device_id)
+    }
+
+    /// 붙어 있는 기기에 묻고 답을 기다린다. 끊겨 있거나 `timeout` 안에 답이 없으면 실패한다.
+    pub async fn request(
+        &self,
+        device_id: &str,
+        kind: &str,
+        data: serde_json::Value,
+        timeout: Duration,
+    ) -> Result<serde_json::Value, String> {
+        let id = self.next_request.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        let (tx, rx) = tokio::sync::oneshot::channel();
+        self.pending.lock().unwrap().insert(id, (device_id.to_string(), tx));
+        let sent = {
+            let conns = self.conns.lock().unwrap();
+            conns.get(device_id).is_some_and(|c| c.tx.send(Down::Request { id, kind: kind.into(), data }).is_ok())
+        };
+        if !sent {
+            self.pending.lock().unwrap().remove(&id);
+            return Err("link-device-offline".into());
+        }
+        match tokio::time::timeout(timeout, rx).await {
+            Ok(Ok(answer)) => answer,
+            // 연결이 끊겨 받을 곳을 버렸다.
+            Ok(Err(_)) => Err("link-device-offline".into()),
+            Err(_) => {
+                self.pending.lock().unwrap().remove(&id);
+                Err("link-request-timeout".into())
+            }
+        }
+    }
+
+    /// 끊긴 기기에 걸린 물음을 모두 실패로 끝낸다.
+    fn fail_pending(&self, device_id: &str) {
+        let dropped: Vec<Pending> = {
+            let mut pending = self.pending.lock().unwrap();
+            let ids: Vec<u64> = pending.iter().filter(|(_, (d, _))| d == device_id).map(|(id, _)| *id).collect();
+            ids.into_iter().filter_map(|id| pending.remove(&id)).map(|(_, tx)| tx).collect()
+        };
+        for tx in dropped {
+            let _ = tx.send(Err("link-device-offline".into()));
+        }
+    }
+
     /// 붙어 있는 기기에 일을 보낸다. 끊겨 있으면 실패한다(호스트 쪽은 쌓아 두지 않는다).
     pub fn send(&self, device_id: &str, kind: &str, data: serde_json::Value) -> Result<(), String> {
         let conns = self.conns.lock().unwrap();
@@ -406,7 +463,9 @@ impl LinkHost {
             return (StatusCode::UNAUTHORIZED, refusal_body(&Refusal { error: "link-unauthorized".into(), ..Default::default() }))
                 .into_response();
         };
-        ws.on_upgrade(move |socket| async move { self.run_socket(socket, device_id, peer).await })
+        ws.max_message_size(MAX_MESSAGE)
+            .max_frame_size(MAX_MESSAGE)
+            .on_upgrade(move |socket| async move { self.run_socket(socket, device_id, peer).await })
     }
 
     async fn run_socket(self: Arc<Self>, socket: WebSocket, device_id: String, peer: Option<SocketAddr>) {
@@ -506,6 +565,9 @@ impl LinkHost {
                 self.save(&devices);
             }
         }
+        if mine || !self.is_connected(&device_id) {
+            self.fail_pending(&device_id);
+        }
         (self.changed)();
     }
 
@@ -526,8 +588,30 @@ impl LinkHost {
                     let Some(Ok(msg)) = msg else { return };
                     heard = Instant::now();
                     match msg {
-                        Message::Text(text) => {
-                            if let Ok(Up::Event { seq, kind, data }) = serde_json::from_str::<Up>(&text) {
+                        Message::Text(text) => match serde_json::from_str::<Up>(&text) {
+                            Ok(Up::Live { kind, data }) => {
+                                let handler = self.on_event.read().unwrap().clone();
+                                if let Some(h) = handler {
+                                    h(device_id, &kind, &data);
+                                }
+                            }
+                            Ok(Up::Reply { id, data, error }) => {
+                                let waiter = {
+                                    let mut pending = self.pending.lock().unwrap();
+                                    // 다른 기기가 남의 물음에 답하지 못하게 기기까지 맞춘다.
+                                    match pending.get(&id) {
+                                        Some((d, _)) if d == device_id => pending.remove(&id).map(|(_, tx)| tx),
+                                        _ => None,
+                                    }
+                                };
+                                if let Some(tx) = waiter {
+                                    let _ = tx.send(match error {
+                                        Some(e) => Err(e),
+                                        None => Ok(data),
+                                    });
+                                }
+                            }
+                            Ok(Up::Event { seq, kind, data }) => {
                                 let fresh = {
                                     let mut seqs = self.seqs.lock().unwrap();
                                     let entry = seqs.entry(device_id.to_string()).or_insert_with(|| (epoch.to_string(), 0));
@@ -547,7 +631,8 @@ impl LinkHost {
                                     return;
                                 }
                             }
-                        }
+                            _ => {}
+                        },
                         Message::Close(_) => return,
                         _ => {}
                     }
@@ -568,6 +653,50 @@ impl LinkHost {
                     }
                 }
             }
+        }
+    }
+}
+
+#[cfg(test)]
+impl LinkHost {
+    /// 시험: 페어링을 거치지 않고 기기 하나를 넣는다. 기기 id를 돌려준다.
+    pub(crate) fn add_test_device(&self, machine_id: &str, name: &str) -> String {
+        let id = format!("d-{}", &uuid::Uuid::new_v4().simple().to_string()[..8]);
+        self.devices.lock().unwrap().push(DeviceRecord {
+            id: id.clone(),
+            machine_id: machine_id.into(),
+            name: name.into(),
+            token_sha256: String::new(),
+            paired_at: now_ms(),
+            last_seen_at: None,
+            app_version: None,
+        });
+        id
+    }
+
+    /// 시험: 붙어 있는 것처럼 둔다(보낸 것은 받는 쪽 `rx`로 나온다).
+    pub(crate) fn set_test_connected(&self, device_id: &str, on: bool) -> Option<mpsc::UnboundedReceiver<Down>> {
+        let mut conns = self.conns.lock().unwrap();
+        if !on {
+            conns.remove(device_id);
+            return None;
+        }
+        let (tx, rx) = mpsc::unbounded_channel();
+        conns.insert(device_id.into(), Conn { conn_id: 0, since: now_ms(), address: None, tx });
+        Some(rx)
+    }
+
+    /// 시험: 클라이언트가 `Reply`를 보낸 것처럼 받는다.
+    pub(crate) fn test_reply(&self, device_id: &str, id: u64, answer: Result<serde_json::Value, String>) {
+        let waiter = {
+            let mut pending = self.pending.lock().unwrap();
+            match pending.get(&id) {
+                Some((d, _)) if d == device_id => pending.remove(&id).map(|(_, tx)| tx),
+                _ => None,
+            }
+        };
+        if let Some(tx) = waiter {
+            let _ = tx.send(answer);
         }
     }
 }

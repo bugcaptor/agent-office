@@ -339,3 +339,73 @@ fn config_reads_defaults_and_rejects_bad_addresses() {
     let status = state.configure(LinkConfig { mode: LinkMode::Host, ..status.config }).unwrap();
     assert!(status.host.is_some() && status.client.is_none());
 }
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn live_snapshots_reach_the_host_view_and_host_requests_get_answers() {
+    let mut host = Host::new();
+    // 실제 앱처럼 받은 것을 원격 보기로 넘긴다(시험용 기록 처리기 대신).
+    let remote = Arc::downgrade(&host.state.remote);
+    host.state.host.set_event_handler(Arc::new(move |device: &str, kind: &str, data: &serde_json::Value| {
+        if let Some(r) = remote.upgrade() {
+            r.ingest(device, kind, data);
+        }
+    }));
+    host.serve().await;
+    let dir = temp("client");
+    let c = client(&dir);
+    c.pair(&host.address(), &host.code()).await.unwrap();
+    c.client.set_request_handler(Arc::new(|kind, data| {
+        Box::pin(async move {
+            match kind.as_str() {
+                "log" => Ok(json!({ "epoch": 1, "last": 0, "attached": true, "items": [], "asked": data["agentId"] })),
+                _ => Err("link-unsupported".to_string()),
+            }
+        })
+    }));
+    assert!(!c.client.send_live("agents", json!({})), "붙기 전에는 버린다");
+    tokio::spawn(c.client.clone().run());
+    until("connected", || client_state(&c).state == LinkClientState::Connected).await;
+    let device = host.devices()[0].id.clone();
+    until("host sees connection", || host.state.host.is_connected(&device)).await;
+
+    let snap = json!({ "now": now_ms(), "outputAt": {}, "characters": [{ "agentId": "a1", "name": "Ada", "role": "",
+        "session": { "sessionId": "s", "state": "running" }, "asks": [] }] });
+    assert!(c.client.send_live("agents", snap));
+    until("snapshot", || host.state.remote.office_view().machines.first().is_some_and(|m| m.online && m.characters.len() == 1)).await;
+    let web = host.state.remote.web_view();
+    assert_eq!(web.characters[0]["agentId"], json!(format!("{device}:a1")));
+    assert_eq!(web.characters[0]["machine"]["name"], json!("client-pc"));
+    assert_eq!(client_state(&c).pending, 0, "스냅숏은 outbox에 쌓지 않는다");
+
+    let (dev, agent) = host.state.remote.resolve(&format!("{device}:a1")).unwrap();
+    let page = host.state.remote.request(&dev, "log", json!({ "agentId": agent })).await.unwrap();
+    assert_eq!(page["asked"], json!("a1"));
+    let err = host.state.remote.request(&dev, "nope", json!({ "agentId": agent })).await.unwrap_err();
+    assert_eq!(err, "link-unsupported");
+
+    // 끊기면 그 머신은 꺼진 모습이 되고, 물음은 바로 실패한다.
+    host.halt();
+    until("offline", || !host.state.remote.office_view().machines[0].online).await;
+    let err = host.state.remote.request(&dev, "log", json!({ "agentId": "a1" })).await.unwrap_err();
+    assert_eq!(err, "link-device-offline");
+    assert_eq!(host.state.remote.web_view().characters[0]["name"], json!("Ada"), "끊겨도 명단은 남는다");
+}
+
+#[tokio::test]
+async fn host_requests_time_out_and_ignore_replies_from_other_devices() {
+    let host = LinkHost::new(None, "h".into(), Arc::new(|| "Host".into()), Arc::new(|| {}));
+    host.set_enabled(true);
+    let a = host.add_test_device("m-a", "A");
+    let b = host.add_test_device("m-b", "B");
+    let mut rx = host.set_test_connected(&a, true).unwrap();
+    let host = Arc::new(host);
+    let h = host.clone();
+    let a2 = a.clone();
+    let ask = tokio::spawn(async move { h.request(&a2, "log", json!({}), Duration::from_millis(300)).await });
+    let Some(Down::Request { id, kind, .. }) = rx.recv().await else { panic!("no request") };
+    assert_eq!(kind, "log");
+    // 다른 기기가 같은 id로 답해도 받지 않는다.
+    host.test_reply(&b, id, Ok(json!("forged")));
+    assert_eq!(ask.await.unwrap().unwrap_err(), "link-request-timeout");
+    assert_eq!(host.request(&b, "log", json!({}), Duration::from_millis(50)).await.unwrap_err(), "link-device-offline");
+}

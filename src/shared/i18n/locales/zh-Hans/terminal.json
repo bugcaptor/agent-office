@@ -141,10 +141,17 @@
       "queue-full": "队列已满(最多 20 条)",
       "queue-gone": "已发送或已不存在",
       "queue-dropped-session": "会话已更换,队列已清空",
-      "control-char": "包含无法发送的字符"
+      "control-char": "包含无法发送的字符",
+      "link-remote-read-only": "其他机器上的角色暂时只能查看",
+      "link-device-offline": "那台机器已断开",
+      "link-request-timeout": "那台机器没有及时回应"
     },
     "toChat": "切换到对话视图(CLI 继续运行)",
-    "toTerminal": "切换到终端视图"
+    "toTerminal": "切换到终端视图",
+    "remoteTitle": "对话 · {{machine}}",
+    "remoteHint": "另一台机器上的角色。这里只能查看。",
+    "close": "关闭",
+    "remoteAskNote": "请在那台机器的应用或终端中回答。"
   },
   "shellAssist": {
     "placeholder": "用语言吩咐 — 例如:这个文件夹里最大的 10 个文件(填入输入行,回车由你按)",

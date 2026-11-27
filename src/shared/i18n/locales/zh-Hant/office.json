@@ -50,5 +50,22 @@
   "desk": {
     "ownerHeader": "{{index}} 號桌主人",
     "unassign": "取消指定"
+  },
+  "floors": {
+    "aria": "依機器分層",
+    "local": "本機",
+    "summary": "工作中 {{working}} · 等待回答 {{waiting}}",
+    "waiting": "等待 {{count}}",
+    "offline": "已中斷 — 僅顯示上次看到的名單",
+    "offlineNote": "這台機器已中斷連線。只以淡色顯示上次看到的角色。",
+    "empty": "這台機器上沒有角色。",
+    "openChat": "點擊檢視對話",
+    "state": {
+      "working": "工作中",
+      "waiting": "等待回答",
+      "idle": "等待輸入",
+      "off": "關閉",
+      "offline": "已中斷"
+    }
   }
 }

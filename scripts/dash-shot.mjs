@@ -8,7 +8,8 @@
 // 텍스트·이미지 클립보드 복사와 이미지·파일 다운로드, 하단 사용량 바, 생각 중·멈춤 상태 줄,
 // 직접 입력과 보낼 대기열(쌓기·빼기), 로그 위 이 세션 추정 사용량, 화면 테마 토글(브라우저에 저장),
 // 목록·업무 탭 진행 중 카드의 활성 캐릭터 로그 미리보기(접기·세션이 바뀌면 다시 펼침), 스플릿뷰(칸 격자·완료로 내리기·사이드 패널),
-// 목록·상세·스플릿 칸의 진행 중 업무 표시와 플랜 진행도.
+// 목록·상세·스플릿 칸의 진행 중 업무 표시와 플랜 진행도, 머신 연동 호스트의 머신별 구역(끊긴 머신 흐림)과
+// 다른 머신 캐릭터 화면(보기만 — 입력·조작 단추 없음, 권한 요청은 그 머신에서 답하라는 카드).
 import assert from "node:assert/strict";
 import { createServer } from "node:http";
 import { readFile, mkdir } from "node:fs/promises";
@@ -20,6 +21,7 @@ const dashCss = await readFile(resolve("src-tauri/web/dash.css"), "utf8");
 const dashJs = await readFile(resolve("src-tauri/web/dash.js"), "utf8");
 const tasksJs = await readFile(resolve("src-tauri/web/tasks.js"), "utf8");
 const now = Date.now();
+let machines = [];
 const characters = [
   {
     agentId: "a", name: "에이다", role: "개발", cwd: "/Volumes/ssd4tb/dev/very/long/path/to/agent-office", portrait: 1,
@@ -117,7 +119,7 @@ const server = createServer(async (req, res) => {
   if (url.pathname === "/dash.js") { res.setHeader("content-type", "text/javascript; charset=utf-8"); return res.end(dashJs); }
   if (url.pathname === "/tasks.js") { res.setHeader("content-type", "text/javascript; charset=utf-8"); return res.end(tasksJs); }
   if (url.pathname === "/api/state") {
-    return send({ app: "0.0.0", host: "회사 맥북 프로", rev: `r${rev}`, characters, officeAgent, folders, home: "/Users/me", outputAt: { a: Date.now() - aOutputAgo }, now: Date.now() });
+    return send({ app: "0.0.0", host: "회사 맥북 프로", rev: `r${rev}`, characters, officeAgent, machines, folders, home: "/Users/me", outputAt: { a: Date.now() - aOutputAgo }, now: Date.now() });
   }
   if (url.pathname === "/api/usage") return send(usage);
   if (url.pathname.startsWith("/api/models/")) {
@@ -499,6 +501,32 @@ await p.locator("#tb-head-chips").getByRole("button", { name: /대화 로그/ })
 await p.locator("#sent .sent-row").first().waitFor();
 await p.locator("#sent .sent-row").first().click();
 await p.locator('#tb-detail[data-id="w2"]').waitFor();
+
+// 머신 연동 호스트: 붙은 머신(studio-pc)과 끊긴 머신(laptop)의 구역
+machines = [{ id: "d-1a2b3c4d", name: "studio-pc", online: true, count: 1 }, { id: "d-5e6f7a8b", name: "laptop", online: false, count: 1 }];
+characters.push(
+  { agentId: "d-1a2b3c4d:r1", name: "Ada", role: "", cwd: "/work/api", clockedOut: false, portrait: null, remote: true,
+    machine: { id: "d-1a2b3c4d", name: "studio-pc", online: true },
+    session: { sessionId: "rs1", state: "running" }, turn: { phase: "needs-human", at: Date.now() - 5000 },
+    asks: [{ id: "k1", toolName: "Bash", canAlways: true, sidechain: false, at: Date.now() - 5000, toolInput: { command: "cargo test --lib", description: "Run tests" } }],
+    queue: null, label: { goal: "API 테스트 고치기", cwd: "/work/api", branch: "main" } },
+  { agentId: "d-5e6f7a8b:r2", name: "Cleo", role: "", cwd: "/work/web", clockedOut: false, portrait: null, remote: true,
+    machine: { id: "d-5e6f7a8b", name: "laptop", online: false }, session: null, turn: null, asks: [], queue: null },
+);
+rev++;
+await p.getByRole("button", { name: "캐릭터" }).click();
+await p.locator(".machine-h", { hasText: "studio-pc" }).waitFor();
+assert.equal(await p.locator(".machine-h").count(), 3, "이 머신 + 붙은 머신 + 끊긴 머신");
+assert.equal(await p.locator(".card.offline", { hasText: "Cleo" }).count(), 1);
+await p.screenshot({ path: `${outDir}/list-machines.png`, fullPage: true });
+await p.locator(".card", { hasText: "Ada" }).filter({ hasText: "studio-pc" }).click();
+await p.locator(".ask.remote").waitFor();
+assert.equal(await p.locator("#msgform").count(), 0, "다른 머신 캐릭터에는 직접 입력이 없다");
+assert.equal(await p.locator("#head .btns").count(), 0, "조작 단추가 없다");
+assert.ok(logReqs.some((r) => r.startsWith("/api/log/d-1a2b3c4d%3Ar1")), "로그는 머신:캐릭터 id로 묻는다");
+await p.screenshot({ path: `${outDir}/agent-remote.png`, fullPage: true });
+// 업무 탭 담당 고르기에는 이 머신 캐릭터만
+assert.ok(!(await p.evaluate(() => window.Dash.getChars().some((c) => c.remote))));
 
 console.log(JSON.stringify(posts));
 await browser.close();

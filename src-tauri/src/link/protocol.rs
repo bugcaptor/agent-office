@@ -137,6 +137,17 @@ pub enum Up {
     },
     /// 쌓아 둔 이벤트·보고 하나. 호스트는 처리한 뒤 `Ack`로 답한다.
     Event { seq: u64, kind: String, data: serde_json::Value },
+    /// 지금 상태 스냅숏처럼 마지막 값만 의미 있는 것. 쌓지 않고 ack도 없다 — 끊겨 있으면 버리고, 다시 붙으면
+    /// 새로 보낸다.
+    Live { kind: String, data: serde_json::Value },
+    /// 호스트 `Request`에 대한 답. `error`가 있으면 실패.
+    Reply {
+        id: u64,
+        #[serde(default)]
+        data: serde_json::Value,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        error: Option<String>,
+    },
 }
 
 /// 호스트 → 클라이언트.
@@ -162,6 +173,8 @@ pub enum Down {
     Ack { seq: u64 },
     /// 호스트가 보내는 일(다음 단계들의 세션 열기·입력 등). 클라이언트 처리기에 넘긴다.
     Command { kind: String, data: serde_json::Value },
+    /// 답을 기다리는 물음(대화 로그 한 쪽, 초상 따위). 클라이언트는 같은 `id`로 `Reply`를 보낸다.
+    Request { id: u64, kind: String, data: serde_json::Value },
     /// 호스트에서 이 기기를 해제했다. 다시 붙지 않는다.
     Revoked,
 }
@@ -198,6 +211,12 @@ mod tests {
         let text = serde_json::to_string(&up).unwrap();
         assert_eq!(text, r#"{"t":"event","seq":3,"kind":"report","data":{"x":1}}"#);
         assert_eq!(serde_json::from_str::<Up>(&text).unwrap(), up);
+        let live = Up::Live { kind: "agents".into(), data: serde_json::json!([]) };
+        assert_eq!(serde_json::to_string(&live).unwrap(), r#"{"t":"live","kind":"agents","data":[]}"#);
+        let reply: Up = serde_json::from_str(r#"{"t":"reply","id":7,"error":"unknown-agent"}"#).unwrap();
+        assert_eq!(reply, Up::Reply { id: 7, data: serde_json::Value::Null, error: Some("unknown-agent".into()) });
+        let req = Down::Request { id: 7, kind: "log".into(), data: serde_json::json!({"agentId": "a"}) };
+        assert_eq!(serde_json::to_string(&req).unwrap(), r#"{"t":"request","id":7,"kind":"log","data":{"agentId":"a"}}"#);
         let down: Down = serde_json::from_str(r#"{"t":"reject","error":"link-protocol-mismatch","hostProtocol":2,"hostAppVersion":"9.0.0"}"#).unwrap();
         assert!(matches!(down, Down::Reject { host_protocol: 2, .. }));
     }

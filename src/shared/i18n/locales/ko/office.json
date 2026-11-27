@@ -50,5 +50,22 @@
   "desk": {
     "ownerHeader": "{{index}}번 책상 주인",
     "unassign": "지정 해제"
+  },
+  "floors": {
+    "aria": "머신별 층",
+    "local": "이 머신",
+    "summary": "작업 중 {{working}} · 답을 기다림 {{waiting}}",
+    "waiting": "답 대기 {{count}}",
+    "offline": "끊김 — 마지막으로 본 명단만 보입니다",
+    "offlineNote": "끊긴 머신입니다. 마지막으로 본 캐릭터만 흐리게 보입니다.",
+    "empty": "이 머신에는 캐릭터가 없습니다.",
+    "openChat": "눌러서 대화 보기",
+    "state": {
+      "working": "작업 중",
+      "waiting": "답을 기다림",
+      "idle": "입력 대기",
+      "off": "꺼짐",
+      "offline": "끊김"
+    }
   }
 }

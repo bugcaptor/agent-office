@@ -141,10 +141,17 @@
       "queue-full": "대기열이 가득 찼습니다(최대 20건)",
       "queue-gone": "이미 보냈거나 사라진 메시지입니다",
       "queue-dropped-session": "세션이 바뀌어 대기열을 비웠습니다",
-      "control-char": "보낼 수 없는 문자가 있습니다"
+      "control-char": "보낼 수 없는 문자가 있습니다",
+      "link-remote-read-only": "다른 머신의 캐릭터는 아직 보기만 할 수 있습니다",
+      "link-device-offline": "그 머신이 끊겼습니다",
+      "link-request-timeout": "그 머신이 제때 답하지 않았습니다"
     },
     "toChat": "대화 보기로 전환(CLI는 그대로 돎)",
-    "toTerminal": "터미널 보기로 전환"
+    "toTerminal": "터미널 보기로 전환",
+    "remoteTitle": "대화 보기 · {{machine}}",
+    "remoteHint": "다른 머신의 캐릭터입니다. 여기서는 보기만 합니다.",
+    "close": "닫기",
+    "remoteAskNote": "그 머신의 앱이나 터미널에서 답하세요."
   },
   "shellAssist": {
     "placeholder": "말로 시키기 — 예: 이 폴더에서 큰 파일 10개 (명령은 입력줄에 채워지고 Enter는 직접)",

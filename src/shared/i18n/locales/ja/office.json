@@ -50,5 +50,22 @@
   "desk": {
     "ownerHeader": "{{index}}番デスクの担当",
     "unassign": "指定解除"
+  },
+  "floors": {
+    "aria": "マシン別のフロア",
+    "local": "このマシン",
+    "summary": "作業中 {{working}} · 回答待ち {{waiting}}",
+    "waiting": "回答待ち {{count}}",
+    "offline": "切断 — 最後に見た名簿のみ",
+    "offlineNote": "切断されたマシンです。最後に見たキャラクターだけを薄く表示します。",
+    "empty": "このマシンにはキャラクターがいません。",
+    "openChat": "クリックで会話を表示",
+    "state": {
+      "working": "作業中",
+      "waiting": "回答待ち",
+      "idle": "入力待ち",
+      "off": "オフ",
+      "offline": "切断"
+    }
   }
 }

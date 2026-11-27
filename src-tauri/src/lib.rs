@@ -796,6 +796,8 @@ pub fn run() {
                 Arc::new(crate::link::TauriLinkEvents(handle.clone())),
             );
             web_dash.set_link_host(link.host.clone());
+            web_dash.set_link_remote(link.remote.clone());
+            crate::link::share::install(&link, control_ctx.clone(), web_dash.clone());
             link.start();
             if web_dash.config().enabled {
                 tauri::async_runtime::block_on(web_dash.reconcile(control_ctx.clone(), web_dash.clone()));
@@ -962,6 +964,7 @@ pub fn run() {
             ipc::commands::link_revoke_device,
             ipc::commands::link_pair,
             ipc::commands::link_forget_host,
+            ipc::commands::link_remote,
             ipc::commands::scan_discussion_inbox,
             ipc::commands::auto_run_judge,
             ipc::commands::load_work_items,

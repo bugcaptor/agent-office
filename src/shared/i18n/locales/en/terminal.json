@@ -141,10 +141,17 @@
       "queue-full": "The queue is full (20 max)",
       "queue-gone": "Already sent or gone",
       "queue-dropped-session": "The session changed, so the queue was cleared",
-      "control-char": "Text contains characters that can't be sent"
+      "control-char": "Text contains characters that can't be sent",
+      "link-remote-read-only": "Characters on other machines are view-only for now",
+      "link-device-offline": "That machine is offline",
+      "link-request-timeout": "That machine did not answer in time"
     },
     "toChat": "Switch to conversation view (the CLI keeps running)",
-    "toTerminal": "Switch to terminal view"
+    "toTerminal": "Switch to terminal view",
+    "remoteTitle": "Conversation · {{machine}}",
+    "remoteHint": "A character on another machine. View only here.",
+    "close": "Close",
+    "remoteAskNote": "Answer in that machine's app or terminal."
   },
   "shellAssist": {
     "placeholder": "Ask in words — e.g. the 10 largest files here (fills the input line; you press Enter)",

@@ -40,6 +40,7 @@ export const Commands = {
   linkRevokeDevice: "link_revoke_device",
   linkPair: "link_pair",
   linkForgetHost: "link_forget_host",
+  linkRemote: "link_remote",
   shellAssistGetConfig: "shell_assist_get_config",
   shellAssistSetConfig: "shell_assist_set_config",
   shellAssistListModels: "shell_assist_list_models",
@@ -252,4 +253,5 @@ export const Events = {
   webDashActivity: "web-dash-activity",
   // 머신 연동 상태(모드·기기·연결)가 바뀌었다.
   linkStatus: "link-status",
+  linkRemote: "link-remote",
 } as const;

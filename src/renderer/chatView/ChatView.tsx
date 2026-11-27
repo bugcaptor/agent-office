@@ -57,7 +57,14 @@ function errorCode(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
 }
 
-export function ChatView({ agentId, active, onShowTerminal }: { agentId: string; active: boolean; onShowTerminal: () => void }) {
+/** 다른 머신 캐릭터(머신 연동 호스트)를 볼 때: 보기만 한다 — 입력칸·답하기·대기열 빼기가 없다. */
+export interface RemoteChatTarget {
+  /** 그 머신 이름(머리에 보인다). */
+  machine: string;
+  onClose: () => void;
+}
+
+export function ChatView({ agentId, active, onShowTerminal, remote }: { agentId: string; active: boolean; onShowTerminal?: () => void; remote?: RemoteChatTarget }) {
   const { t } = useTranslation("terminal");
   const [page, setPage] = useState<ChatLogPage | null>(null);
   const [asks, setAsks] = useState<PendingAsk[]>([]);
@@ -202,11 +209,13 @@ export function ChatView({ agentId, active, onShowTerminal }: { agentId: string;
   return (
     <div className="chat-view" data-agent-id={agentId}>
       <div className="chat-view-bar">
-        <span className="chat-view-bar-title">{t("chatView.title")}</span>
-        <span className="chat-view-bar-hint">{t("chatView.hint")}</span>
-        <button type="button" className="pixel-btn" onClick={onShowTerminal}>{t("chatView.showTerminal")}</button>
+        <span className="chat-view-bar-title">{remote ? t("chatView.remoteTitle", { machine: remote.machine }) : t("chatView.title")}</span>
+        <span className="chat-view-bar-hint">{remote ? t("chatView.remoteHint") : t("chatView.hint")}</span>
+        {remote
+          ? <button type="button" className="pixel-btn" onClick={remote.onClose}>{t("chatView.close")}</button>
+          : <button type="button" className="pixel-btn" onClick={onShowTerminal}>{t("chatView.showTerminal")}</button>}
       </div>
-      <div className="chat-view-input">
+      {!remote && <div className="chat-view-input">
         <textarea
           ref={inputRef}
           value={draft}
@@ -224,7 +233,7 @@ export function ChatView({ agentId, active, onShowTerminal }: { agentId: string;
         <button type="button" className="pixel-btn primary" disabled={sending || !draft.trim()} onClick={() => void send()}>
           {willQueue ? t("chatView.queue") : t("chatView.send")}
         </button>
-      </div>
+      </div>}
       {notice && <div className="chat-view-notice" role="status">{notice}</div>}
       {(queued.length > 0 || queueError) && (
         <div className="chat-queue" aria-label={t("chatView.queueTitle", { count: queued.length })}>
@@ -233,7 +242,7 @@ export function ChatView({ agentId, active, onShowTerminal }: { agentId: string;
             <div key={m.id} className="chat-queue-item">
               <span className="chat-queue-n">{i + 1}</span>
               <span className="chat-queue-text" title={m.text}>{m.text}</span>
-              <button type="button" className="pixel-btn chat-queue-cancel" aria-label={t("chatView.queueCancel")} title={t("chatView.queueCancel")} onClick={() => void cancelQueued(m.id)}>✕</button>
+              {!remote && <button type="button" className="pixel-btn chat-queue-cancel" aria-label={t("chatView.queueCancel")} title={t("chatView.queueCancel")} onClick={() => void cancelQueued(m.id)}>✕</button>}
             </div>
           ))}
           {queueError && <div className="chat-queue-error">{errText(queueError)}</div>}
@@ -246,7 +255,7 @@ export function ChatView({ agentId, active, onShowTerminal }: { agentId: string;
           atTop.current = e.currentTarget.scrollTop < TOP_PX;
         }}
       >
-        {asks.map((a) => <AskCard key={a.id} ask={a} onAnswer={answer} onNotice={showActionNotice} />)}
+        {asks.map((a) => remote ? <RemoteAskCard key={a.id} ask={a} /> : <AskCard key={a.id} ask={a} onAnswer={answer} onNotice={showActionNotice} />)}
         {page?.attached && live && <LiveRow live={live} />}
         {!page ? (
           <div className="chat-view-empty">…</div>
@@ -414,6 +423,21 @@ function ChatImage({ item, agentId, onZoom, onNotice }: Omit<ItemActions, "epoch
       </button>
       {sourceLine}
       <ImageActions imageRef={imageRef} agentId={agentId} imageId={id} onNotice={onNotice} />
+    </div>
+  );
+}
+
+/** 다른 머신의 권한 요청·질문. 이 단계는 보기만 한다 — 그 머신(앱·터미널)에서 답한다. */
+function RemoteAskCard({ ask }: { ask: PendingAsk }) {
+  const { t } = useTranslation("terminal");
+  const question = ask.toolName === "AskUserQuestion";
+  const title = question ? t("chatView.askQuestion") : ask.toolName === "ExitPlanMode" ? t("chatView.askPlan") : t("chatView.askPermission", { tool: ask.toolName });
+  const lines = question ? askQuestions(ask).map((q) => q.question) : [permissionSummary(ask).target ?? permissionSummary(ask).body];
+  return (
+    <div className="chat-ask remote">
+      <div className="chat-ask-title">{ask.sidechain ? "⤷ " : ""}{title}</div>
+      {lines.filter(Boolean).map((line, i) => <div key={i} className="chat-ask-qt">{line}</div>)}
+      <div className="chat-ask-note">{t("chatView.remoteAskNote")}</div>
     </div>
   );
 }

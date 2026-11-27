@@ -72,3 +72,33 @@ export interface LinkStatus {
   /** 클라이언트 모드일 때만. */
   client?: LinkClientStatus;
 }
+
+/** 호스트 오피스의 머신별 층에 서는 원격 캐릭터 하나. Rust `link::remote::RemoteCharacter`. */
+export interface RemoteCharacter {
+  /** `기기id:캐릭터id`. 대화 보기 커맨드(`chat_view_*`)에 그대로 넘기면 그 머신에 묻는다. */
+  id: string;
+  /** 그 머신에서의 캐릭터 id. */
+  agentId: string;
+  name: string;
+  role: string;
+  /** 외형(`archetype`·`seed`·`colors`). 커스텀 시트는 오지 않는다(절차 생성 모습). 없으면 null. */
+  appearance: { archetype?: string | null; seed?: string; colors?: Record<string, string> | null } | null;
+  /** 세션 상태. 세션이 없거나 머신이 끊겼으면 없다. */
+  sessionState?: "starting" | "running" | "exited" | "disposed";
+  /** 권한 요청이 걸렸거나 턴이 사람을 기다림. */
+  needsHuman: boolean;
+  clockedOut: boolean;
+}
+
+export interface RemoteMachine {
+  deviceId: string;
+  name: string;
+  /** 끊겼으면 false — 마지막으로 본 명단만 꺼진 모습으로 보인다. */
+  online: boolean;
+  characters: RemoteCharacter[];
+}
+
+/** `link_remote` 응답·`link-remote` 이벤트(호스트 모드에서만 채워진다). */
+export interface RemoteOffice {
+  machines: RemoteMachine[];
+}

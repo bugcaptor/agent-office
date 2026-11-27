@@ -34,6 +34,14 @@ import type { ThemeDef } from "../theme/themes";
 import type { SceneDef } from "./scenes/sceneTypes";
 import type { OfficeBus } from "./bus";
 import type { AgentProfile } from "./types";
+import type { RemoteFloorView } from "./world/RemoteFloor";
+
+/** 머신 연동 호스트의 다른 머신 층(보일 층과 클릭·hover 받는 곳). */
+export interface RemoteFloorProps {
+  view: RemoteFloorView | null;
+  onClick?: (id: string) => void;
+  onHover?: (id: string | null, x: number, y: number) => void;
+}
 
 export function useOfficeScene(
   bus: OfficeBus,
@@ -41,6 +49,7 @@ export function useOfficeScene(
   resyncSignal?: unknown,
   theme?: ThemeDef,
   scene?: SceneDef,
+  remoteFloor?: RemoteFloorProps,
 ) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const sceneRef = useRef<OfficeScene | null>(null);
@@ -59,6 +68,9 @@ export function useOfficeScene(
   // 안 그려진 채 고정된다. 항상 최신 profiles로 초기 동기화해야 한다.
   const profilesRef = useRef(profiles);
   profilesRef.current = profiles;
+  // 다른 머신 층도 마운트 시점이 아니라 최신 값으로 건다. 클릭·hover는 ref로 늘 최신 콜백을 부른다.
+  const remoteRef = useRef(remoteFloor);
+  remoteRef.current = remoteFloor;
 
   // Mount: create the scene exactly once (with StrictMode double-mount defense).
   useEffect(() => {
@@ -77,7 +89,10 @@ export function useOfficeScene(
       bus,
       theme: themeRef.current,
       scene: sceneDefRef.current,
+      onRemoteClick: (id) => remoteRef.current?.onClick?.(id),
+      onRemoteHover: (id, x, y) => remoteRef.current?.onHover?.(id, x, y),
     });
+    officeScene.setRemoteFloor(remoteRef.current?.view ?? null);
     sceneRef.current = officeScene;
     officeScene.init().then(() => {
       if (disposed) {
@@ -113,6 +128,12 @@ export function useOfficeScene(
   useEffect(() => {
     if (scene) sceneRef.current?.setScene(scene);
   }, [scene]);
+
+  // 다른 머신 층 전환·그 층의 캐릭터 상태 변화.
+  const remoteView = remoteFloor?.view ?? null;
+  useEffect(() => {
+    sceneRef.current?.setRemoteFloor(remoteView);
+  }, [remoteView]);
 
   return { containerRef };
 }

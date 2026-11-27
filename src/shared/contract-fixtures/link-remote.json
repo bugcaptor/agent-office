@@ -1,0 +1,47 @@
+{
+  "machines": [
+    {
+      "deviceId": "d-5e6f7a8b",
+      "name": "laptop",
+      "online": false,
+      "characters": [
+        {
+          "id": "d-5e6f7a8b:agent-c",
+          "agentId": "agent-c",
+          "name": "Cleo",
+          "role": "",
+          "appearance": null,
+          "needsHuman": false,
+          "clockedOut": false
+        }
+      ]
+    },
+    {
+      "deviceId": "d-1a2b3c4d",
+      "name": "studio-pc",
+      "online": true,
+      "characters": [
+        {
+          "id": "d-1a2b3c4d:agent-a",
+          "agentId": "agent-a",
+          "name": "Ada",
+          "role": "backend",
+          "appearance": { "archetype": "human", "seed": "ada-seed", "colors": { "hair": "#aa3311" } },
+          "sessionState": "running",
+          "needsHuman": true,
+          "clockedOut": false
+        },
+        {
+          "id": "d-1a2b3c4d:agent-b",
+          "agentId": "agent-b",
+          "name": "Bo",
+          "role": "",
+          "appearance": { "archetype": null, "seed": "bo-seed", "colors": null },
+          "sessionState": "exited",
+          "needsHuman": false,
+          "clockedOut": false
+        }
+      ]
+    }
+  ]
+}

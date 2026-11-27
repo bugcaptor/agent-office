@@ -293,6 +293,7 @@ export const tauriApi: AgentOfficeApi = {
   async linkRevokeDevice(deviceId) { return await invoke(Commands.linkRevokeDevice, { deviceId }); },
   async linkPair(address, code) { return await invoke(Commands.linkPair, { address, code }); },
   async linkForgetHost() { return await invoke(Commands.linkForgetHost); },
+  async linkRemote() { return await invoke(Commands.linkRemote); },
   async shellAssistGetConfig() { return await invoke(Commands.shellAssistGetConfig); },
   async shellAssistSetConfig(config) { return await invoke(Commands.shellAssistSetConfig, { config }); },
   async shellAssistListModels(endpoint) { return await invoke(Commands.shellAssistListModels, { endpoint }); },

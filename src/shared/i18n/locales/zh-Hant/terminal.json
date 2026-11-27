@@ -141,10 +141,17 @@
       "queue-full": "佇列已滿(最多 20 則)",
       "queue-gone": "已傳送或已不存在",
       "queue-dropped-session": "工作階段已更換,佇列已清空",
-      "control-char": "包含無法傳送的字元"
+      "control-char": "包含無法傳送的字元",
+      "link-remote-read-only": "其他機器上的角色暫時只能檢視",
+      "link-device-offline": "那台機器已中斷連線",
+      "link-request-timeout": "那台機器沒有及時回應"
     },
     "toChat": "切換到對話檢視(CLI 繼續執行)",
-    "toTerminal": "切換到終端機檢視"
+    "toTerminal": "切換到終端機檢視",
+    "remoteTitle": "對話 · {{machine}}",
+    "remoteHint": "另一台機器上的角色。這裡只能檢視。",
+    "close": "關閉",
+    "remoteAskNote": "請在那台機器的應用程式或終端機中回答。"
   },
   "shellAssist": {
     "placeholder": "用語言吩咐 — 例如:這個資料夾裡最大的 10 個檔案(填入輸入列,Enter 由你按)",

@@ -27,6 +27,7 @@ import { TileRenderer } from "./map/TileRenderer";
 import { BOSS_DESK_RECT, TILE_SIZE, type OfficeMap, type TileRect } from "./map/mapData";
 import { tileCenterPx } from "./world/pathing";
 import { OfficeWorld } from "./world/OfficeWorld";
+import { RemoteFloor, type RemoteFloorView } from "./world/RemoteFloor";
 import { THEMES } from "../theme/themes";
 import type { ThemeDef } from "../theme/themes";
 import { SCENES } from "./scenes/scenes";
@@ -47,6 +48,10 @@ export interface OfficeSceneOptions {
   theme?: ThemeDef;
   /** 풍경(scene 축) — 맵 + 타일 드로잉. 기본은 사무실. */
   scene?: SceneDef;
+  /** 머신 연동: 다른 머신 층의 캐릭터를 눌렀다(`기기id:캐릭터id`). */
+  onRemoteClick?: (id: string) => void;
+  /** 머신 연동: 다른 머신 층 캐릭터 hover(창 좌표). id=null이면 해제. */
+  onRemoteHover?: (id: string | null, x: number, y: number) => void;
 }
 
 export class OfficeScene {
@@ -60,6 +65,9 @@ export class OfficeScene {
   private opts: OfficeSceneOptions;
   private started = false;
   private world: OfficeWorld;
+  /** 다른 머신 층(머신 연동 호스트). 보일 때는 이 머신 캐릭터·책상 클릭을 숨긴다. */
+  private remote: RemoteFloor;
+  private remoteView: RemoteFloorView | null = null;
   private tickerCallback?: (ticker: Ticker) => void;
   private labelAnchorsWorld = new Map<string, LabelAnchor>();
   private labelAnchorsScreen = new Map<string, LabelAnchor>();
@@ -142,6 +150,39 @@ export class OfficeScene {
       overlayLayer: this.overlayLayer,
       map: this.scene.map,
     });
+    this.remote = new RemoteFloor({
+      characterLayer: this.sortableLayer,
+      overlayLayer: this.overlayLayer,
+      map: this.scene.map,
+      onClick: (id) => opts.onRemoteClick?.(id),
+      onHover: (id, x, y) => {
+        const rect = opts.canvas.getBoundingClientRect();
+        opts.onRemoteHover?.(id, x + rect.left, y + rect.top);
+      },
+    });
+  }
+
+  /**
+   * 머신 연동: 다른 머신의 층을 보이거나(view) 이 머신 층으로 돌아온다(null). 다른 층을 보는 동안에는 이 머신
+   * 캐릭터를 숨기고, 책상 주인 지정·보스 책상·저장소 점검 클릭과 트로피·회의록 보드 자리를 끈다.
+   * init 전에 불려도 값만 둔다.
+   */
+  setRemoteFloor(view: RemoteFloorView | null): void {
+    this.remoteView = view;
+    if (!this.started) return;
+    this.applyFloor();
+  }
+
+  private applyFloor(): void {
+    const remote = this.remoteView !== null;
+    this.remote.show(this.remoteView);
+    this.world.setHidden(remote);
+    const mode = remote ? "none" : "static";
+    for (const hit of this.deskHits) hit.eventMode = mode;
+    if (this.bossHit) this.bossHit.eventMode = mode;
+    if (this.repositoryServer) this.repositoryServer.eventMode = mode;
+    this.updateTrophy();
+    this.publishLabelAnchors();
   }
 
   /** 현재 풍경의 타일 맵 — 좌석/보스 책상/줄 슬롯/라운지의 단일 출처. */
@@ -178,6 +219,7 @@ export class OfficeScene {
 
     this.applyCamera();
     this.started = true;
+    if (this.remoteView) this.applyFloor();
 
     // 오버레이(터미널 창 등)가 캔버스를 덮고 있을 때 뒤의 캐릭터가 hover되는
     // 것을 차단. 유닛 테스트의 FakeApplication renderer에는 events가 없어
@@ -192,6 +234,7 @@ export class OfficeScene {
     // and consistent with the rest of this subsystem's determinism rules).
     this.tickerCallback = (ticker) => {
       this.world.update(ticker.deltaMS);
+      this.remote.update(ticker.deltaMS);
       this.publishLabelAnchors();
     };
     this.app.ticker.add(this.tickerCallback);
@@ -390,6 +433,11 @@ export class OfficeScene {
    * DeskTop 케이스는 왼쪽 타일에만 랩탑을 그린다) 위에 얹는다. */
   private updateTrophy(): void {
     if (!this.trophyOverlay) return;
+    if (this.remoteView) {
+      // 트로피는 이 머신 수상자의 책상에 놓인다 — 다른 층에서는 치운다.
+      this.trophyOverlay.setVisible(false);
+      return;
+    }
     const seat = resolveAwardeeSeat(this.map, this.awardee?.agentId ?? null, this.profiles);
     if (!seat) {
       this.trophyOverlay.setVisible(false);
@@ -506,6 +554,7 @@ export class OfficeScene {
     // 월드는 Pixi 렌더러에 의존하지 않으므로 init 전에도 안전하게 전파한다
     // (init 전이면 엔티티가 없어 사실상 맵 참조 교체뿐).
     this.world.setMap(scene.map);
+    this.remote.setMap(scene.map);
     if (!this.started) return;
     // 파기 → 재도색 → 재구축 순서. 먼저 파기해야 repaint가 곧 버릴 팻말을
     // 헛되이 칠하지 않는다(paintBossSign은 팻말이 없으면 no-op).
@@ -515,6 +564,7 @@ export class OfficeScene {
     this.buildBossDesk();
     this.buildRepositoryServer();
     this.buildAwardDisplays();
+    if (this.remoteView) this.applyFloor(); // 새 히트영역도 다른 층이면 꺼 둔다
     this.applyCamera(); // 맵 크기가 달라질 수 있고, 팻말 글씨 배율도 여기서 다시 건다
     this.publishLabelAnchors(); // 순간이동한 캐릭터의 라벨을 즉시 따라오게
   }
@@ -621,6 +671,7 @@ export class OfficeScene {
     // 커스텀 고해상 시트를 이 정수 스케일에 맞춰 프리필터(이슈 #47). S가 바뀔
     // 때만 커스텀 엔티티 텍스처를 재생성한다(내부에서 no-op 가드).
     this.world.setRenderScale(scale);
+    this.remote.setRenderScale(scale);
     this.setAwardRenderScale(scale); // 벽 폴라로이드 초상도 같은 S로 프리필터(내부 no-op 가드)
     this.bossSignLabel?.scale.set(1 / scale);
     // Center, snapped to integer position to preserve sharpness.
@@ -652,6 +703,7 @@ export class OfficeScene {
   /** 캐릭터 머리 위 월드좌표를 화면좌표로 투영해 bus로 발행한다(매 tick).
    * Map 두 개를 재사용해 per-frame 할당을 상수로 유지한다. */
   private publishLabelAnchors(): void {
+    // 다른 층을 보는 동안 이 머신 캐릭터의 작업 라벨은 내지 않는다(숨긴 월드는 앵커를 비운다).
     this.world.collectLabelAnchors(this.labelAnchorsWorld);
     this.labelAnchorsScreen.clear();
     const scale = this.worldContainer.scale.x;
@@ -666,7 +718,8 @@ export class OfficeScene {
 
   /** 회의실의 화면 사각형을 바뀔 때만 알린다(회의록 보드가 그 옆에 붙는다). 회의실 없는 맵(구 픽스처)이면 null. */
   private publishMeetingRoomRect(scale: number, ox: number, oy: number): void {
-    const room = this.map.meetingRoom?.rect;
+    // 회의록 보드는 이 머신의 토의다 — 다른 층에서는 붙일 자리를 내지 않는다.
+    const room = this.remoteView ? undefined : this.map.meetingRoom?.rect;
     let rect: ScreenRect | null = null;
     if (room) {
       const tl = worldToScreen(room.x * TILE_SIZE, room.y * TILE_SIZE, scale, ox, oy);
@@ -699,6 +752,7 @@ export class OfficeScene {
     this.disposePortraitTexture();
     this.offHoverGate?.();
     this.world.destroy(); // unconditional: only unsubscribes bus + destroys entities, no Pixi dependency
+    this.remote.destroy();
     if (!this.started) return; // init() never completed -> nothing else to tear down yet
     this.started = false;
     if (this.tickerCallback) this.app.ticker.remove(this.tickerCallback);

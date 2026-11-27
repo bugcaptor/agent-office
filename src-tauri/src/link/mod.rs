@@ -17,6 +17,8 @@ mod client_tls;
 pub mod host;
 pub mod outbox;
 pub mod protocol;
+pub mod remote;
+pub mod share;
 
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, Weak};
@@ -26,6 +28,7 @@ use serde::{Deserialize, Serialize};
 pub use address::HostAddress;
 pub use client::{LinkClient, LinkClientState, LinkClientStatus};
 pub use host::{LinkDevice, LinkHost, LinkHostStatus, LinkPairing};
+pub use remote::{RemoteOffice, RemoteView};
 
 pub const CONFIG_FILE: &str = "link.json";
 pub const MACHINE_ID_FILE: &str = "link-machine-id";
@@ -78,6 +81,8 @@ pub struct LinkStatus {
 
 pub trait LinkEvents: Send + Sync {
     fn status(&self, status: &LinkStatus);
+    /// 호스트: 다른 머신 캐릭터들의 오피스 모습이 바뀌었다(`link-remote`).
+    fn remote(&self, office: &RemoteOffice);
 }
 
 pub struct TauriLinkEvents(pub tauri::AppHandle);
@@ -87,6 +92,10 @@ impl LinkEvents for TauriLinkEvents {
         use tauri::Emitter;
         let _ = self.0.emit_to("main", "link-status", status);
     }
+    fn remote(&self, office: &RemoteOffice) {
+        use tauri::Emitter;
+        let _ = self.0.emit_to("main", "link-remote", office);
+    }
 }
 
 pub struct LinkState {
@@ -95,6 +104,8 @@ pub struct LinkState {
     machine_id: String,
     pub host: Arc<LinkHost>,
     pub client: Arc<LinkClient>,
+    /// 호스트: 붙은 머신들의 캐릭터.
+    pub remote: Arc<RemoteView>,
     events: Arc<dyn LinkEvents>,
     last: Mutex<Option<LinkStatus>>,
 }
@@ -139,7 +150,20 @@ impl LinkState {
                 changed.clone(),
             ));
             let client = Arc::new(LinkClient::new(dir.clone(), machine_id.clone(), name(), changed));
-            LinkState { dir, config: Mutex::new(config), machine_id, host, client, events, last: Mutex::new(None) }
+            let remote = Arc::new(RemoteView::new(host.clone(), dir.as_ref().map(|d| d.join(remote::FILE))));
+            {
+                let remote = Arc::downgrade(&remote);
+                host.set_event_handler(Arc::new(move |device, kind, data| {
+                    if let Some(r) = remote.upgrade() {
+                        r.ingest(device, kind, data);
+                    }
+                }));
+            }
+            {
+                let events = events.clone();
+                remote.set_listener(Arc::new(move |office| events.remote(office)));
+            }
+            LinkState { dir, config: Mutex::new(config), machine_id, host, client, remote, events, last: Mutex::new(None) }
         });
         state.apply();
         state
@@ -197,6 +221,8 @@ impl LinkState {
 
     /// 바뀐 경우에만 렌더러에 알린다.
     fn publish(&self) {
+        // 기기가 붙거나 끊기거나 해제되면 원격 캐릭터 모습도 바뀐다.
+        self.remote.publish();
         let status = self.status();
         let mut last = self.last.lock().unwrap();
         if last.as_ref() != Some(&status) {
@@ -230,6 +256,7 @@ pub(crate) mod fake {
     pub struct NoLinkEvents;
     impl LinkEvents for NoLinkEvents {
         fn status(&self, _status: &LinkStatus) {}
+        fn remote(&self, _office: &RemoteOffice) {}
     }
 
     #[derive(Default)]
@@ -238,6 +265,7 @@ pub(crate) mod fake {
         fn status(&self, status: &LinkStatus) {
             self.0.lock().unwrap().push(status.clone());
         }
+        fn remote(&self, _office: &RemoteOffice) {}
     }
 }
 

@@ -39,6 +39,7 @@ vi.mock("../OfficeScene", () => {
   class FakeOfficeScene implements FakeOfficeSceneInstance {
     destroy = vi.fn();
     syncAgents = vi.fn();
+    setRemoteFloor = vi.fn();
     resolveInit: () => void = () => {};
     canvas: HTMLCanvasElement;
 

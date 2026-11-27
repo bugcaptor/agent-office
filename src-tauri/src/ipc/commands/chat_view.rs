@@ -39,6 +39,16 @@ fn agent_cwd(app_state: &AppState, agent_id: &str) -> String {
         .unwrap_or_else(crate::session::manager::home_dir)
 }
 
+/// 다른 머신 캐릭터(`기기id:캐릭터id`, 호스트 오피스의 머신별 층)면 (원격 보기, 기기, 그 머신의 캐릭터 id).
+/// 그 머신에 물어 같은 대화 보기를 그린다. 이 단계는 보기만이라 입력·답은 받지 않는다.
+fn remote_of(app_state: &AppState, agent_id: &str) -> Option<(std::sync::Arc<crate::link::RemoteView>, String, String)> {
+    let remote = app_state.link.remote.clone();
+    let (device, agent) = remote.resolve(agent_id)?;
+    Some((remote, device, agent))
+}
+
+const REMOTE_READ_ONLY: &str = "link-remote-read-only";
+
 /// 대화 한 쪽(`after`·`epoch`는 웹 상태판 `/api/log`와 같은 뜻).
 #[tauri::command(rename_all = "camelCase")]
 pub async fn chat_view_log(
@@ -46,12 +56,21 @@ pub async fn chat_view_log(
     after: Option<u64>,
     epoch: Option<u64>,
     app_state: State<'_, AppState>,
-) -> Result<LogPage, String> {
+) -> Result<serde_json::Value, String> {
+    if let Some((remote, device, agent)) = remote_of(&app_state, &agent_id) {
+        let ask = serde_json::json!({ "agentId": agent, "after": after, "epoch": epoch, "view": "app" });
+        return remote.request(&device, "log", ask).await;
+    }
     let cwd = agent_cwd(&app_state, &agent_id);
     let dash = app_state.web_dash.clone();
-    tokio::task::spawn_blocking(move || dash.app_logs.read(&agent_id, &cwd, after, epoch))
+    let page: LogPage = tokio::task::spawn_blocking(move || dash.app_logs.read(&agent_id, &cwd, after, epoch))
         .await
-        .map_err(|e| e.to_string())
+        .map_err(|e| e.to_string())?;
+    serde_json::to_value(page).map_err(|e| e.to_string())
+}
+
+fn data_url(media: &str, bytes: &[u8]) -> String {
+    format!("data:{media};base64,{}", base64::engine::general_purpose::STANDARD.encode(bytes))
 }
 
 /// 로그 항목의 이미지(`data:` URL). 상자에서 밀려났으면 None.
@@ -61,13 +80,15 @@ pub async fn chat_view_image(
     image_id: String,
     app_state: State<'_, AppState>,
 ) -> Result<Option<String>, String> {
+    if let Some((remote, device, agent)) = remote_of(&app_state, &agent_id) {
+        let found = crate::webdash::remote_image(&remote, &device, &agent, &image_id, "app").await;
+        return Ok(found.map(|(media, bytes)| data_url(&media, &bytes)));
+    }
     let dash = app_state.web_dash.clone();
     let found = tokio::task::spawn_blocking(move || dash.app_logs.image(&agent_id, &image_id))
         .await
         .map_err(|e| e.to_string())?;
-    Ok(found.map(|(media, bytes)| {
-        format!("data:{media};base64,{}", base64::engine::general_purpose::STANDARD.encode(bytes.as_slice()))
-    }))
+    Ok(found.map(|(media, bytes)| data_url(&media, bytes.as_slice())))
 }
 
 #[derive(Deserialize)]
@@ -85,6 +106,9 @@ pub async fn chat_view_download(
     source: ChatDownload,
     app_state: State<'_, AppState>,
 ) -> Result<bool, String> {
+    if remote_of(&app_state, &agent_id).is_some() {
+        return Err(REMOTE_READ_ONLY.into());
+    }
     let dash = app_state.web_dash.clone();
     let (name, bytes) = tokio::task::spawn_blocking(move || match source {
         ChatDownload::Image { image_id } => {
@@ -121,11 +145,15 @@ pub async fn chat_view_download(
 
 /// 이 캐릭터(탭) 세션이 답을 기다리는 권한 요청·질문.
 #[tauri::command(rename_all = "camelCase")]
-pub fn chat_view_asks(agent_id: String, app_state: State<'_, AppState>) -> Vec<PendingAsk> {
-    match app_state.manager.session_id_for(&agent_id) {
+pub async fn chat_view_asks(agent_id: String, app_state: State<'_, AppState>) -> Result<serde_json::Value, String> {
+    if let Some((remote, device, agent)) = remote_of(&app_state, &agent_id) {
+        return remote.request(&device, "asks", serde_json::json!({ "agentId": agent })).await;
+    }
+    let asks: Vec<PendingAsk> = match app_state.manager.session_id_for(&agent_id) {
         Some(sid) => app_state.observer.permissions().list(&sid),
         None => Vec::new(),
-    }
+    };
+    serde_json::to_value(asks).map_err(|e| e.to_string())
 }
 
 /// 권한 요청·질문에 답한다. 터미널에서 먼저 답했으면 `ask-gone`.
@@ -149,19 +177,29 @@ pub async fn chat_view_send(
     text: String,
     app_state: State<'_, AppState>,
 ) -> Result<SendOutcome, String> {
+    if remote_of(&app_state, &agent_id).is_some() {
+        return Err(REMOTE_READ_ONLY.into());
+    }
     let ctx = app_state.control_ctx.clone();
     ctx.chat_queue.send(&ctx, &agent_id, &text).await
 }
 
 /// 지금 상태(생각 중·멈춤을 가를 재료)와 보낼 메시지 대기열.
 #[tauri::command(rename_all = "camelCase")]
-pub fn chat_view_status(agent_id: String, app_state: State<'_, AppState>) -> LiveStatus {
-    crate::chat_queue::live_status(&app_state.control_ctx, &agent_id)
+pub async fn chat_view_status(agent_id: String, app_state: State<'_, AppState>) -> Result<serde_json::Value, String> {
+    if let Some((remote, device, agent)) = remote_of(&app_state, &agent_id) {
+        return remote.request(&device, "status", serde_json::json!({ "agentId": agent })).await;
+    }
+    let status: LiveStatus = crate::chat_queue::live_status(&app_state.control_ctx, &agent_id);
+    serde_json::to_value(status).map_err(|e| e.to_string())
 }
 
 /// 대기열에 쌓아 둔 메시지 하나를 뺀다. 이미 넣었으면 `queue-gone`.
 #[tauri::command(rename_all = "camelCase")]
 pub fn chat_view_cancel_queued(agent_id: String, id: String, app_state: State<'_, AppState>) -> Result<(), String> {
+    if remote_of(&app_state, &agent_id).is_some() {
+        return Err(REMOTE_READ_ONLY.into());
+    }
     if app_state.control_ctx.chat_queue.cancel(&agent_id, &id) {
         Ok(())
     } else {

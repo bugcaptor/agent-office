@@ -50,5 +50,22 @@
   "desk": {
     "ownerHeader": "Desk {{index}} owner",
     "unassign": "Unassign"
+  },
+  "floors": {
+    "aria": "Floors by machine",
+    "local": "This machine",
+    "summary": "{{working}} working · {{waiting}} waiting for an answer",
+    "waiting": "{{count}} waiting",
+    "offline": "Offline — showing the last roster seen",
+    "offlineNote": "This machine is offline. Only the characters last seen are shown, dimmed.",
+    "empty": "No characters on this machine.",
+    "openChat": "Click to view the conversation",
+    "state": {
+      "working": "Working",
+      "waiting": "Waiting for an answer",
+      "idle": "Waiting for input",
+      "off": "Off",
+      "offline": "Offline"
+    }
   }
 }

@@ -5,8 +5,7 @@
 // `bridge`로 넘긴다. 응답 봉투는 `ctl`과 같은 `{ok,data}`/`{ok:false,error}`다.
 use std::collections::HashMap;
 use std::net::{Ipv4Addr, SocketAddr};
-use std::sync::{Arc, Mutex};
-use std::time::{Duration, Instant};
+use std::sync::Arc;
 
 use axum::body::Body;
 use axum::extract::{ConnectInfo, Json, Path, Query, Request, State};
@@ -22,7 +21,7 @@ use tokio::sync::oneshot;
 
 use crate::chat_queue::check_limits;
 use crate::control::ControlContext;
-use crate::httpapi::{fail, ok, session_state_str};
+use crate::httpapi::{fail, ok};
 use crate::types::{is_office_agent_id, AgentProfile, WorkAgent, WorkCli, WorkStatus, OFFICE_AGENT_ID};
 
 use super::WebDashState;
@@ -40,25 +39,10 @@ const TASK_BODY_MAX_BYTES: usize = 64 * 1024;
 const DONE_TASKS: usize = 20;
 /// 토의 속기록은 최근 발언만 보인다.
 const TRANSCRIPT_ITEMS: usize = 200;
-/// 터미널 포그라운드 조회(ps·pgrep)를 다시 하기 전 간격. 여러 기기가 몇 초마다 물어도
-/// 캐릭터마다 이 간격에 한 번만 프로세스를 띄운다. 상태판 주기(2.5초, `dash.html`의
-/// `setInterval(tick, …)`)보다 길어야 브라우저 하나만 열어도 캐시가 맞는다. 웹에서 명령을
-/// 보내면(`activity`) 캐시를 비워 바로 다시 본다.
-const PROBE_TTL: Duration = Duration::from_secs(3);
 
 pub(super) struct Dash {
     pub ctl: Arc<ControlContext>,
     pub dash: Arc<WebDashState>,
-    probes: Mutex<HashMap<String, (Instant, ShellProbe)>>,
-}
-
-/// 터미널에서 지금 무엇이 도는가.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
-struct ShellProbe {
-    /// 포그라운드에서 도는 에이전트 CLI(`claude`·`codex`).
-    cli: Option<&'static str>,
-    /// 셸 프롬프트인가. 모르면 None.
-    at_prompt: Option<bool>,
 }
 
 type Ctx = State<Arc<Dash>>;
@@ -80,7 +64,7 @@ pub(super) async fn serve(ip: Ipv4Addr, port: u16, app: Router) -> std::io::Resu
 pub(super) fn app(ctl: Arc<ControlContext>, dash: Arc<WebDashState>) -> Router {
     // 컴퓨터 이름은 처음 한 번 프로세스를 띄워 읽는다. 첫 요청이 기다리지 않게 미리 읽어 둔다.
     tokio::task::spawn_blocking(super::computer_name);
-    router(Arc::new(Dash { ctl, dash, probes: Mutex::new(HashMap::new()) }))
+    router(Arc::new(Dash { ctl, dash }))
 }
 
 fn router(ctx: Arc<Dash>) -> Router {
@@ -279,102 +263,28 @@ pub(crate) fn foreground_cli(
         .or_else(|| manager.foreground_child_commands(agent_id).iter().find_map(|c| cli_of_command(c)))
 }
 
-/// 캐릭터들의 터미널 포그라운드를 본다(블로킹 — ps·pgrep을 띄운다).
-fn probe_shells(ctx: &Dash, agents: &[String]) -> HashMap<String, ShellProbe> {
-    let mut out = HashMap::new();
-    for agent in agents {
-        let cached = ctx.probes.lock().unwrap().get(agent).filter(|(at, _)| at.elapsed() < PROBE_TTL).map(|(_, p)| *p);
-        let probe = cached.unwrap_or_else(|| {
-            let command = ctx.ctl.manager.foreground_command(agent);
-            let probe = ShellProbe {
-                cli: foreground_cli(&ctx.ctl.manager, agent, command.as_deref()),
-                at_prompt: if command.is_some() { Some(false) } else { ctx.ctl.manager.is_shell_prompt(agent) },
-            };
-            ctx.probes.lock().unwrap().insert(agent.clone(), (Instant::now(), probe));
-            probe
-        });
-        out.insert(agent.clone(), probe);
-    }
-    out
-}
-
 async fn state(State(ctx): Ctx) -> Json<Value> {
-    let profiles = ctx.ctl.store.load();
-    let mut live = HashMap::new();
-    for (sid, agent, st) in ctx.ctl.registry.snapshot() {
-        live.insert(agent, (sid, st));
+    let view = super::snapshot::local_view(&ctx.ctl, &ctx.dash).await;
+    let mut characters = view.characters;
+    let mut output = view.output_at;
+    let mut machines = Vec::new();
+    if let Some(remote) = ctx.dash.link_remote() {
+        let merged = remote.web_view();
+        characters.extend(merged.characters);
+        output.extend(merged.output_at);
+        machines = merged.machines;
     }
-    let running: Vec<String> = live
-        .iter()
-        .filter(|(_, (_, st))| session_state_str(*st) == "running")
-        .map(|(agent, _)| agent.clone())
-        .collect();
-    let probes = {
-        let ctx = ctx.clone();
-        tokio::task::spawn_blocking(move || probe_shells(&ctx, &running)).await.unwrap_or_default()
-    };
-    let work_items = ctx.ctl.work_panels.load_work_items().unwrap_or_default();
-    let characters: Vec<Value> = profiles
-        .agents
-        .iter()
-        .map(|a| {
-            let session = live.get(&a.id);
-            let turn = session.and_then(|(sid, _)| ctx.ctl.turns.get(sid));
-            let probe = probes.get(&a.id).copied().unwrap_or_default();
-            let asks = session.map(|(sid, _)| ctx.ctl.observer.permissions().list(sid)).unwrap_or_default();
-            let queue = ctx.ctl.chat_queue.view(&ctx.ctl, &a.id, session.map(|(sid, _)| sid.as_str()));
-            json!({
-                "agentId": a.id,
-                "name": a.name,
-                "role": a.role,
-                "cwd": a.cwd,
-                "clockedOut": a.clocked_out,
-                "hasStartupCommand": a.startup_command.as_ref().is_some_and(|c| !c.trim().is_empty()),
-                "portrait": a.portrait_updated_at,
-                "defaultCli": a.default_agent.as_ref().map(|w| w.cli.clone()),
-                "defaultAgent": a.default_agent,
-                "session": session.map(|(sid, st)| json!({ "sessionId": sid, "state": session_state_str(*st) })),
-                "turn": turn,
-                "asks": asks,
-                "queue": queue,
-                "work": super::work_progress::agent_work(&work_items, &a.id),
-                "label": ctx.dash.label(&a.id),
-                "cli": probe.cli,
-                "atPrompt": probe.at_prompt,
-                "shellAssist": a.shell_assist == Some(true),
-            })
-        })
-        .collect();
-    let office_agent = {
-        let session = live.get(OFFICE_AGENT_ID);
-        let probe = probes.get(OFFICE_AGENT_ID).copied().unwrap_or_default();
-        json!({
-            "session": session.map(|(sid, st)| json!({ "sessionId": sid, "state": session_state_str(*st) })),
-            "turn": session.and_then(|(sid, _)| ctx.ctl.turns.get(sid)),
-            "asks": session.map(|(sid, _)| ctx.ctl.observer.permissions().list(sid)).unwrap_or_default(),
-            "queue": ctx.ctl.chat_queue.view(&ctx.ctl, OFFICE_AGENT_ID, session.map(|(sid, _)| sid.as_str())),
-            "cli": probe.cli,
-            "atPrompt": probe.at_prompt,
-            "cwd": session.and_then(|_| ctx.ctl.gate.sink().cwd_of(OFFICE_AGENT_ID)),
-            "label": ctx.dash.label(OFFICE_AGENT_ID),
-            "opening": crate::office_agent::is_opening(),
-            "error": crate::office_agent::last_error(),
-        })
-    };
     let body = json!({
         "app": env!("CARGO_PKG_VERSION"),
         "host": super::computer_name(),
         "characters": characters,
-        "officeAgent": office_agent,
+        "officeAgent": view.office_agent,
+        "machines": machines,
         "folders": folders(&ctx),
         "home": crate::session::manager::home_dir(),
     });
     // 마지막 출력 시각·서버 시각은 몇 초마다 바뀐다. 지문(`rev`)에 넣지 않아 머리 카드를 괜히 다시 그리지 않는다.
     let mut body = with_rev(body);
-    let output: serde_json::Map<String, Value> = live
-        .keys()
-        .filter_map(|agent| ctx.ctl.manager.last_output_ms(agent).map(|ms| (agent.clone(), json!(ms))))
-        .collect();
     body["outputAt"] = Value::Object(output);
     body["now"] = json!(crate::types::now_ms());
     ok(body)
@@ -398,23 +308,16 @@ struct LogQuery {
 }
 
 async fn log(State(ctx): Ctx, Path(agent): Path<String>, Query(q): Query<LogQuery>) -> Json<Value> {
-    // 일반 에이전트는 프로필이 없다. 작업 폴더는 세션 것만 본다.
-    let profile_cwd = if is_office_agent_id(&agent) {
-        None
-    } else {
-        let Some(p) = profile(&ctx, &agent) else {
-            return fail("unknown-agent");
+    if let Some((remote, device, id)) = remote_of(&ctx, &agent) {
+        let ask = json!({ "agentId": id, "after": q.after, "epoch": q.epoch, "tail": q.tail });
+        return match remote.request(&device, "log", ask).await {
+            Ok(page) => ok(page),
+            Err(e) => fail(e),
         };
-        p.cwd
+    }
+    let Some(cwd) = super::snapshot::agent_cwd(&ctx.ctl, &agent) else {
+        return fail("unknown-agent");
     };
-    // Codex 전사는 작업 폴더로 찾는다. 세션이 cd 했으면 그 폴더가 맞다.
-    let cwd = ctx
-        .ctl
-        .gate
-        .sink()
-        .cwd_of(&agent)
-        .or(profile_cwd)
-        .unwrap_or_else(crate::session::manager::home_dir);
     let dash = ctx.dash.clone();
     match tokio::task::spawn_blocking(move || dash.logs.read(&agent, &cwd, q.after, q.epoch)).await {
         Ok(page) => ok(match q.tail {
@@ -425,23 +328,48 @@ async fn log(State(ctx): Ctx, Path(agent): Path<String>, Query(q): Query<LogQuer
     }
 }
 
+/// 다른 머신 캐릭터 id(`기기id:캐릭터id`)면 (원격 보기, 기기, 그 머신의 캐릭터 id).
+fn remote_of(ctx: &Dash, agent: &str) -> Option<(Arc<crate::link::RemoteView>, String, String)> {
+    let remote = ctx.dash.link_remote()?;
+    let (device, id) = remote.resolve(agent)?;
+    Some((remote, device, id))
+}
+
+fn png_response(bytes: Vec<u8>, cacheable: bool) -> Response {
+    let mut res = Response::new(Body::from(bytes));
+    res.headers_mut().insert(header::CONTENT_TYPE, HeaderValue::from_static("image/png"));
+    if cacheable {
+        // 주소에 초상 판(`v=`)이 실려 판이 바뀌면 주소도 바뀐다. 머신을 건너 다시 받지 않게 한다.
+        res.headers_mut().insert(header::CACHE_CONTROL, HeaderValue::from_static("private, max-age=3600"));
+    }
+    res
+}
+
 async fn portrait(State(ctx): Ctx, Path(agent): Path<String>) -> Response {
+    if let Some((remote, device, id)) = remote_of(&ctx, &agent) {
+        return match remote.portrait(&device, &id).await {
+            Some(png) => png_response(png.as_ref().clone(), true),
+            None => StatusCode::NOT_FOUND.into_response(),
+        };
+    }
     let Ok(Some(encoded)) = ctx.ctl.portrait_store.load(&agent) else {
         return StatusCode::NOT_FOUND.into_response();
     };
     let Ok(bytes) = base64::engine::general_purpose::STANDARD.decode(encoded) else {
         return StatusCode::NOT_FOUND.into_response();
     };
-    let mut res = Response::new(Body::from(bytes));
-    res.headers_mut().insert(header::CONTENT_TYPE, HeaderValue::from_static("image/png"));
-    res
+    png_response(bytes, false)
 }
 
 /// 대화 로그에 실린 이미지. `<img>`라 토큰은 쿼리(`t=`)로 온다.
 async fn image(State(ctx): Ctx, Path((agent, id)): Path<(String, String)>) -> Response {
-    // 로그 수집기 잠금은 파일을 읽는 동안 잡혀 있을 수 있다 — 블로킹 스레드에서 기다린다.
-    let dash = ctx.dash.clone();
-    let found = tokio::task::spawn_blocking(move || dash.logs.image(&agent, &id)).await.ok().flatten();
+    let found = if let Some((remote, device, agent)) = remote_of(&ctx, &agent) {
+        remote_image(&remote, &device, &agent, &id, "web").await.map(|(t, b)| (t, Arc::new(b)))
+    } else {
+        // 로그 수집기 잠금은 파일을 읽는 동안 잡혀 있을 수 있다 — 블로킹 스레드에서 기다린다.
+        let dash = ctx.dash.clone();
+        tokio::task::spawn_blocking(move || dash.logs.image(&agent, &id)).await.ok().flatten()
+    };
     let Some((media_type, bytes)) = found else {
         return StatusCode::NOT_FOUND.into_response();
     };
@@ -460,11 +388,16 @@ async fn download_file(
     State(ctx): Ctx,
     Path((agent, epoch, seq, index)): Path<(String, u64, u64, usize)>,
 ) -> Response {
-    let dash = ctx.dash.clone();
-    let found = tokio::task::spawn_blocking(move || dash.logs.file(&agent, epoch, seq, index))
-        .await
-        .ok()
-        .flatten();
+    let found = if let Some((remote, device, agent)) = remote_of(&ctx, &agent) {
+        let ask = json!({ "agentId": agent, "epoch": epoch, "seq": seq, "index": index });
+        remote.request(&device, "file", ask).await.ok().and_then(|a| {
+            let name = a.get("name").and_then(Value::as_str).unwrap_or("").to_string();
+            crate::link::remote::decode_blob(&a).map(|b| (name, b))
+        })
+    } else {
+        let dash = ctx.dash.clone();
+        tokio::task::spawn_blocking(move || dash.logs.file(&agent, epoch, seq, index)).await.ok().flatten()
+    };
     let Some((_, bytes)) = found else {
         return StatusCode::NOT_FOUND.into_response();
     };
@@ -474,6 +407,20 @@ async fn download_file(
     h.insert(header::CONTENT_DISPOSITION, HeaderValue::from_static("attachment"));
     h.insert(header::X_CONTENT_TYPE_OPTIONS, HeaderValue::from_static("nosniff"));
     res
+}
+
+/// 다른 머신 대화 로그의 이미지(미디어 종류, 바이트).
+pub(crate) async fn remote_image(
+    remote: &crate::link::RemoteView,
+    device: &str,
+    agent: &str,
+    id: &str,
+    view: &str,
+) -> Option<(String, Vec<u8>)> {
+    let answer = remote.request(device, "image", json!({ "agentId": agent, "id": id, "view": view })).await.ok()?;
+    let media_type = answer.get("mediaType").and_then(Value::as_str)?.to_string();
+    let bytes = crate::link::remote::decode_blob(&answer)?;
+    Some((media_type, bytes))
 }
 
 async fn usage(State(ctx): Ctx) -> Json<Value> {
@@ -600,7 +547,7 @@ async fn discussion(State(ctx): Ctx, Path(id): Path<String>) -> Json<Value> {
 
 fn activity(ctx: &Dash, op: &str, agent: Option<&str>, detail: Option<&str>) {
     // 명령이 터미널 상태(CLI 실행·종료)를 바꿨을 수 있다 — 다음 `/state`가 다시 보게 한다.
-    ctx.probes.lock().unwrap().clear();
+    ctx.dash.probes.clear();
     let name = agent.and_then(|id| profile(ctx, id)).map(|p| p.name);
     ctx.dash.activity(json!({ "op": op, "agentId": agent, "name": name, "detail": detail }));
 }
@@ -628,6 +575,10 @@ async fn agent_command(
     Path((agent, op)): Path<(String, String)>,
     body: Option<Json<AgentCommandBody>>,
 ) -> Json<Value> {
+    // 다른 머신 캐릭터는 이 단계에서 보기만 한다.
+    if remote_of(&ctx, &agent).is_some() {
+        return fail("link-remote-read-only");
+    }
     let Some(profile) = profile(&ctx, &agent) else {
         return fail("unknown-agent");
     };
@@ -827,7 +778,7 @@ async fn office_agent_send(State(ctx): Ctx, Json(b): Json<OfficeAgentSend>) -> J
     if running && !b.restart {
         let probe = {
             let ctx = ctx.clone();
-            tokio::task::spawn_blocking(move || probe_shells(&ctx, &[OFFICE_AGENT_ID.to_string()]))
+            tokio::task::spawn_blocking(move || super::snapshot::probe_shells(&ctx.ctl, &ctx.dash.probes, &[OFFICE_AGENT_ID.to_string()]))
                 .await
                 .unwrap_or_default()
                 .remove(OFFICE_AGENT_ID)
