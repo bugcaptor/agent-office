@@ -77,5 +77,9 @@
     "file-write-failed": "Écriture impossible chez le destinataire : {{detail}}",
     "file-read-failed": "Lecture impossible de la source : {{detail}}",
     "unknown-agent": "Ce personnage n'est pas sur cette machine."
+  },
+  "peer": {
+    "title": "Conversation entre agents",
+    "help": "Les sessions d'agent de cette machine peuvent utiliser office-peer pour voir l'état et le journal de conversation des personnages de cette machine et des machines liées, leur envoyer des messages et recevoir des réponses, et lancer, reprendre ou interrompre leurs sessions. Les agents peuvent engager la conversation d'eux-mêmes (avec des limites par heure et de profondeur). Désactivé, les personnages de cette machine ne sont pas joignables non plus. S'applique aux sessions lancées à partir de maintenant."
   }
 }

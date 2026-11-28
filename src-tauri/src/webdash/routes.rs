@@ -584,6 +584,9 @@ pub(crate) struct AgentCommandBody {
     /// `queue-cancel`: 뺄 대기열 메시지.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub id: Option<String>,
+    /// 앱 화면에 웹 조작 알림을 띄우지 않는다(에이전트끼리 대화 `crate::peer` — 세션 안에만 남긴다).
+    #[serde(skip)]
+    pub quiet: bool,
 }
 
 /// 원격 조작이 오래 걸릴 수 있는 것(CLI를 띄워 첫 프롬프트를 넣는 데 수십 초가 걸린다)까지 기다릴 시간.
@@ -624,6 +627,12 @@ pub(crate) async fn agent_op(
 
 async fn run_agent_op(ctx: &Dash, agent: &str, op: &str, body: AgentCommandBody) -> Result<Value, String> {
     let profile = profile(ctx, agent).ok_or("unknown-agent")?;
+    let quiet = body.quiet;
+    let activity = |ctx: &Dash, op: &str, agent: Option<&str>, detail: Option<&str>| {
+        if !quiet {
+            activity(ctx, op, agent, detail);
+        }
+    };
     match op {
         "message" => {
             let text = body.text.as_deref().unwrap_or("");
@@ -633,7 +642,7 @@ async fn run_agent_op(ctx: &Dash, agent: &str, op: &str, body: AgentCommandBody)
                 activity(ctx, "message", Some(agent), Some(&first_line(text)));
                 return Ok(json!({ "outcome": "launched" }));
             }
-            return message(ctx, agent, text).await;
+            return message(ctx, agent, text, quiet).await;
         }
         "queue-cancel" => return queue_cancel(ctx, agent, body.id.as_deref().unwrap_or("")).map(|()| Value::Null),
         _ => {}
@@ -652,7 +661,7 @@ async fn run_agent_op(ctx: &Dash, agent: &str, op: &str, body: AgentCommandBody)
 
 /// 터미널의 CLI에 직접 쓴 글을 넣는다(업무 보내기와 달리 업무 보드에 남지 않는다). 입력 대기면 바로,
 /// 작업 중이면 대기열에 쌓아 턴이 끝날 때 넣는다 — 앱의 대화 보기와 같은 대기열이다.
-async fn message(ctx: &Dash, agent: &str, text: &str) -> Result<Value, String> {
+async fn message(ctx: &Dash, agent: &str, text: &str, quiet: bool) -> Result<Value, String> {
     let office = is_office_agent_id(agent);
     let outcome = ctx.ctl.chat_queue.send(&ctx.ctl, agent, text).await?;
     let queued = outcome == crate::chat_queue::SendOutcome::Queued;
@@ -662,7 +671,9 @@ async fn message(ctx: &Dash, agent: &str, text: &str) -> Result<Value, String> {
         (false, true) => "message-queued",
         (false, false) => "message",
     };
-    activity(ctx, op, (!office).then_some(agent), Some(&first_line(text)));
+    if !quiet {
+        activity(ctx, op, (!office).then_some(agent), Some(&first_line(text)));
+    }
     Ok(json!({ "outcome": outcome }))
 }
 
@@ -814,7 +825,7 @@ async fn office_agent_send(State(ctx): Ctx, Json(b): Json<OfficeAgentSend>) -> J
         };
         if probe.cli.is_some() {
             // 입력 대기면 이어 넣고, 작업 중이면 대기열에 쌓는다.
-            return match message(&ctx, OFFICE_AGENT_ID, &b.text).await {
+            return match message(&ctx, OFFICE_AGENT_ID, &b.text, false).await {
                 Ok(v) => ok(v),
                 Err(e) => fail(e),
             };

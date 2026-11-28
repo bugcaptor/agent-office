@@ -42,6 +42,9 @@ pub fn install(link: &Arc<LinkState>, ctl: Arc<ControlContext>, dash: Arc<WebDas
                 if let Some(result) = super::files::answer(&kind, &data).await {
                     return result;
                 }
+                if let Some(result) = super::peer::answer(&kind, &data).await {
+                    return result;
+                }
                 if let Some(result) = super::work::answer(&work, &ctl, &dash, &kind, &data).await {
                     return result;
                 }

@@ -10,6 +10,12 @@ export interface FilesConfig {
   receiveDir?: string;
 }
 
+/** `peer.json`. 에이전트끼리 조회·대화(`office-peer`). Rust `peer::PeerConfig` 미러. */
+export interface PeerConfig {
+  /** 이 머신 에이전트가 다른 캐릭터를 조회하고 말을 걸며, 다른 캐릭터가 이 머신 캐릭터에 닿는다(기본 꺼짐). */
+  enabled: boolean;
+}
+
 export interface FilesStatus {
   config: FilesConfig;
   /** 실제로 쓰는 받은 파일 폴더. */

@@ -93,3 +93,14 @@ pub fn files_reveal(path: Option<String>, app_state: State<'_, AppState>, app: t
     }
     app.opener().reveal_item_in_dir(target).map_err(|e| e.to_string())
 }
+
+/// 에이전트끼리 조회·대화(`crate::peer`) 설정.
+#[tauri::command]
+pub fn peer_config(app_state: State<'_, AppState>) -> crate::peer::PeerConfig {
+    app_state.peer.config()
+}
+
+#[tauri::command]
+pub fn peer_configure(config: crate::peer::PeerConfig, app_state: State<'_, AppState>) -> Result<crate::peer::PeerConfig, String> {
+    app_state.peer.configure(config)
+}

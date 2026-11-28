@@ -36,7 +36,7 @@ import type {
 } from './settings';
 import type { ApiKeyStatus } from './apiKeys';
 import type { ShellAssistConfig, ShellAssistEndpoint, ShellSuggestion } from './shellAssist';
-import type { FileSendRequest, FilesConfig, FilesStatus, FileTarget, FileTransfer } from './files';
+import type { FileSendRequest, FilesConfig, FilesStatus, FileTarget, FileTransfer, PeerConfig } from './files';
 import type { LinkConfig, LinkDiscussionSessionEvent, LinkStatus, LinkTaskEvent, LinkTaskReport, LinkWorkKind, RemoteOffice } from './link';
 import type { AwardRecord, AwardSpeech, AwardsFile } from './awards';
 import type { DiaryEntry, WorkLogItem } from './diary';
@@ -284,6 +284,9 @@ export interface AgentOfficeApi {
   /** 파일 보내기 설정·받은 파일 폴더. */
   filesStatus(): Promise<FilesStatus>;
   filesConfigure(config: FilesConfig): Promise<FilesStatus>;
+  /** 에이전트끼리 조회·대화(`office-peer`) 설정. */
+  peerConfig(): Promise<PeerConfig>;
+  peerConfigure(config: PeerConfig): Promise<PeerConfig>;
   /** 보낼 수 있는 머신·캐릭터(이 머신이 먼저). */
   filesTargets(): Promise<FileTarget[]>;
   /** 보낸·받은 기록(최근 200건). */

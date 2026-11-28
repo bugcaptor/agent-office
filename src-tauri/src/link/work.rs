@@ -381,6 +381,7 @@ pub fn install_client(link: &Arc<LinkState>, work: Arc<ClientWork>, ctl: Arc<Con
         let (work, ctl) = (work.clone(), ctl.clone());
         link.client.set_command_handler(Arc::new(move |kind, data| {
             super::files::client_command(kind, data);
+            super::peer::client_command(kind, data);
             if kind == CMD_BOARD {
                 work.write_board(data);
                 sync_received(&ctl.work_panels, data);

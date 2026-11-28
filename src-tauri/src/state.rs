@@ -236,6 +236,8 @@ pub struct AppState {
     pub link: Arc<crate::link::LinkState>,
     /// 머신 간 파일 보내기.
     pub files: Arc<crate::files::FilesState>,
+    /// 에이전트끼리 조회·대화(`office-peer`).
+    pub peer: Arc<crate::peer::PeerState>,
 }
 
 // ── 테스트용 페이크 ────────────────────────────────────────────────────

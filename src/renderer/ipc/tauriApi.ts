@@ -301,6 +301,8 @@ export const tauriApi: AgentOfficeApi = {
   async linkWork(agentId, kind, data) { return await invoke(Commands.linkWork, { agentId, kind, data }); },
   async filesStatus() { return await invoke(Commands.filesStatus); },
   async filesConfigure(config) { return await invoke(Commands.filesConfigure, { config }); },
+  async peerConfig() { return await invoke(Commands.peerConfig); },
+  async peerConfigure(config) { return await invoke(Commands.peerConfigure, { config }); },
   async filesTargets() { return await invoke(Commands.filesTargets); },
   async filesList() { return await invoke(Commands.filesList); },
   async filesSend(request) { return await invoke(Commands.filesSend, { request }); },

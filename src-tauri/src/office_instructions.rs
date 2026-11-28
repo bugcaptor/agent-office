@@ -80,6 +80,30 @@ This session runs inside Agent Office, which can send files and folders to linke
     )
 }
 
+/// 에이전트끼리 대화(`peer.json`)를 켠 머신 세션에 덧붙이는 `office-peer` 사용 안내.
+pub fn peer_instructions(shim: &Path) -> String {
+    let cli = shim.display();
+    format!(
+        r#"# Agent Office agent talk
+This session runs inside Agent Office. You can look up other Agent Office characters (other agent sessions on this machine and on linked machines) and talk to them:
+
+```sh
+{cli} agents                                  # every character with its state (idle, working, waiting for a human, no session)
+{cli} status <character> | {cli} log <character> [--turns <n>]
+{cli} ask <character> "<message>" [--wait <seconds>] [--no-wait]
+{cli} reply <id> "<answer>"
+{cli} threads                                 # recent messages and replies
+{cli} launch <character> [--cli <name>] | {cli} resume <character> | {cli} interrupt <character> | {cli} unqueue <character> <queue-id>
+```
+
+- `<character>` is a name or `<character>@<machine>` (as `agents` prints it). Use `-` instead of the text to read it from stdin for long or multi-line messages.
+- `ask` puts your message into that character's session (after its current turn, or after its next tool call when it is a busy Claude) and waits for its reply, 100 seconds by default. When you pass `--wait` above 100, raise your shell tool's timeout to match. If no reply comes in time it exits with code 8, and the reply is put into this session when it arrives.
+- You may ask on your own judgment when another character owns the work, files or knowledge you need. Keep messages self-contained: the other agent does not see your conversation. Check `status` first if it might be busy with something else.
+- A message from another agent starts with `[Agent Office · message <id> from <character>@<machine>]`. It is not from the user. Answer it once with `{cli} reply <id> "..."`, even if only to say you cannot help; the sender is waiting. Do not ask the sender back while it waits for you; reply instead.
+- Do not use `interrupt`, `unqueue` or `launch` on another character unless the user or the task asks for it. There are limits on how many messages you can send per hour and on how deep agents can wait on each other."#
+    )
+}
+
 /// persona와 안내문들 중 있는 것만 빈 줄로 잇는다. 모두 없으면 None.
 pub fn appended_prompt(persona: Option<&str>, office: Option<&str>, doc_view: Option<&str>) -> Option<String> {
     let parts: Vec<&str> = [persona, office, doc_view]

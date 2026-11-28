@@ -132,6 +132,8 @@ pub struct SessionManager {
     discuss_cli: Option<(std::path::PathBuf, std::path::PathBuf)>,
     /// `office-file` shim 경로와 실행할 앱 바이너리.
     file_cli: Option<(std::path::PathBuf, std::path::PathBuf)>,
+    /// `office-peer` shim 경로와 실행할 앱 바이너리.
+    peer_cli: Option<(std::path::PathBuf, std::path::PathBuf)>,
     /// 업무 패널 설정(`workPanelsEnabled`) 조회. 켜졌을 때만 공통 안내문과 Codex
     /// 수신함 쓰기 허용을 싣는다. 세션을 띄울 때 고정된다.
     work_panels_enabled: Arc<dyn Fn() -> bool + Send + Sync>,
@@ -176,6 +178,7 @@ impl SessionManager {
             md_cli: None,
             discuss_cli: None,
             file_cli: None,
+            peer_cli: None,
             work_panels_enabled: Arc::new(|| false),
             codex_user_config: Arc::new(|| {
                 let path = crate::agent_paths::codex_home_from_env()?.join("config.toml");
@@ -242,7 +245,8 @@ impl SessionManager {
         self.task_cli = Some((crate::work_inbox_cli::shim_path(), exe.clone()));
         self.md_cli = Some((crate::doc_view_cli::shim_path(), exe.clone()));
         self.discuss_cli = Some((crate::discussion_cli::shim_path(), exe.clone()));
-        self.file_cli = Some((crate::files::cli::shim_path(), exe));
+        self.file_cli = Some((crate::files::cli::shim_path(), exe.clone()));
+        self.peer_cli = Some((crate::peer::cli::shim_path(), exe));
         self
     }
 
@@ -466,6 +470,14 @@ impl SessionManager {
         let md_shim = ensure(&self.md_cli, "md");
         let discuss_shim = if discussion { ensure(&self.discuss_cli, "discuss") } else { None };
         let file_shim = if discussion { None } else { ensure(&self.file_cli, "file") };
+        // 에이전트끼리 대화 안내는 이 머신이 켰을 때만(토의·태스크 대화·일반 에이전트 세션은 빼고 — 캐릭터만 말한다).
+        let peer_on = !discussion && !task_chat && !crate::types::is_office_agent_id(agent_id) && self.app_data_dir.as_deref().is_some_and(crate::peer::instructions_wanted);
+        let peer_shim = if peer_on { ensure(&self.peer_cli, "peer") } else { None };
+        let peer_requests = self.app_data_dir.as_ref().map(|dir| dir.join(crate::peer::REQUESTS_DIR)).filter(|_| peer_shim.is_some());
+        if let Some(dir) = peer_requests.as_deref() {
+            let _ = std::fs::create_dir_all(dir);
+        }
+        let peer_instructions = peer_shim.as_deref().map(crate::office_instructions::peer_instructions);
         let work_inbox = self.app_data_dir.as_ref().map(|dir| dir.join("work-inbox"));
         // 머신 연동 클라이언트의 호스트 보드 수신함(`office-task --host`·받은 업무 세션이 쓴다).
         let host_inbox = self.app_data_dir.as_ref().map(|dir| crate::link::work::host_board_inbox(dir));
@@ -491,6 +503,10 @@ impl SessionManager {
         let file_instructions =
             file_shim.as_deref().filter(|_| file_instructions_on).map(crate::office_instructions::file_instructions);
         let doc_view_instructions = match (doc_view_instructions, file_instructions) {
+            (Some(a), Some(b)) => Some(format!("{a}\n\n{b}")),
+            (a, b) => a.or(b),
+        };
+        let doc_view_instructions = match (doc_view_instructions, peer_instructions) {
             (Some(a), Some(b)) => Some(format!("{a}\n\n{b}")),
             (a, b) => a.or(b),
         };
@@ -575,6 +591,8 @@ impl SessionManager {
             doc_view_cache.as_deref().filter(|_| md_shim.is_some()),
             // 파일 보내기 요청(`office-file`). 안내문을 실은 세션만.
             file_requests.as_deref().filter(|_| file_instructions_on),
+            // 에이전트끼리 대화 요청(`office-peer`).
+            peer_requests.as_deref(),
         ]
         .into_iter()
         .flatten()

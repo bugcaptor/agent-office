@@ -47,6 +47,8 @@ export const Commands = {
   linkTaskStates: "link_task_states",
   filesStatus: "files_status",
   filesConfigure: "files_configure",
+  peerConfig: "peer_config",
+  peerConfigure: "peer_configure",
   filesTargets: "files_targets",
   filesList: "files_list",
   filesSend: "files_send",

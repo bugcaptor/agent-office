@@ -18,6 +18,7 @@ pub mod discuss;
 pub mod files;
 pub mod host;
 pub mod outbox;
+pub mod peer;
 pub mod protocol;
 pub mod remote;
 pub mod repos;
@@ -150,6 +151,7 @@ impl LinkState {
             .unwrap_or_default();
         let machine_id = load_machine_id(dir.as_deref());
         let state = Arc::new_cyclic(|me: &Weak<LinkState>| {
+            let this = me.clone();
             let me = me.clone();
             let changed: Changed = Arc::new(move || {
                 if let Some(s) = me.upgrade() {
@@ -169,12 +171,16 @@ impl LinkState {
             {
                 let remote = Arc::downgrade(&remote);
                 let (dir, events, tasks) = (dir.clone(), events.clone(), task_states.clone());
+                let this = this.clone();
                 host.set_event_handler(Arc::new(move |device, kind, data| {
                     if let Some(r) = remote.upgrade() {
                         r.ingest(device, kind, data);
                     }
                     work::host_event(dir.as_deref(), events.as_ref(), &tasks, device, kind, data);
                     files::host_event(device, kind, data);
+                    if let Some(link) = this.upgrade() {
+                        peer::host_event(&link, device, kind, data);
+                    }
                 }));
             }
             {

@@ -72,6 +72,7 @@ mod editor;
 pub mod webdash;
 pub mod link;
 pub mod files;
+pub mod peer;
 // pub: contract 테스트가 `agent_office_lib::workdir::{GitStatusResult, ...}`에
 // 닿아야 한다(model.rs가 이미 `pub use model::*`로 재수출). 로직 변경 없음 —
 // 가시성만 승격.
@@ -216,6 +217,7 @@ where
         Some("md") => doc_view_cli::run,
         Some("discuss") => discussion_cli::run,
         Some("file") => files::cli::run,
+        Some("peer") => peer::cli::run,
         Some("ctl") => control::client::run,
         _ => return None,
     };
@@ -468,6 +470,7 @@ pub fn run() {
                     (doc_view_cli::shim_path(), "md"),
                     (discussion_cli::shim_path(), "discuss"),
                     (files::cli::shim_path(), "file"),
+                    (peer::cli::shim_path(), "peer"),
                 ],
                 forwarder_executable_path(),
                 Duration::from_secs(5),
@@ -575,6 +578,9 @@ pub fn run() {
                     }
                     shims.push(crate::doc_view_cli::shim_path());
                     shims.push(crate::files::cli::shim_path());
+                    if crate::peer::current().is_some_and(|p| p.config().enabled) {
+                        shims.push(crate::peer::cli::shim_path());
+                    }
                     shims
                 })
             };
@@ -809,6 +815,10 @@ pub fn run() {
             files.attach(&link, control_ctx.clone(), Arc::new(crate::files::TauriFilesEvents(handle.clone())));
             crate::link::files::install(&link, &files);
             crate::files::cli::spawn_request_watcher(files.clone());
+            // 에이전트끼리 조회·대화(`peer.json`, 기본 꺼짐): `office-peer` 요청을 받아 이 머신·연동한 머신 캐릭터에 넘긴다.
+            let peer = crate::peer::PeerState::new(Some(data_dir.clone()), link.machine_id().to_string());
+            peer.attach(&link, control_ctx.clone(), web_dash.clone());
+            crate::peer::cli::spawn_request_watcher(peer.clone());
             link.start();
             if web_dash.config().enabled {
                 tauri::async_runtime::block_on(web_dash.reconcile(control_ctx.clone(), web_dash.clone()));
@@ -867,6 +877,7 @@ pub fn run() {
                 web_dash,
                 link,
                 files,
+                peer,
             });
             Ok(())
         })
@@ -972,6 +983,8 @@ pub fn run() {
             ipc::commands::web_dash_control_reply,
             ipc::commands::link_status,
             ipc::commands::files_status,
+            ipc::commands::peer_config,
+            ipc::commands::peer_configure,
             ipc::commands::files_configure,
             ipc::commands::files_targets,
             ipc::commands::files_list,

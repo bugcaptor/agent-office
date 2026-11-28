@@ -353,6 +353,8 @@ const impl: Partial<AgentOfficeApi> = {
   async filesConfigure(config) {
     return { config, receiveDir: config.receiveDir ?? "/Users/me/Downloads/Agent Office", machineId: "m-host", machineName: "Studio", linked: true };
   },
+  async peerConfig() { return { enabled: false }; },
+  async peerConfigure(config) { return config; },
   async filesTargets() { return scenario.fileTargets ?? []; },
   async filesList() { return scenario.fileTransfers ?? []; },
   async filesSend(request) {

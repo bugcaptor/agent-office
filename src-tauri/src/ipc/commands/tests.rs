@@ -386,6 +386,7 @@
             )),
             link: crate::link::LinkState::new(None, Arc::new(|| "test".to_string()), Arc::new(crate::link::fake::NoLinkEvents)),
             files: crate::files::FilesState::new(None, "test-machine".into()),
+            peer: crate::peer::PeerState::new(None, "test-machine".into()),
         };
         (state, ctl, observer_dir, profile_dir)
     }

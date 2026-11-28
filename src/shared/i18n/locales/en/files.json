@@ -77,5 +77,9 @@
     "file-write-failed": "Could not write on the receiver: {{detail}}",
     "file-read-failed": "Could not read the source: {{detail}}",
     "unknown-agent": "That character is not on that machine."
+  },
+  "peer": {
+    "title": "Agent talk",
+    "help": "Agent sessions on this machine can use office-peer to see the state and conversation log of characters on this machine and linked machines, send them messages and get replies, and launch, resume or interrupt their sessions. Agents may start a conversation on their own judgment (with hourly and depth limits). When off, characters on this machine cannot be reached either. Applies to sessions started from now on."
   }
 }

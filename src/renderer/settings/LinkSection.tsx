@@ -7,7 +7,7 @@
 // 설정은 `link.json`, 기기·토큰은 `link-devices.json`·`link-client.json`(0600)에 따로 저장된다.
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
-import type { LinkClientStatus, LinkDevice, LinkMode, LinkStatus } from "@shared/types";
+import type { LinkClientStatus, LinkDevice, LinkMode, LinkStatus, PeerConfig } from "@shared/types";
 import { tauriApi } from "../ipc/tauriApi";
 import { linkErrorKey, setLinkStatus, useLinkStore } from "../link/linkStore";
 import { setWebDashStatus, useWebDashStore } from "../webdash/webDashStore";
@@ -86,6 +86,7 @@ export function LinkSection() {
       {status.host && <HostPanel status={status} busy={busy} run={run} />}
       {status.client && <ClientPanel status={status} client={status.client} busy={busy} run={run} />}
       <FilesReceiveSection />
+      <PeerTalkSection />
       <small style={{ opacity: 0.6 }}>{t("link.version", { protocol: status.protocol, app: status.appVersion })}</small>
     </div>
   );
@@ -138,6 +139,37 @@ function FilesReceiveSection() {
         <button className="pixel-btn" onClick={() => void tauriApi.filesReveal().catch(() => {})}>{t("settings.open")}</button>
       </div>
       {error && <div className="link-error" role="alert">{t(`errors.${error}`, { defaultValue: error, detail: "" })}</div>}
+    </div>
+  );
+}
+
+/** 에이전트끼리 조회·대화 옵트인(`peer.json`, `office-peer`). 연동이 꺼져 있어도 이 머신 캐릭터끼리 쓰므로 늘 보인다. */
+function PeerTalkSection() {
+  const { t } = useTranslation("files");
+  const [config, setConfig] = useState<PeerConfig | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  useEffect(() => {
+    void tauriApi.peerConfig().then(setConfig).catch(() => {});
+  }, []);
+  if (!config) return null;
+  const save = async (next: PeerConfig) => {
+    setError(null);
+    try {
+      setConfig(await tauriApi.peerConfigure(next));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    }
+  };
+  return (
+    <div className="settings-item settings-item-stacked" style={{ cursor: "default", marginTop: 8, paddingTop: 8, borderTop: "1px dashed var(--border-dark)" }}>
+      <label style={{ display: "flex", gap: 8, alignItems: "flex-start" }}>
+        <input type="checkbox" checked={config.enabled} onChange={(e) => void save({ ...config, enabled: e.target.checked })} />
+        <span>
+          <strong>{t("peer.title")}</strong>
+          <small>{t("peer.help")}</small>
+        </span>
+      </label>
+      {error && <div className="link-error" role="alert">{error}</div>}
     </div>
   );
 }
