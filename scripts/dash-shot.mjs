@@ -2,7 +2,7 @@
 //
 // 웹 상태판(src-tauri/web/dash.html)을 가짜 API로 띄워 폰 크기로 찍는다. 앱·Tauri 없이 화면만 본다.
 //   node scripts/dash-shot.mjs [출력 폴더(기본 /tmp/dash-shot)]
-// 찍는 것: 캐릭터 목록(머리에 컴퓨터 이름, 맨 위 일반 에이전트), 캐릭터 화면(보낸 업무·대화 로그 최신순·업무 보내기),
+// 찍는 것: 캐릭터 화면 머리 카드 접기(기본 접힘, 펼침은 브라우저에 저장), 캐릭터 목록(머리에 컴퓨터 이름, 맨 위 일반 에이전트), 캐릭터 화면(보낸 업무·대화 로그 최신순·업무 보내기),
 // CLI 실행 중 재시작 경고, 셸 프롬프트에서 고른 CLI 띄우기, 끝난 업무 완료, 일반 에이전트 새 지시·이어서 보내기,
 // 대화 로그 속 이미지(썸네일·확대), 권한 요청·선택지 카드(AskUserQuestion 답·Bash 허용),
 // 텍스트·이미지 클립보드 복사와 이미지·파일 다운로드, 하단 사용량 바, 생각 중·멈춤 상태 줄,
@@ -265,8 +265,16 @@ assert.equal(await workOf("보리").count(), 0);
 await p.locator(".card.clickable").filter({ hasText: "에이다" }).click();
 await p.waitForSelector("#log .msg");
 await p.waitForSelector("#sent .card");
-await p.waitForSelector("#head .work .work-t");
+// 머리 카드는 처음엔 프로필·이름·위치·상태만 — 목표·업무·제어 단추는 접혀 있다. 펼침은 브라우저에 남는다.
 await p.waitForSelector("#asks .card.ask");
+assert.equal(await p.locator("#head .work").count(), 0, "접힌 머리에는 업무가 없다");
+assert.equal(await p.locator("#head .btns").count(), 0, "접힌 머리에는 제어 단추가 없다");
+assert.equal(await p.locator("#head .head-fold").getAttribute("aria-expanded"), "false");
+await p.locator("#head").screenshot({ path: `${outDir}/agent-head-folded.png` });
+await p.locator("#head .head-fold").click();
+await p.waitForSelector("#head .work .work-t");
+assert.ok(await p.locator("#head .btns").count() > 0, "펼치면 제어 단추가 보인다");
+assert.equal(await p.evaluate(() => localStorage.getItem("agent-office-web-dash-head-open")), "1");
 await p.waitForFunction(() => [...document.querySelectorAll("#log img.shot")].every((i) => i.complete));
 await p.screenshot({ path: `${outDir}/agent-claude.png`, fullPage: true });
 // 하단 사용량 바, 답을 기다리는 동안의 상태 줄(멈춤과 구분).

@@ -8,7 +8,7 @@ const S = {
     notify: { on: "🔔 알림", off: "🔕 알림", hintOn: "데스크톱 알림 켜짐 · 답을 기다리거나 턴이 끝나면 알림(이 화면을 보고 있을 땐 안 보냄) · 눌러서 끄기", hintOff: "데스크톱 알림 꺼짐 · 눌러서 켜기", hintNo: "이 브라우저에서는 알림을 쓸 수 없습니다(HTTPS 주소로 열어야 함)", turnedOn: "데스크톱 알림을 켰습니다", turnedOff: "데스크톱 알림을 껐습니다", denied: "브라우저가 알림을 막았습니다 · 사이트 설정에서 허용하세요", unsupported: "이 브라우저에서는 알림을 쓸 수 없습니다(HTTPS 주소로 열어야 함)", human: (name) => `${name} · 답을 기다림`, done: (name) => `${name} · 턴 끝남` },
     phase: { working: "작업 중", "needs-human": "답을 기다림", idle: "입력 대기", ended: "종료됨", starting: "시작 중", off: "꺼짐", running: "켜짐" },
     clockedOut: "퇴근", back: "← 목록", log: "대화 로그", noLog: "이 터미널에는 읽을 대화 로그가 없습니다(Claude·Codex·Antigravity 전사가 없는 세션).", noItems: "아직 대화가 없습니다.",
-    restart: "터미널 재시작", resume: "이어하기", terminate: "종료", interrupt: "작업 중단(Esc)", ctrlc: "Ctrl-C", launch: "CLI 실행", launchCli: "띄울 CLI",
+    restart: "터미널 재시작", resume: "이어하기", terminate: "종료", interrupt: "작업 중단(Esc)", ctrlc: "Ctrl-C", launch: "CLI 실행", launchCli: "띄울 CLI", headOpen: "제어 펼치기", headClose: "제어 접기",
     again: "한 번 더 눌러 확인", done: "보냈습니다", saved: "저장했습니다", deleted: "삭제했습니다", result: "결과", lines: "줄",
     sentTasks: "보낸 업무", taskState: { in_progress: "진행 중", review: "끝남 · 확인 대기" }, markDone: "완료", markedDone: "완료로 옮겼습니다",
     workNow: "업무 진행 중", workStep: (n, total) => `단계 ${n}/${total}`, workDone: (d, total) => `${d}/${total} 완료`, workAuto: { running: "자동 진행", paused: "자동 진행 멈춤" }, workOpen: "눌러서 업무 탭에서 이 업무 보기",
@@ -65,7 +65,7 @@ const S = {
     notify: { on: "🔔 Alerts", off: "🔕 Alerts", hintOn: "Desktop alerts on · when an agent waits for an answer or finishes a turn (not while you are looking at this page) · tap to turn off", hintOff: "Desktop alerts off · tap to turn on", hintNo: "Alerts aren't available in this browser (open the HTTPS address)", turnedOn: "Desktop alerts on", turnedOff: "Desktop alerts off", denied: "The browser blocked alerts · allow them in site settings", unsupported: "Alerts aren't available in this browser (open the HTTPS address)", human: (name) => `${name} · waiting for an answer`, done: (name) => `${name} · turn finished` },
     phase: { working: "Working", "needs-human": "Waiting for answer", idle: "Waiting for input", ended: "Ended", starting: "Starting", off: "Off", running: "On" },
     clockedOut: "Clocked out", back: "← List", log: "Conversation", noLog: "No conversation log for this terminal (no Claude/Codex/Antigravity transcript).", noItems: "No messages yet.",
-    restart: "Restart terminal", resume: "Resume", terminate: "Terminate", interrupt: "Interrupt (Esc)", ctrlc: "Ctrl-C", launch: "Run CLI", launchCli: "CLI to run",
+    restart: "Restart terminal", resume: "Resume", terminate: "Terminate", interrupt: "Interrupt (Esc)", ctrlc: "Ctrl-C", launch: "Run CLI", launchCli: "CLI to run", headOpen: "Show controls", headClose: "Hide controls",
     again: "Tap again to confirm", done: "Sent", saved: "Saved", deleted: "Deleted", result: "Result", lines: "lines",
     sentTasks: "Sent tasks", taskState: { in_progress: "In progress", review: "Finished · to review" }, markDone: "Done", markedDone: "Marked done",
     workNow: "Working on task", workStep: (n, total) => `Step ${n}/${total}`, workDone: (d, total) => `${d}/${total} done`, workAuto: { running: "Auto-run", paused: "Auto-run paused" }, workOpen: "Click to open this task in the Tasks tab",
@@ -887,17 +887,36 @@ async function sendAsk(id, body) {
     refreshAsks(); setTimeout(refreshNow, 400);
   }
 }
+// 캐릭터 머리 카드: 평소엔 프로필·이름·위치·상태만 보이고, 목표·업무·제어 단추는 접어 둔다.
+// 펼침 여부는 이 브라우저에 저장해 캐릭터를 옮겨 다녀도 같게 둔다. `keep`은 접혀도 보이는 경고.
+const HEAD_OPEN_KEY = "agent-office-web-dash-head-open";
+let headOpen = load(HEAD_OPEN_KEY) === "1";
+function toggleHead() {
+  headOpen = !headOpen;
+  store(HEAD_OPEN_KEY, headOpen ? "1" : null);
+  const c = currentChar();
+  const head = document.getElementById("head");
+  if (c && head) head.replaceWith(renderHead(c));
+}
+function headCard(c, cls, who, keep, ...rest) {
+  const more = rest.some(Boolean);
+  return el("div", { class: cls + (headOpen ? " open" : ""), id: "head" },
+    el("div", { class: "row" + (more ? " head-row" : ""), onclick: more ? toggleHead : null }, avatar(c), who, chips(c),
+      more && el("button", { class: "head-fold", type: "button", "aria-expanded": headOpen ? "true" : "false",
+        "aria-label": headOpen ? S.headClose : S.headOpen, title: headOpen ? S.headClose : S.headOpen,
+        onclick: (e) => { e.stopPropagation(); toggleHead(); } })),
+    ...keep,
+    ...(headOpen ? rest : []));
+}
 function renderOfficeHead(c) {
   const [cls] = phaseOf(c);
   const running = c.session && c.session.state === "running";
   const wait = cls === "human" ? waitText(c) : null;
-  return el("div", { class: "card office", id: "head" },
-    el("div", { class: "row" }, avatar(c),
-      el("div", { class: "grow" }, el("div", { class: "name", text: c.name }), el("div", { class: "sub", title: c.cwd || "", text: running && c.cwd ? leaf(c.cwd) : S.officeSub })),
-      chips(c)),
+  return headCard(c, "card office",
+    el("div", { class: "grow" }, el("div", { class: "name", text: c.name }), el("div", { class: "sub", title: c.cwd || "", text: running && c.cwd ? leaf(c.cwd) : S.officeSub })),
+    [c.error && el("div", { class: "warn", text: `${S.openFailed}: ${errText(c.error)}` })],
     !c.session && el("div", { class: "note", text: S.officeHelp }),
     wait && el("div", { class: "wait", text: wait }),
-    c.error && el("div", { class: "warn", text: `${S.openFailed}: ${errText(c.error)}` }),
     running && el("div", { class: "btns" },
       el("button", { class: "b", text: S.interrupt, onclick: () => act(`/office-agent/interrupt`) }),
       el("button", { class: "b", text: S.ctrlc, onclick: () => act(`/office-agent/ctrl-c`) }),
@@ -921,10 +940,9 @@ function renderHead(c) {
   const wait = cls === "human" ? waitingMessage(c) : null;
   // 끊긴 머신의 캐릭터는 조작 단추를 감춘다(눌러도 그 머신에 닿지 않는다).
   const online = !c.remote || !!(c.machine && c.machine.online);
-  return el("div", { class: "card", id: "head" },
-    el("div", { class: "row" }, avatar(c),
-      el("div", { class: "grow" }, el("div", { class: "name", text: c.name }), el("div", { class: "sub", title: cwdOf(c), text: placeOf(c) })),
-      chips(c)),
+  return headCard(c, "card",
+    el("div", { class: "grow" }, el("div", { class: "name", text: c.name }), el("div", { class: "sub", title: cwdOf(c), text: placeOf(c) })),
+    [],
     goalOf(c) && el("div", { class: "goal", text: goalOf(c) }),
     workBox(c),
     wait && el("div", { class: "wait", text: wait }),
