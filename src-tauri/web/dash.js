@@ -749,20 +749,31 @@ function fitPanes() {
 }
 window.addEventListener("resize", () => { setHeaderVar(); if (document.getElementById("panes")) fitPanes(); });
 WIDE.addEventListener("change", () => { drawerOpen = false; if (document.getElementById("split") || view.tab === "tasks") render(); });
+// 화면 골격(어떤 칸이 있는지). 바뀌면 칸을 갈아 끼우지 않고 화면을 통째로 다시 그린다.
+let agentShape = null;
+function shapeOf(c) {
+  return JSON.stringify([c.agentId, !!c.office, !!c.remote, !!(c.machine && c.machine.online), !!c.shellAssist]);
+}
 function renderAgent() {
   const back = el("button", { class: "back", text: S.back, onclick: () => { view.agent = null; render(); refreshNow(); } });
   const c = currentChar();
+  agentShape = c ? shapeOf(c) : null;
   if (!c) return [back];
+  return agentParts(c, back).filter(Boolean);
+}
+// 직접 입력·업무 보내기는 머리 카드와 함께 접힌다(펼쳤을 때만 그린다).
+function agentParts(c, back) {
+  const msg = () => headOpen && renderMsgForm(c);
   if (c.office) return [back, renderHead(c), renderAsks(c), renderOfficeForm(c), renderCost(c), renderLive(c), renderLog(c.agentId)];
   // 다른 머신 캐릭터: 메시지·대기열·권한 응답·세션 조작을 그 머신에 넘긴다(업무 보내기는 4단계). 끊긴 머신이면 보기만.
   if (c.remote) {
     const online = !!(c.machine && c.machine.online);
     if (!online) return [back, renderHead(c), renderCost(c), renderLog(c.agentId)];
     if (c.shellAssist) return [back, renderHead(c), renderAsks(c), renderLog(c.agentId)];
-    return [back, renderHead(c), renderAsks(c), renderMsgForm(c), renderCost(c), renderLive(c), renderLog(c.agentId)];
+    return [back, renderHead(c), renderAsks(c), msg(), renderCost(c), renderLive(c), renderLog(c.agentId)];
   }
   if (c.shellAssist && window.Dash.shell) return [back, renderHead(c), window.Dash.shell.render(c)];
-  return [back, renderHead(c), renderAsks(c), renderSent(c), renderMsgForm(c), renderTaskForm(c), renderCost(c), renderLive(c), renderLog(c.agentId)];
+  return [back, renderHead(c), renderAsks(c), renderSent(c), msg(), headOpen && renderTaskForm(c), renderCost(c), renderLive(c), renderLog(c.agentId)];
 }
 
 // ── 권한 요청·선택지 ──
@@ -887,7 +898,8 @@ async function sendAsk(id, body) {
     refreshAsks(); setTimeout(refreshNow, 400);
   }
 }
-// 캐릭터 머리 카드: 평소엔 프로필·이름·위치·상태만 보이고, 목표·업무·제어 단추는 접어 둔다.
+// 캐릭터 머리 카드: 평소엔 프로필·이름·위치·상태만 보이고, 목표·업무·제어 단추와
+// 그 아래 직접 입력·업무 보내기 칸은 접어 둔다(펼치면 그 칸만 사용량 줄 위에 끼운다 — 로그는 그대로).
 // 펼침 여부는 이 브라우저에 저장해 캐릭터를 옮겨 다녀도 같게 둔다. `keep`은 접혀도 보이는 경고.
 const HEAD_OPEN_KEY = "agent-office-web-dash-head-open";
 let headOpen = load(HEAD_OPEN_KEY) === "1";
@@ -896,10 +908,14 @@ function toggleHead() {
   store(HEAD_OPEN_KEY, headOpen ? "1" : null);
   const c = currentChar();
   const head = document.getElementById("head");
-  if (c && head) head.replaceWith(renderHead(c));
+  if (!c || !head) return;
+  head.replaceWith(renderHead(c));
+  for (const id of ["msgform", "taskform"]) if (!c.office) { const old = document.getElementById(id); if (old) old.remove(); }
+  const cost = document.getElementById("cost");
+  if (headOpen && !c.office && cost) for (const part of agentParts(c, null)) if (part && (part.id === "msgform" || part.id === "taskform")) cost.before(part);
 }
-function headCard(c, cls, who, keep, ...rest) {
-  const more = rest.some(Boolean);
+function headCard(c, cls, who, keep, forms, ...rest) {
+  const more = forms || rest.some(Boolean);
   return el("div", { class: cls + (headOpen ? " open" : ""), id: "head" },
     el("div", { class: "row" + (more ? " head-row" : ""), onclick: more ? toggleHead : null }, avatar(c), who, chips(c),
       more && el("button", { class: "head-fold", type: "button", "aria-expanded": headOpen ? "true" : "false",
@@ -914,7 +930,7 @@ function renderOfficeHead(c) {
   const wait = cls === "human" ? waitText(c) : null;
   return headCard(c, "card office",
     el("div", { class: "grow" }, el("div", { class: "name", text: c.name }), el("div", { class: "sub", title: c.cwd || "", text: running && c.cwd ? leaf(c.cwd) : S.officeSub })),
-    [c.error && el("div", { class: "warn", text: `${S.openFailed}: ${errText(c.error)}` })],
+    [c.error && el("div", { class: "warn", text: `${S.openFailed}: ${errText(c.error)}` })], false,
     !c.session && el("div", { class: "note", text: S.officeHelp }),
     wait && el("div", { class: "wait", text: wait }),
     running && el("div", { class: "btns" },
@@ -942,7 +958,7 @@ function renderHead(c) {
   const online = !c.remote || !!(c.machine && c.machine.online);
   return headCard(c, "card",
     el("div", { class: "grow" }, el("div", { class: "name", text: c.name }), el("div", { class: "sub", title: cwdOf(c), text: placeOf(c) })),
-    [],
+    [], online && !c.shellAssist,
     goalOf(c) && el("div", { class: "goal", text: goalOf(c) }),
     workBox(c),
     wait && el("div", { class: "wait", text: wait }),
@@ -1734,7 +1750,7 @@ function updateShellView(changed) {
 function updateAgentView(changed, logMode) {
   const c = currentChar();
   const head = document.getElementById("head");
-  if (!c || !head || !document.getElementById("taskform")) { if (changed || logMode !== "same") render(); return; }
+  if (!c || !head || !document.getElementById("log") || shapeOf(c) !== agentShape) { if (changed || logMode !== "same") render(); return; }
   if (changed) { head.replaceWith(renderHead(c)); refreshTaskActions(); }
   refreshAsks();
   refreshMsg();
