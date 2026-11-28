@@ -38,6 +38,7 @@
 | 영속화(설정·프로필·업무 등) | `persistence/` |
 | 업무 보내기·자동 진행·태스크 대화 | `work_send.rs`, `work_send/`, `auto_run.rs`, `task_chat.rs` |
 | 대화 입력·보낼 메시지 대기열(대화 보기·웹 상태판 공유, 턴이 끝나면 하나씩 넣음)·지금 상태(턴 시작 `TurnObservation::since`, 마지막 PTY 출력 `SessionManager::last_output_ms`) | `chat_queue.rs`(펌프는 `lib.rs`에서 띄움) |
+| Stop 훅 없이 끝난 Claude 턴(Esc로 끊음·권한 거절·API 오류) 정산 — 작업 중인데 출력이 잠잠하면 전사 끝의 `[Request interrupted by user…]`·`isApiErrorMessage`를 보고 `NotificationHub::turn_halted`(`ActivityKind::Idle`, 알림 없음)로 턴을 끝낸다. 턴 관측(`control/turns.rs`)과 `workMonitor.ts`도 `idle`을 턴 끝으로 받는다 | `turn_halt.rs`(펌프는 `lib.rs`에서 띄움) |
 | 일반 에이전트(캐릭터 없는 `office-agent` 곁 세션, 웹 상태판에서 지시) | `office_agent.rs`(열기·마지막 실패), 세션 준비는 `session/manager.rs`의 `prepare_session_plan`, 웹 라우트 `webdash/routes.rs`(`/api/office-agent`), 렌더러 `officeAgent/officeAgentStore.ts` |
 | 예약 명세 파싱(`office-task --at`·`--every`, 수신함 `schedule:`) | `persistence/work_inbox.rs`의 `normalize_schedule` |
 | 업무 수신함 `office-task`, 공통 안내문 | `work_inbox_cli.rs`, `persistence/work_inbox.rs`, `office_instructions.rs` |

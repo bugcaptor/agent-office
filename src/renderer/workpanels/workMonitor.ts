@@ -37,6 +37,8 @@ export function installWorkMonitor(): () => void {
   const offActivity = tauriApi.onActivity((e) => {
     if (e.kind === "prompt") observe(e.sessionId, e.agentId, "working", e.at, true);
     else if (e.kind === "tool" || e.kind === "resume") observe(e.sessionId, e.agentId, "working", e.at, false);
+    // 알림 없는 턴 정산(셸 명령 끝, Stop 훅 없이 끊긴 Claude 턴). 업무 상태는 사람이 보고 옮기게 둔다.
+    else if (e.kind === "idle") observe(e.sessionId, e.agentId, "review", e.at, false);
   });
   const offNotification = tauriApi.onNotification((e) => {
     const type = notificationType(e.source);

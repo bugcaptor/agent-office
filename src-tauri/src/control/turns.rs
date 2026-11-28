@@ -104,6 +104,16 @@ impl TurnTracker {
         self.sessions.lock().unwrap().get(session_id).cloned()
     }
 
+    /// 턴이 도는 중(작업 중·사람 대기)인 세션들.
+    pub fn in_turn(&self) -> Vec<(String, TurnObservation)> {
+        let sessions = self.sessions.lock().unwrap();
+        sessions
+            .iter()
+            .filter(|(_, o)| matches!(o.phase, TurnPhase::Working | TurnPhase::NeedsHuman))
+            .map(|(sid, o)| (sid.clone(), o.clone()))
+            .collect()
+    }
+
     pub fn subscribe(&self) -> watch::Receiver<u64> {
         self.version.subscribe()
     }
@@ -179,6 +189,11 @@ impl AppEvents for TrackingEvents {
         if matches!(ev.kind, ActivityKind::Prompt | ActivityKind::Tool | ActivityKind::Resume) {
             self.tracker.observe(&ev.session_id, &ev.agent_id, TurnPhase::Working, ev.at, None);
         }
+        // 알림 없이 턴을 정산하는 신호: 셸 명령 끝, Stop 훅 없이 끝난 Claude 턴(사용자가 끊음·API 오류,
+        // `turn_halt.rs`). 렌더러도 같은 신호로 턴을 정산한다(`appStore`·`workMonitor.ts`).
+        if ev.kind == ActivityKind::Idle {
+            self.tracker.observe(&ev.session_id, &ev.agent_id, TurnPhase::Idle, ev.at, None);
+        }
         self.inner.activity_event(ev);
     }
     fn turn_usage(&self, ev: &TurnUsageEvent) {
@@ -244,6 +259,20 @@ mod tests {
         assert_eq!((idle.phase, idle.since), (TurnPhase::Idle, 40));
         events.activity_event(&activity(ActivityKind::Prompt, 50));
         assert_eq!(tracker.get("s1").unwrap().since, 50);
+    }
+
+    #[test]
+    fn idle_activity_settles_the_turn_without_a_stop() {
+        let (tracker, events, _) = setup();
+        events.activity_event(&activity(ActivityKind::Prompt, 10));
+        events.activity_event(&activity(ActivityKind::Tool, 20));
+        assert_eq!(tracker.in_turn().len(), 1);
+        events.activity_event(&activity(ActivityKind::Idle, 30));
+        let idle = tracker.get("s1").unwrap();
+        assert_eq!((idle.phase, idle.since), (TurnPhase::Idle, 30));
+        assert!(tracker.in_turn().is_empty());
+        events.activity_event(&activity(ActivityKind::Prompt, 40));
+        assert_eq!(tracker.get("s1").unwrap().phase, TurnPhase::Working);
     }
 
     #[test]

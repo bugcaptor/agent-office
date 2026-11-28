@@ -31,6 +31,10 @@ describe("연결 업무 모니터링", () => {
     notify("stop", 202, "new"); activity("prompt", 201, "new"); expect(useWorkItemStore.getState().items[0].status).toBe("review");
     activity("idle", 203, "new"); expect(useWorkMonitorStore.getState().sessions.new.phase).toBe("review");
   });
+  it("Stop 없이 끊긴 턴의 idle 신호는 턴을 끝내지만 업무 상태는 옮기지 않는다", () => {
+    item(); activity("prompt"); activity("tool", 102); activity("idle", 103);
+    expect(useWorkMonitorStore.getState().sessions.s.phase).toBe("review"); expect(useWorkItemStore.getState().items[0].status).toBe("in_progress");
+  });
   it("턴 종료 뒤 idle_prompt 훅 알림은 질문 대기로 바꾸지 않고 다음 prompt 뒤 질문은 다시 강조한다", () => {
     item(); activity("prompt"); notify("stop", 102); notify("hook", 160);
     expect(useWorkMonitorStore.getState().sessions.s.phase).toBe("review"); expect(useWorkItemStore.getState().items[0].status).toBe("review");

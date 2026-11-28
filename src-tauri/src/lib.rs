@@ -10,6 +10,7 @@ pub mod agent_paths;
 pub mod api_keys;
 mod work_send;
 mod chat_queue;
+mod turn_halt;
 mod task_chat;
 mod office_agent;
 mod discussion_session;
@@ -774,6 +775,7 @@ pub fn run() {
                 agent_session_lookup: claude_resume_store.clone(),
             });
             crate::chat_queue::ChatQueue::spawn(control_ctx.chat_queue.clone(), control_ctx.clone());
+            crate::turn_halt::spawn(control_ctx.clone());
             crate::shell_assist::install(control_ctx.clone(), &data_dir);
             if settings_cache.read().unwrap().cli_enabled {
                 let _ = tauri::async_runtime::block_on(control_server.ensure(control_ctx.clone()));

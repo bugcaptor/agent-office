@@ -736,6 +736,15 @@ impl NotificationHub {
         cleared
     }
 
+    /// Stop 훅 없이 턴이 끝났다(사용자가 끊음·API 오류 — `turn_halt.rs`가 전사로 확인한다).
+    /// 완료 알림은 내지 않고 턴만 정산한다(`ActivityKind::Idle`). 대화상자도 이미 닫혔으므로
+    /// 보류 중인 질문 알림과 터미널 답 추정도 버린다.
+    pub fn turn_halted(&self, session_id: &str) {
+        self.held.lock().unwrap().remove(session_id);
+        self.end_answer_watch(session_id);
+        self.ingest_activity(session_id, ActivityKind::Idle);
+    }
+
     pub fn purge_session(&self, session_id: &str) {
         self.queues.lock().unwrap().remove(session_id);
         self.resume_watch.lock().unwrap().remove(session_id);
