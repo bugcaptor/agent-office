@@ -400,3 +400,27 @@ main.tasks-wide { max-width: 1380px; }
 .card.offline { opacity: 0.55; }
 .machine-tag { margin-left: 6px; font-size: 11px; font-weight: normal; color: var(--muted); white-space: nowrap; }
 .machine-tag.off { opacity: 0.6; }
+/* 파일 탭(files.js) */
+.files-status { margin: 0 0 10px; font-size: 13px; overflow-wrap: anywhere; }
+.files-send h3, .files-history h3 { margin: 0 0 8px; font-size: 15px; }
+.files-field { display: flex; flex-direction: column; gap: 4px; margin-bottom: 8px; font-size: 13px; }
+.files-check { display: flex; gap: 8px; align-items: center; margin-bottom: 8px; font-size: 13px; }
+.files-check input { width: auto; }
+.files-modes { display: flex; gap: 6px; margin-bottom: 8px; flex-wrap: wrap; }
+button.b.active { border-color: var(--accent); color: var(--accent); }
+.files-picked ul, .files-browse ul, .files-list { list-style: none; margin: 0 0 8px; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+.files-picked li, .files-browse li { display: flex; gap: 8px; align-items: center; min-width: 0; }
+.files-picked li > span, .files-browse li > span, .files-browse li > .linkish { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: left; }
+.files-browse li input { width: auto; flex: none; }
+.files-roots { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; margin-bottom: 8px; }
+.files-path { font-size: 12px; overflow-wrap: anywhere; min-width: 0; }
+.linkish { background: none; border: none; padding: 0; color: var(--accent); font: inherit; cursor: pointer; }
+.files-row { border-top: 1px solid var(--line); padding: 8px 0; display: flex; flex-direction: column; gap: 3px; }
+.files-row:first-child { border-top: none; }
+.files-line b { overflow-wrap: anywhere; }
+.files-row .err, .files-browse-wrap .err { color: var(--bad); }
+.files-done > small:nth-of-type(2) { color: var(--ok); }
+.files-bar { height: 6px; background: var(--chip); border-radius: 3px; overflow: hidden; }
+.files-bar > span { display: block; height: 100%; background: var(--accent); }
+.files-downloads { display: flex; flex-wrap: wrap; gap: 6px; }
+.files-downloads a.b { border: 1px solid var(--line); border-radius: 8px; padding: 5px 9px; color: var(--ink); background: var(--panel); text-decoration: none; font-size: 12px; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

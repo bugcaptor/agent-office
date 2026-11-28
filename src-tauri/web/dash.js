@@ -3,7 +3,7 @@
 const L = (navigator.language || "ko").toLowerCase().startsWith("ko") ? "ko" : "en";
 const S = {
   ko: {
-    tabs: { chars: "캐릭터", tasks: "업무", talks: "토의", usage: "사용량" },
+    tabs: { chars: "캐릭터", tasks: "업무", files: "파일", talks: "토의", usage: "사용량" },
     theme: { auto: "◐ 자동", light: "☀ 밝게", dark: "☾ 어둡게", hint: (now) => `화면 테마: ${now} · 눌러서 바꾸기(자동은 기기 설정을 따름)` },
     phase: { working: "작업 중", "needs-human": "답을 기다림", idle: "입력 대기", ended: "종료됨", starting: "시작 중", off: "꺼짐", running: "켜짐" },
     clockedOut: "퇴근", back: "← 목록", log: "대화 로그", noLog: "이 터미널에는 읽을 대화 로그가 없습니다(Claude·Codex·Antigravity 전사가 없는 세션).", noItems: "아직 대화가 없습니다.",
@@ -59,7 +59,7 @@ const S = {
       "link-not-remote": "다른 머신의 캐릭터가 아닙니다", "no-resume-session": "이어할 세션이 없습니다", "link-device-offline": "그 머신이 끊겼습니다", "link-request-timeout": "그 머신이 제때 답하지 않았습니다" },
   },
   en: {
-    tabs: { chars: "Characters", tasks: "Tasks", talks: "Discussions", usage: "Usage" },
+    tabs: { chars: "Characters", tasks: "Tasks", files: "Files", talks: "Discussions", usage: "Usage" },
     theme: { auto: "◐ Auto", light: "☀ Light", dark: "☾ Dark", hint: (now) => `Theme: ${now} · tap to change (Auto follows the device)` },
     phase: { working: "Working", "needs-human": "Waiting for answer", idle: "Waiting for input", ended: "Ended", starting: "Starting", off: "Off", running: "On" },
     clockedOut: "Clocked out", back: "← List", log: "Conversation", noLog: "No conversation log for this terminal (no Claude/Codex/Antigravity transcript).", noItems: "No messages yet.",
@@ -411,6 +411,7 @@ function render() {
     fitPanes();
   }
   else if (view.tab === "tasks" && window.Dash && window.Dash.tasks) window.Dash.tasks.render(main);
+  else if (view.tab === "files" && window.Dash && window.Dash.files) window.Dash.files.render(main);
   else if (view.tab === "talks") main.replaceChildren(...renderTalks());
   else main.replaceChildren(...renderUsage());
 }
@@ -1592,6 +1593,8 @@ async function tick() {
       keepLogs(ids);
       await Promise.all(ids.map((id) => refreshLog(id, false).catch(() => "same")));
       if (view.tab === "tasks" && window.Dash && window.Dash.tasks) { window.Dash.tasks.onTick(changed, tasksChanged); refreshPreviews(); }
+    } else if (view.tab === "files") {
+      if (window.Dash.files) await window.Dash.files.refresh();
     } else if (view.tab === "talks") {
       if (view.talk) {
         const d = await api(`/discussions/${encodeURIComponent(view.talk)}`);
@@ -1660,6 +1663,7 @@ window.Dash = {
   store, load, sstore, sload, avatar, phaseOf, waitingMessage, busyShell,
   leaf, cwdOf, placeOf, CLI_NAMES, WIDE, view, openAgent, openTask, render, nowMs, tildePath,
   refreshNow, setHeaderVar, boot, previewSlot,
+  token: () => token,
   // 업무 탭은 이 머신 캐릭터만 담당으로 고른다(다른 머신 업무 분배는 다음 단계).
   getChars: () => chars && chars.filter((c) => !c.remote),
   // 다른 머신 캐릭터까지(담당 이름·묶음용. 고르는 목록은 getChars).

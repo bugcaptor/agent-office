@@ -126,6 +126,9 @@ pub struct Target {
     pub agent_id: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub agent_name: Option<String>,
+    /// 호스트에서 본 연동 기기 id(다른 머신일 때). 원격 캐릭터 id(`기기id:캐릭터id`)와 맞춰 본다.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub device_id: Option<String>,
     /// 이 머신(목록을 보는 쪽).
     #[serde(default)]
     pub local: bool,
@@ -246,6 +249,7 @@ mod tests {
             machine_name: machine.into(),
             agent_id: agent.map(|a| format!("a-{a}")),
             agent_name: agent.map(str::to_string),
+            device_id: None,
             local,
             online: true,
             receive: true,

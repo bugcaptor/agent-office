@@ -60,7 +60,34 @@
       "cancel": "Annuler"
     }
   },
-  "repositoryAudit": { "aria": "Audit des dépôts", "title": "Audit des dépôts", "refresh": "Actualiser", "close": "Fermer", "loading": "Vérification des dépôts…", "error": "Impossible de charger l’état des dépôts.", "empty": "Aucun dépôt trouvé dans l’historique.", "basisNote": "Utilise l’état distant enregistré lors de la dernière synchronisation, sans fetch automatique.", "noBranch": "Sans branche", "terminal": "Ouvrir le terminal", "terminalError": "Impossible d’ouvrir le terminal.", "push": "Envoyer", "pushTitle": "Envoyer {{count}} commits vers {{upstream}}", "pushing": "Envoi…", "pushError": "Impossible d’envoyer.", "state": { "commit": "{{count}} modifications à valider", "push": "{{ahead}} à envoyer", "pull": "{{behind}} à récupérer", "diverged": "Envoi {{ahead}} · réception {{behind}}", "conflict": "{{count}} conflits", "unknown": "À vérifier", "noRemote": "Aucun dépôt distant", "noUpstream": "Aucune branche amont", "clean": "Rien à signaler" } },
+  "repositoryAudit": {
+    "aria": "Audit des dépôts",
+    "title": "Audit des dépôts",
+    "refresh": "Actualiser",
+    "close": "Fermer",
+    "loading": "Vérification des dépôts…",
+    "error": "Impossible de charger l’état des dépôts.",
+    "empty": "Aucun dépôt trouvé dans l’historique.",
+    "basisNote": "Utilise l’état distant enregistré lors de la dernière synchronisation, sans fetch automatique.",
+    "noBranch": "Sans branche",
+    "terminal": "Ouvrir le terminal",
+    "terminalError": "Impossible d’ouvrir le terminal.",
+    "push": "Envoyer",
+    "pushTitle": "Envoyer {{count}} commits vers {{upstream}}",
+    "pushing": "Envoi…",
+    "pushError": "Impossible d’envoyer.",
+    "state": {
+      "commit": "{{count}} modifications à valider",
+      "push": "{{ahead}} à envoyer",
+      "pull": "{{behind}} à récupérer",
+      "diverged": "Envoi {{ahead}} · réception {{behind}}",
+      "conflict": "{{count}} conflits",
+      "unknown": "À vérifier",
+      "noRemote": "Aucun dépôt distant",
+      "noUpstream": "Aucune branche amont",
+      "clean": "Rien à signaler"
+    }
+  },
   "profileLoad": {
     "body": "Impossible de lire les profils des personnages (profiles.json). Les modifications ne seront pas enregistrées tant qu'il n'est pas chargé, pour ne pas écraser l'original.",
     "retry": "Réessayer",
@@ -103,7 +130,10 @@
       "message-queued": "🌐 Web : mis en file pour {{name}} — {{detail}}",
       "office-agent-queued": "🌐 Web : mis en file pour l'agent général — {{detail}}",
       "other": "🌐 Web : {{op}}",
-      "shell-run": "🌐 Web : exécuté dans le shell de {{name}} — {{detail}}"
+      "shell-run": "🌐 Web : exécuté dans le shell de {{name}} — {{detail}}",
+      "file-send": "🌐 Web : fichiers envoyés — {{detail}}",
+      "file-cancel": "🌐 Web : envoi de fichiers annulé — {{detail}}",
+      "file-resume": "🌐 Web : envoi de fichiers repris — {{detail}}"
     }
   },
   "link": {

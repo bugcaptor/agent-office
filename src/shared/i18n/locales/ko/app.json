@@ -76,7 +76,17 @@
     "pushTitle": "{{upstream}}에 커밋 {{count}}개 푸시",
     "pushing": "푸시 중…",
     "pushError": "푸시하지 못했습니다.",
-    "state": { "commit": "커밋할 변경 {{count}}개", "push": "푸시 {{ahead}}개", "pull": "풀 {{behind}}개", "diverged": "푸시 {{ahead}} · 풀 {{behind}}", "conflict": "충돌 {{count}}개", "unknown": "상태 확인 필요", "noRemote": "원격 저장소 없음", "noUpstream": "업스트림 없음", "clean": "문제 없음" }
+    "state": {
+      "commit": "커밋할 변경 {{count}}개",
+      "push": "푸시 {{ahead}}개",
+      "pull": "풀 {{behind}}개",
+      "diverged": "푸시 {{ahead}} · 풀 {{behind}}",
+      "conflict": "충돌 {{count}}개",
+      "unknown": "상태 확인 필요",
+      "noRemote": "원격 저장소 없음",
+      "noUpstream": "업스트림 없음",
+      "clean": "문제 없음"
+    }
   },
   "profileLoad": {
     "body": "캐릭터 프로필(profiles.json)을 읽지 못했습니다. 원본을 덮어쓰지 않도록, 다시 읽을 때까지 변경 내용은 저장되지 않습니다.",
@@ -120,7 +130,10 @@
       "message-queued": "🌐 웹: {{name}} 대기열에 넣음 — {{detail}}",
       "office-agent-queued": "🌐 웹: 일반 에이전트 대기열에 넣음 — {{detail}}",
       "other": "🌐 웹: {{op}}",
-      "shell-run": "🌐 웹: {{name}} 셸에서 실행 — {{detail}}"
+      "shell-run": "🌐 웹: {{name}} 셸에서 실행 — {{detail}}",
+      "file-send": "🌐 웹: 파일 보냄 — {{detail}}",
+      "file-cancel": "🌐 웹: 파일 보내기 취소 — {{detail}}",
+      "file-resume": "🌐 웹: 파일 이어 보내기 — {{detail}}"
     }
   },
   "link": {

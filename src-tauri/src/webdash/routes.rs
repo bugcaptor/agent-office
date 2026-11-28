@@ -31,6 +31,7 @@ const STYLE: &str = include_str!("../../web/dash.css");
 const APP_JS: &str = include_str!("../../web/dash.js");
 const TASKS_JS: &str = include_str!("../../web/tasks.js");
 const SHELL_JS: &str = include_str!("../../web/shell.js");
+const FILES_JS: &str = include_str!("../../web/files.js");
 /// 토의 발언을 웹으로 보낼 때의 글자 상한.
 const BODY_CHARS: usize = 4000;
 /// 업무 본문 바이트 상한(수신함 `.md` 상한 64 KiB와 맞춤).
@@ -95,6 +96,7 @@ fn router(ctx: Arc<Dash>) -> Router {
         .route("/shell/:agent/suggest", post(shell_suggest))
         .route("/shell/:agent/run", post(shell_run))
         .route("/office-agent/:op", post(office_agent_command))
+        .merge(super::files_routes::routes())
         .layer(axum::middleware::from_fn_with_state(ctx.clone(), auth));
     let link = ctx.dash.link_host().map(|host| {
         let dash = Arc::downgrade(&ctx.dash);
@@ -106,6 +108,7 @@ fn router(ctx: Arc<Dash>) -> Router {
         .route("/dash.js", get(app_js_asset))
         .route("/tasks.js", get(tasks_js_asset))
         .route("/shell.js", get(shell_js_asset))
+        .route("/files.js", get(files_js_asset))
         .route("/ca.crt", get(lan_ca))
         .nest("/api", api)
         .with_state(ctx);
@@ -202,6 +205,10 @@ async fn tasks_js_asset() -> Response {
 
 async fn shell_js_asset() -> Response {
     static_asset(SHELL_JS, "text/javascript; charset=utf-8")
+}
+
+async fn files_js_asset() -> Response {
+    static_asset(FILES_JS, "text/javascript; charset=utf-8")
 }
 
 // ── 읽기 ─────────────────────────────────────────────────────────────
@@ -554,7 +561,7 @@ async fn discussion(State(ctx): Ctx, Path(id): Path<String>) -> Json<Value> {
 
 // ── 쓰기(간접 명령) ───────────────────────────────────────────────────
 
-fn activity(ctx: &Dash, op: &str, agent: Option<&str>, detail: Option<&str>) {
+pub(super) fn activity(ctx: &Dash, op: &str, agent: Option<&str>, detail: Option<&str>) {
     // 명령이 터미널 상태(CLI 실행·종료)를 바꿨을 수 있다 — 다음 `/state`가 다시 보게 한다.
     ctx.dash.probes.clear();
     let name = agent.and_then(|id| profile(ctx, id)).map(|p| p.name);

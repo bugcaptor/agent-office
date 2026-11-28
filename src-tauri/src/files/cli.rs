@@ -446,7 +446,7 @@ mod tests {
         t.saved = vec!["/r/a.txt".into()];
         t.to = super::super::Party { machine_id: "m9".into(), machine_name: "pc".into(), ..Default::default() };
         std::fs::write(data.join(TRANSFERS_FILE), json!({ "transfers": [t] }).to_string()).unwrap();
-        let target = Target { machine_id: "m2".into(), machine_name: "mac".into(), agent_id: None, agent_name: None, local: false, online: true, receive: false };
+        let target = Target { machine_id: "m2".into(), machine_name: "mac".into(), agent_id: None, agent_name: None, device_id: None, local: false, online: true, receive: false };
         std::fs::write(data.join(TARGETS_FILE), json!({ "targets": [target] }).to_string()).unwrap();
         let env = FileEnv { app_data: Some(data.into()), cwd: data.into(), agent_id: None, in_session: false };
         let (code, out, _) = call(&["list", "--received"], &env);

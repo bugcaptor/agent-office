@@ -28,6 +28,7 @@ pub mod log;
 mod markdown;
 pub mod net;
 mod routes;
+mod files_routes;
 pub(crate) mod snapshot;
 mod work_progress;
 pub(crate) mod tls;

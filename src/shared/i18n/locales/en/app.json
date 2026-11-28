@@ -60,7 +60,34 @@
       "cancel": "Cancel"
     }
   },
-  "repositoryAudit": { "aria": "Repository audit", "title": "Repository audit", "refresh": "Refresh", "close": "Close", "loading": "Checking repositories…", "error": "Could not load repository status.", "empty": "No repositories found in work history.", "basisNote": "Uses remote state saved at the last sync and does not fetch automatically.", "noBranch": "No branch", "terminal": "Open terminal", "terminalError": "Could not open the terminal.", "push": "Push", "pushTitle": "Push {{count}} commits to {{upstream}}", "pushing": "Pushing…", "pushError": "Could not push.", "state": { "commit": "{{count}} changes to commit", "push": "{{ahead}} to push", "pull": "{{behind}} to pull", "diverged": "Push {{ahead}} · pull {{behind}}", "conflict": "{{count}} conflicts", "unknown": "Needs checking", "noRemote": "No remote", "noUpstream": "No upstream", "clean": "All clear" } },
+  "repositoryAudit": {
+    "aria": "Repository audit",
+    "title": "Repository audit",
+    "refresh": "Refresh",
+    "close": "Close",
+    "loading": "Checking repositories…",
+    "error": "Could not load repository status.",
+    "empty": "No repositories found in work history.",
+    "basisNote": "Uses remote state saved at the last sync and does not fetch automatically.",
+    "noBranch": "No branch",
+    "terminal": "Open terminal",
+    "terminalError": "Could not open the terminal.",
+    "push": "Push",
+    "pushTitle": "Push {{count}} commits to {{upstream}}",
+    "pushing": "Pushing…",
+    "pushError": "Could not push.",
+    "state": {
+      "commit": "{{count}} changes to commit",
+      "push": "{{ahead}} to push",
+      "pull": "{{behind}} to pull",
+      "diverged": "Push {{ahead}} · pull {{behind}}",
+      "conflict": "{{count}} conflicts",
+      "unknown": "Needs checking",
+      "noRemote": "No remote",
+      "noUpstream": "No upstream",
+      "clean": "All clear"
+    }
+  },
   "profileLoad": {
     "body": "Couldn't read character profiles (profiles.json). Changes won't be saved until it loads, so the original isn't overwritten.",
     "retry": "Retry",
@@ -103,7 +130,10 @@
       "message-queued": "🌐 Web: queued for {{name}} — {{detail}}",
       "office-agent-queued": "🌐 Web: queued for the general agent — {{detail}}",
       "other": "🌐 Web: {{op}}",
-      "shell-run": "🌐 Web: ran in {{name}} shell — {{detail}}"
+      "shell-run": "🌐 Web: ran in {{name}} shell — {{detail}}",
+      "file-send": "🌐 Web: sent files — {{detail}}",
+      "file-cancel": "🌐 Web: cancelled a file transfer — {{detail}}",
+      "file-resume": "🌐 Web: resumed a file transfer — {{detail}}"
     }
   },
   "link": {
