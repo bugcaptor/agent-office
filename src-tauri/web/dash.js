@@ -5,6 +5,7 @@ const S = {
   ko: {
     tabs: { chars: "캐릭터", tasks: "업무", files: "파일", talks: "토의", usage: "사용량" },
     theme: { auto: "◐ 자동", light: "☀ 밝게", dark: "☾ 어둡게", hint: (now) => `화면 테마: ${now} · 눌러서 바꾸기(자동은 기기 설정을 따름)` },
+    notify: { on: "🔔 알림", off: "🔕 알림", hintOn: "데스크톱 알림 켜짐 · 답을 기다리거나 턴이 끝나면 알림(이 화면을 보고 있을 땐 안 보냄) · 눌러서 끄기", hintOff: "데스크톱 알림 꺼짐 · 눌러서 켜기", hintNo: "이 브라우저에서는 알림을 쓸 수 없습니다(HTTPS 주소로 열어야 함)", turnedOn: "데스크톱 알림을 켰습니다", turnedOff: "데스크톱 알림을 껐습니다", denied: "브라우저가 알림을 막았습니다 · 사이트 설정에서 허용하세요", unsupported: "이 브라우저에서는 알림을 쓸 수 없습니다(HTTPS 주소로 열어야 함)", human: (name) => `${name} · 답을 기다림`, done: (name) => `${name} · 턴 끝남` },
     phase: { working: "작업 중", "needs-human": "답을 기다림", idle: "입력 대기", ended: "종료됨", starting: "시작 중", off: "꺼짐", running: "켜짐" },
     clockedOut: "퇴근", back: "← 목록", log: "대화 로그", noLog: "이 터미널에는 읽을 대화 로그가 없습니다(Claude·Codex·Antigravity 전사가 없는 세션).", noItems: "아직 대화가 없습니다.",
     restart: "터미널 재시작", resume: "이어하기", terminate: "종료", interrupt: "작업 중단(Esc)", ctrlc: "Ctrl-C", launch: "CLI 실행", launchCli: "띄울 CLI",
@@ -61,6 +62,7 @@ const S = {
   en: {
     tabs: { chars: "Characters", tasks: "Tasks", files: "Files", talks: "Discussions", usage: "Usage" },
     theme: { auto: "◐ Auto", light: "☀ Light", dark: "☾ Dark", hint: (now) => `Theme: ${now} · tap to change (Auto follows the device)` },
+    notify: { on: "🔔 Alerts", off: "🔕 Alerts", hintOn: "Desktop alerts on · when an agent waits for an answer or finishes a turn (not while you are looking at this page) · tap to turn off", hintOff: "Desktop alerts off · tap to turn on", hintNo: "Alerts aren't available in this browser (open the HTTPS address)", turnedOn: "Desktop alerts on", turnedOff: "Desktop alerts off", denied: "The browser blocked alerts · allow them in site settings", unsupported: "Alerts aren't available in this browser (open the HTTPS address)", human: (name) => `${name} · waiting for an answer`, done: (name) => `${name} · turn finished` },
     phase: { working: "Working", "needs-human": "Waiting for answer", idle: "Waiting for input", ended: "Ended", starting: "Starting", off: "Off", running: "On" },
     clockedOut: "Clocked out", back: "← List", log: "Conversation", noLog: "No conversation log for this terminal (no Claude/Codex/Antigravity transcript).", noItems: "No messages yet.",
     restart: "Restart terminal", resume: "Resume", terminate: "Terminate", interrupt: "Interrupt (Esc)", ctrlc: "Ctrl-C", launch: "Run CLI", launchCli: "CLI to run",
@@ -430,6 +432,7 @@ function openAgent(agentId) {
   view.tab = "chars";
   view.agent = agentId;
   view.talk = null;
+  seenAgent(agentId);
   store("agent-office-web-dash-tab", "chars");
   render(); refreshNow(); window.scrollTo(0, 0);
 }
@@ -1497,6 +1500,83 @@ function renderUsageBar() {
   bar.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); open(); } });
 }
 
+// ── 데스크톱 알림·제목 대기 수 ──
+// 답을 기다리게 되거나 턴이 끝나면 알린다(이 화면을 보고 있을 땐 안 보냄). 제목에는 답을 기다리는 수와
+// 화면을 안 보는 동안 끝난 턴 수를 더해 "(N) …"로 띄운다. 끝난 턴은 화면을 다시 보거나 그 캐릭터를 열면 지운다.
+const NOTIFY_KEY = "agent-office-web-dash-notify";
+const canNotify = typeof Notification !== "undefined" && window.isSecureContext;
+let notifyOn = canNotify && load(NOTIFY_KEY) === "1" && Notification.permission === "granted";
+let baseTitle = "Agent Office", badgeShown = 0, attnSeeded = false;
+const attnSeen = new Map(); // agentId -> { phase, idleSince }
+const unseenDone = new Set();
+function looking() { return !document.hidden && document.hasFocus(); }
+function paintNotifyButton() {
+  const b = document.getElementById("notify");
+  const on = notifyOn && Notification.permission === "granted";
+  b.textContent = on ? S.notify.on : S.notify.off;
+  b.title = !canNotify ? S.notify.hintNo : on ? S.notify.hintOn : S.notify.hintOff;
+  b.setAttribute("aria-label", b.title);
+  b.setAttribute("aria-pressed", on ? "true" : "false");
+  b.classList.toggle("on", on);
+}
+document.getElementById("notify").onclick = async () => {
+  if (!canNotify) { toast(S.notify.unsupported); return; }
+  if (notifyOn) { notifyOn = false; store(NOTIFY_KEY, null); paintNotifyButton(); toast(S.notify.turnedOff); return; }
+  let perm = Notification.permission;
+  if (perm === "default") { try { perm = await Notification.requestPermission(); } catch (_) { perm = "denied"; } }
+  if (perm !== "granted") { paintNotifyButton(); toast(S.notify.denied); return; }
+  notifyOn = true; store(NOTIFY_KEY, "1"); paintNotifyButton(); toast(S.notify.turnedOn);
+};
+paintNotifyButton();
+function charName(c) { return c.remote && c.machine ? `${c.name} · ${c.machine.name}` : c.name; }
+function notifyAgent(c, kind) {
+  if (!notifyOn || Notification.permission !== "granted" || looking()) return;
+  const title = kind === "human" ? S.notify.human(charName(c)) : S.notify.done(charName(c));
+  const body = (kind === "human" ? waitingMessage(c) : goalOf(c)) || placeOf(c) || "";
+  try {
+    const n = new Notification(title, { body, tag: `agent-office:${c.agentId}` });
+    n.onclick = () => { window.focus(); n.close(); openAgent(c.agentId); };
+  } catch (_) { /* 모바일 Chrome 등 서비스 워커 없이는 못 띄우는 곳 */ }
+}
+function waitCount() {
+  const human = allChars().filter((c) => !c.shellAssist && phaseOf(c)[0] === "human").length;
+  return human + unseenDone.size;
+}
+function paintTitle() {
+  const n = waitCount();
+  document.title = n ? `(${n}) ${baseTitle}` : baseTitle;
+  if (n !== badgeShown && navigator.setAppBadge) {
+    badgeShown = n;
+    (n ? navigator.setAppBadge(n) : navigator.clearAppBadge()).catch(() => {});
+  }
+}
+function clearSeen() { if (unseenDone.size && looking()) { unseenDone.clear(); paintTitle(); } }
+function seenAgent(agentId) { if (unseenDone.delete(agentId)) paintTitle(); }
+window.addEventListener("focus", clearSeen);
+document.addEventListener("visibilitychange", clearSeen);
+function watchAttention() {
+  const ids = new Set();
+  for (const c of allChars()) {
+    if (c.shellAssist) continue;
+    ids.add(c.agentId);
+    const phase = phaseOf(c)[0];
+    // 턴 끝(idle)의 since는 끝난 시각이다. 폴링 사이에 지나간 짧은 턴도 since가 바뀐 것으로 잡는다.
+    const idleSince = c.turn && c.turn.phase === "idle" && phase === "idle" ? c.turn.since : null;
+    const prev = attnSeen.get(c.agentId);
+    attnSeen.set(c.agentId, { phase, idleSince });
+    if (phase !== "idle") unseenDone.delete(c.agentId);
+    if (!attnSeeded || !prev) continue;
+    if (phase === "human" && prev.phase !== "human") notifyAgent(c, "human");
+    else if (idleSince != null && idleSince !== prev.idleSince) {
+      if (!looking()) unseenDone.add(c.agentId);
+      notifyAgent(c, "done");
+    }
+  }
+  for (const id of [...attnSeen.keys()]) if (!ids.has(id)) { attnSeen.delete(id); unseenDone.delete(id); }
+  attnSeeded = true;
+  paintTitle();
+}
+
 // ── 갱신 ──
 const LOG_KEEP = 2000;
 async function refreshChars() {
@@ -1509,6 +1589,7 @@ async function refreshChars() {
     officeData = d.officeAgent || null; folders = d.folders || []; homeDir = d.home || "";
     machines = d.machines || []; hostName = d.host || "";
     changed = true;
+    watchAttention();
   }
   const key = [...(chars || []), ...(officeData ? [officeChar()] : [])].filter((c) => (liveOf(c) || {}).kind === "stalled").map((c) => c.agentId).join(",");
   if (key !== stalledKey) { stalledKey = key; changed = true; }
@@ -1532,7 +1613,8 @@ function setHost(host, app) {
   hostShown = key;
   document.getElementById("title").textContent = host || "Agent Office";
   document.getElementById("ver").textContent = (host ? "Agent Office " : "") + "v" + app;
-  document.title = host ? `${host} · Agent Office` : "Agent Office";
+  baseTitle = host ? `${host} · Agent Office` : "Agent Office";
+  paintTitle();
 }
 async function refreshLog(agentId, full = true) {
   let prev = logs.get(agentId);
@@ -1557,13 +1639,25 @@ async function refreshLog(agentId, full = true) {
 }
 function keepLogs(ids) { for (const k of [...logs.keys()]) if (!ids.includes(k)) logs.delete(k); }
 let busy = false;
+// 화면이 숨어 있어도 상태만은 가끔(HIDDEN_EVERY 틱마다) 받아 알림·제목 대기 수를 맞춘다.
+const HIDDEN_EVERY = 4;
+let hiddenTicks = 0;
 async function tick() {
-  if (busy || !token || unauthorized || document.hidden) return;
+  if (busy || !token || unauthorized) return;
+  if (document.hidden) {
+    if (hiddenTicks++ % HIDDEN_EVERY) return;
+    busy = true;
+    // 숨은 동안 바뀐 것은 다시 보일 때 그리도록 rev를 비운다.
+    try { if (await refreshChars()) charsRev = null; } catch (e) { if (!unauthorized) console.warn(e); } finally { busy = false; }
+    return;
+  }
+  hiddenTicks = 0;
   busy = true;
   try {
     let changed = false;
     const usageChanged = await refreshUsage().catch(() => false);
-    if (view.tab === "chars" || view.tab === "tasks" || hostShown == null) changed = await refreshChars();
+    // 알림·제목 대기 수가 어느 탭에서든 맞도록 상태는 늘 받는다.
+    changed = await refreshChars();
     if (view.tab === "chars" && syncPanes()) changed = true;
     if (view.tab === "chars" && view.agent && window.Dash.shell && (charOf(view.agent) || {}).shellAssist) {
       const agentId = view.agent;
