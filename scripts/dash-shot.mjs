@@ -6,7 +6,7 @@
 // CLI 실행 중 재시작 경고, 셸 프롬프트에서 고른 CLI 띄우기, 끝난 업무 완료, 일반 에이전트 새 지시·이어서 보내기,
 // 대화 로그 속 이미지(썸네일·확대), 권한 요청·선택지 카드(AskUserQuestion 답·Bash 허용),
 // 텍스트·이미지 클립보드 복사와 이미지·파일 다운로드, 하단 사용량 바, 생각 중·멈춤 상태 줄,
-// 직접 입력과 보낼 대기열(쌓기·빼기), 로그 위 이 세션 추정 사용량, 스크롤하면 상단에 붙는 이름·위치·비용 한 줄 바(누르면 맨 위로), 화면 테마 토글(브라우저에 저장),
+// 직접 입력과 보낼 대기열(쌓기·빼기·중단하고 바로 보내기), 로그 위 이 세션 추정 사용량, 스크롤하면 상단에 붙는 이름·위치·비용 한 줄 바(누르면 맨 위로), 화면 테마 토글(브라우저에 저장),
 // 목록·업무 탭 진행 중 카드의 활성 캐릭터 로그 미리보기(접기·세션이 바뀌면 다시 펼침), 스플릿뷰(칸 격자·완료로 내리기·사이드 패널),
 // 목록·상세·스플릿 칸의 진행 중 업무 표시와 플랜 진행도, 머신 연동 호스트의 머신별 구역(끊긴 머신 흐림)과
 // 다른 머신 캐릭터 화면(보기만 — 입력·조작 단추 없음, 권한 요청은 그 머신에서 답하라는 카드).
@@ -222,6 +222,7 @@ const server = createServer(async (req, res) => {
     const ask = url.pathname.match(/^\/api\/asks\/([^/]+)$/);
     if (ask) { for (const c of characters) c.asks = (c.asks || []).filter((a) => a.id !== decodeURIComponent(ask[1])); rev++; }
     const a = characters[0];
+    if (url.pathname === "/api/agents/a/message" && posts.at(-1).body.now) return send({ outcome: "sent" });
     if (url.pathname === "/api/agents/a/message") {
       a.queue.items.push({ id: `q${a.queue.items.length + 1}`, text: posts.at(-1).body.text, at: Date.now() });
       rev++;
@@ -338,6 +339,11 @@ assert.equal(await p.locator("#msgtext").inputValue(), "");
 await p.locator("#msgform").screenshot({ path: `${outDir}/agent-queue.png` });
 await p.locator("#queue").getByRole("button", { name: "빼기" }).click();
 await p.waitForFunction(() => !document.querySelector("#queue .q-item"));
+// 작업 중이면 대기열을 건너뛰고 턴을 끊어 바로 보낼 수 있다.
+await p.fill("#msgtext", "지금 멈추고 이것부터");
+await p.getByRole("button", { name: "중단하고 바로 보내기" }).click();
+await p.waitForFunction(() => document.getElementById("msgtext").value === "");
+assert.deepEqual(posts.at(-1), { path: "/api/agents/a/message", body: { text: "지금 멈추고 이것부터", now: true } });
 // 출력이 끊기면 멈춤으로 바뀐다(칩·상태 줄).
 aOutputAgo = 45000;
 await p.locator("#live.stalled").waitFor();

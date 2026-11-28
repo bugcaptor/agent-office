@@ -1,4 +1,4 @@
-// 터미널 탭 대화 보기: 전사 복사·저장, 확대, 질문·권한 카드 답, 입력, 되돌리기.
+// 터미널 탭 대화 보기: 전사 복사·저장, 확대, 질문·권한 카드 답, 입력·대기열·중단하고 바로 보내기, 되돌리기.
 //   npm run gui:shot -- --scenario working --script scripts/gui-steps/chat-view.mjs
 import assert from "node:assert/strict";
 
@@ -78,6 +78,11 @@ export default async ({ page, shot, harness }) => {
   await shot("chat-view-queue");
   await page.locator(".chat-queue-cancel").click();
   await page.waitForFunction(() => !document.querySelector(".chat-queue"));
+  // 작업 중이면 대기열을 건너뛰고 턴을 끊어 바로 보낼 수 있다.
+  await page.locator(".chat-view-input textarea").fill("queue: stop and fix the header first");
+  await page.locator(".chat-view-input .pixel-btn:not(.primary)").click();
+  await page.waitForSelector(".chat-msg.user >> text=queue: stop and fix the header first");
+  assert.equal(await page.locator(".chat-queue").count(), 0);
   console.log("answers", JSON.stringify(await page.evaluate(() => window.__guiHarness.chatAnswers)));
   await page.locator(".chat-view-bar .pixel-btn").click();
   await page.waitForFunction(() => !document.querySelector(".chat-view"));

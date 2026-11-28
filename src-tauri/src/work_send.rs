@@ -98,6 +98,15 @@ impl WorkSendRuntime {
         gate: &InjectGate,
         request: WorkFollowUpRequest,
     ) -> Result<WorkSendResult, String> {
+        self.follow_up_with(gate, request, "\r").await
+    }
+    /// `follow_up`과 같되 붙여 넣은 뒤 누를 제출 키를 고른다(대화 입력의 "지금 보내기").
+    pub async fn follow_up_with(
+        &self,
+        gate: &InjectGate,
+        request: WorkFollowUpRequest,
+        submit: &str,
+    ) -> Result<WorkSendResult, String> {
         let prompt = work_prompt("", &request.text)?;
         let cancel = Arc::new(AtomicBool::new(false));
         {
@@ -132,7 +141,7 @@ impl WorkSendRuntime {
             .map_err(|_| "work-send-busy".to_string())?;
         let submitted_at = crate::types::now_ms();
         strict_result(
-            gate.submit_strict_paste(
+            gate.submit_strict_paste_with(
                 &owner,
                 StrictSubmitRequest {
                     text: &prompt,
@@ -141,6 +150,7 @@ impl WorkSendRuntime {
                     expected_human_input_revision: revision,
                     cancelled: &cancel,
                 },
+                submit,
             )
             .await,
         )?;

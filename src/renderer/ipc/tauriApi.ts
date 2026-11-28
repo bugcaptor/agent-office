@@ -281,7 +281,7 @@ export const tauriApi: AgentOfficeApi = {
   async chatViewDownload(agentId, source) { return await invoke(Commands.chatViewDownload, { agentId, source }); },
   async chatViewAsks(agentId) { return await invoke(Commands.chatViewAsks, { agentId }); },
   async chatViewAnswer(askId, action, answers, message, agentId) { await invoke(Commands.chatViewAnswer, { askId, action, answers: answers ?? null, message: message ?? null, agentId: agentId ?? null }); },
-  async chatViewSend(agentId, text) { return await invoke(Commands.chatViewSend, { agentId, text }); },
+  async chatViewSend(agentId, text, now) { return await invoke(Commands.chatViewSend, { agentId, text, now: now ?? false }); },
   async chatViewStatus(agentId) { return await invoke(Commands.chatViewStatus, { agentId }); },
   async chatViewCancelQueued(agentId, id) { await invoke(Commands.chatViewCancelQueued, { agentId, id }); },
   async chatViewRemoteOp(agentId, op) { await invoke(Commands.chatViewRemoteOp, { agentId, op }); },

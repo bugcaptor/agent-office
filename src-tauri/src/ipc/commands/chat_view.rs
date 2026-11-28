@@ -227,21 +227,30 @@ pub async fn chat_view_answer(
 
 /// 대화 보기에서 쓴 지시를 같은 세션에 넣는다. CLI가 입력을 기다리면 바로 넣고,
 /// 작업 중이면 대기열에 쌓아 턴이 끝날 때 넣는다(`chat_queue`). 답은 `sent`·`queued`.
+/// `now`면 대기열을 건너뛰고 도는 턴을 끊어 바로 보낸다(`ChatQueue::send_now`).
 /// 다른 머신 캐릭터면 그 머신 웹 상태판 메시지와 같다 — 셸 프롬프트만 있으면 CLI를 띄워 첫 프롬프트로
 /// 넣는다(`launched`, 이 머신 대화 보기는 터미널이 옆에 있어 그러지 않는다).
 #[tauri::command(rename_all = "camelCase")]
 pub async fn chat_view_send(
     agent_id: String,
     text: String,
+    now: Option<bool>,
     app_state: State<'_, AppState>,
 ) -> Result<String, String> {
+    let now = now.unwrap_or(false);
     if let Some((remote, device, agent)) = remote_of(&app_state, &agent_id) {
         crate::chat_queue::check_text(&text)?;
-        let answer = remote_op(&remote, &device, &agent, "message", serde_json::json!({ "text": text })).await?;
+        let body = if now { serde_json::json!({ "text": text, "now": true }) } else { serde_json::json!({ "text": text }) };
+        let answer = remote_op(&remote, &device, &agent, "message", body).await?;
         return Ok(answer.get("outcome").and_then(serde_json::Value::as_str).unwrap_or("sent").to_string());
     }
     let ctx = app_state.control_ctx.clone();
-    Ok(match ctx.chat_queue.send(&ctx, &agent_id, &text).await? {
+    let outcome = if now {
+        ctx.chat_queue.send_now(&ctx, &agent_id, &text).await?
+    } else {
+        ctx.chat_queue.send(&ctx, &agent_id, &text).await?
+    };
+    Ok(match outcome {
         SendOutcome::Sent => "sent",
         SendOutcome::Queued => "queued",
     }

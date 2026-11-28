@@ -177,17 +177,21 @@ export function ChatView({ agentId, active, onShowTerminal, remote }: { agentId:
     tauriApi.chatViewStatus(agentId).then(setStatus, () => {});
   };
 
-  const send = async () => {
+  // 작업 중이면 대기열을 건너뛰고 도는 턴을 끊어 바로 보낼 수 있다. 답을 기다리는 대화상자가 있으면 글이 거기 들어가 막는다.
+  const canSendNow = !!status && status.phase === "working" && asks.length === 0;
+
+  const send = async (now = false) => {
     const text = draft.trim();
     if (!text || sending) return;
     setSending(true);
     setNotice(null);
     try {
-      const outcome = await tauriApi.chatViewSend(agentId, text);
+      const outcome = await tauriApi.chatViewSend(agentId, text, now);
       setDraft("");
       atTop.current = true;
       scrollRef.current?.scrollTo({ top: 0 });
-      if (outcome === "queued") showActionNotice(t("chatView.queuedNotice"));
+      if (now) showActionNotice(t("chatView.sentNowNotice"));
+      else if (outcome === "queued") showActionNotice(t("chatView.queuedNotice"));
       else if (outcome === "launched") showActionNotice(t("chatView.launchedNotice"));
       refreshStatus();
     } catch (err) {
@@ -253,6 +257,11 @@ export function ChatView({ agentId, active, onShowTerminal, remote }: { agentId:
         <button type="button" className="pixel-btn primary" disabled={sending || !draft.trim()} onClick={() => void send()}>
           {willQueue ? t("chatView.queue") : t("chatView.send")}
         </button>
+        {canSendNow && (
+          <button type="button" className="pixel-btn" disabled={sending || !draft.trim()} title={t("chatView.sendNowHint")} onClick={() => void send(true)}>
+            {t("chatView.sendNow")}
+          </button>
+        )}
       </div>}
       {notice && <div className="chat-view-notice" role="status">{notice}</div>}
       {(queued.length > 0 || queueError) && (

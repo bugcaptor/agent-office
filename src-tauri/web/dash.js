@@ -18,8 +18,9 @@ const S = {
     followUp: "이어서 보내기", newSession: "새 세션으로 보내기", newWarn: "새 세션으로 보내면 지금 세션은 끊기고 고른 작업 폴더에서 새로 엽니다.",
     officeWorking: "작업 중입니다. 지금 쓰면 대기열에 쌓았다가 턴이 끝나면 이어서 보냅니다.", officeHuman: "답을 기다립니다. 위 카드나 앱에서 답하세요. 지금 쓰면 대기열에 쌓습니다.", officeShellBusy: "터미널에서 다른 명령이 실행 중입니다.",
     opening: "여는 중…", openFailed: "지난 열기 실패",
-    message: "직접 입력", messageHelp: "업무 보드에 남기지 않고 지금 세션의 CLI에 바로 넣습니다. Claude가 작업 중이면 바로 넣어 다음 도구 호출 뒤에 반영되고, 답을 기다리거나 다른 CLI면 대기열에 쌓았다가 턴이 끝날 때마다 하나씩 보냅니다. 터미널이 셸 프롬프트에 있으면 업무 보내기처럼 위에서 고른 CLI를 띄워 첫 프롬프트로 넣습니다.", messagePh: "에이전트에게 보낼 말",
+    message: "직접 입력", messageHelp: "업무 보드에 남기지 않고 지금 세션의 CLI에 바로 넣습니다. Claude가 작업 중이면 바로 넣어 다음 도구 호출 뒤에 반영되고, 답을 기다리거나 다른 CLI면 대기열에 쌓았다가 턴이 끝날 때마다 하나씩 보냅니다. 작업 중일 때 ‘중단하고 바로 보내기’를 누르면 대기열을 건너뛰고 진행 중인 턴을 끊은 뒤 바로 넣습니다(권한 요청·질문이 떠 있으면 먼저 답하세요). 터미널이 셸 프롬프트에 있으면 업무 보내기처럼 위에서 고른 CLI를 띄워 첫 프롬프트로 넣습니다.", messagePh: "에이전트에게 보낼 말",
     launchSend: (cli) => `${cli} 띄워 보내기`, launchedSend: "CLI를 띄워 보냈습니다", launchSending: "CLI를 띄우는 중…",
+    sendNow: "중단하고 바로 보내기", sentNow: "진행을 끊고 바로 보냈습니다",
     queueBtn: "대기열에 넣기", queued: "대기열에 넣었습니다. 턴이 끝나면 보냅니다.", queueTitle: (n) => `보낼 대기열 ${n}건 · 턴이 끝날 때마다 하나씩 보냅니다`, queueCancel: "빼기", queueRemoved: "대기열에서 뺐습니다",
     taskHelp: "업무 보드에 남김",
     split: "스플릿뷰", splitHint: "진행 중인 캐릭터들의 대화 로그를 한 화면에 나란히 봅니다",
@@ -54,7 +55,7 @@ const S = {
     err: { "office-agent-busy": "일반 에이전트를 여는 중입니다", "office-agent-running": "일반 에이전트가 이미 돌고 있습니다", "office-agent-working": "작업 중이라 지금은 이어 보낼 수 없습니다", "office-agent-needs-human": "답을 기다리는 중입니다(앱·CLI 리모트에서 답하세요)", "office-agent-shell-busy": "터미널에서 다른 명령이 실행 중입니다", "office-agent-invalid-cwd": "고를 수 없는 작업 폴더입니다", "too-large": "글이 너무 깁니다", "control-char": "보낼 수 없는 문자가 있습니다", "work-send-human-input": "앱 터미널에 쓰다 만 입력이 있습니다", "work-send-cli-returned": "CLI가 끝났습니다", "work-send-launch-timeout": "CLI가 제때 뜨지 않았습니다", "work-send-shell-unsupported": "지원하지 않는 셸입니다",
       "ask-gone": "이미 답했거나 사라진 요청입니다", "ask-unanswered": "모든 질문에 답하세요", "ask-invalid": "답을 보낼 수 없는 질문입니다", "ask-no-rule": "다시 묻지 않기를 고를 수 없는 요청입니다", "bad-request": "잘못된 요청입니다",
       "not-running": "터미널이 꺼져 있습니다", "not-at-shell-prompt": "셸 프롬프트가 아닙니다(CLI가 이미 실행 중이거나 입력 중)", "human-input-pending": "앱에 쓰다 만 입력이 있습니다", "renderer-unavailable": "앱 화면이 응답하지 않습니다", "busy": "다른 입력이 진행 중입니다", "shell-unsupported": "지원하지 않는 셸입니다", "empty": "내용이 비었습니다",
-      "queue-full": "대기열이 가득 찼습니다(최대 20건)", "queue-gone": "이미 보냈거나 사라진 메시지입니다", "queue-dropped-session": "세션이 바뀌어 대기열을 비웠습니다", "chat-view-no-cli": "이 터미널에서 Claude·Codex가 입력을 기다리는지 알 수 없습니다", "work-send-session-changed": "세션이 바뀌었습니다",
+      "queue-full": "대기열이 가득 찼습니다(최대 20건)", "queue-gone": "이미 보냈거나 사라진 메시지입니다", "queue-dropped-session": "세션이 바뀌어 대기열을 비웠습니다", "queue-returned-to-input": "터미널에서 ↑·Esc로 Claude가 대기 메시지를 입력창으로 되돌렸습니다. 터미널에서 Enter로 보내세요", "send-now-ask-pending": "권한 요청·질문에 먼저 답하세요", "chat-view-no-cli": "이 터미널에서 Claude·Codex가 입력을 기다리는지 알 수 없습니다", "work-send-session-changed": "세션이 바뀌었습니다",
       "restart-required": "터미널에서 CLI가 실행 중입니다. 재시작 경고를 확인하고 다시 보내세요", "work-send-busy": "이 캐릭터에 보내는 중인 업무가 있습니다", "work-send-clocked-out": "퇴근한 캐릭터입니다", "work-send-auto-run": "자동 진행 중인 캐릭터입니다", "work-send-profile-unsupported": "시작 명령이 있는 캐릭터에는 보낼 수 없습니다", "work-send-agent-missing": "담당 캐릭터를 먼저 고르세요", "work-send-blocked": "선행 작업이 모두 완료된 뒤에 보낼 수 있습니다", "work-send-plan-root": "플랜 루트는 메모 전용입니다. 아래 자동 진행으로 실행하세요", "work-send-schedule-template": "반복 예약 템플릿은 회차마다 복사해 실행합니다", "work-not-loaded": "앱이 아직 업무를 불러오지 않았습니다", "task-not-found": "업무를 찾을 수 없습니다", "unknown-agent": "알 수 없는 캐릭터입니다", "unknown-cli": "지원하지 않는 CLI입니다",
       "auto-run-root-done": "완료된 업무는 자동 진행할 수 없습니다", "auto-run-no-assignee": "루트 업무의 담당 캐릭터를 먼저 지정하세요", "auto-run-no-plan": "진행할 남은 태스크가 없습니다", "auto-run-root-busy": "루트만 남았습니다. 다시 진행하려면 상태를 할 일로 바꾸세요", "auto-run-schedule-template": "반복 예약 템플릿은 직접 자동 진행할 수 없습니다", "auto-run-runner-busy": "담당 캐릭터가 다른 자동 진행을 실행 중입니다", "auto-run-observer-off": "설정에서 에이전트 관찰을 켜야 자동 진행할 수 있습니다", "auto-run-already-running": "이미 자동 진행 중입니다", "auto-run-no-run": "진행 중인 자동 실행 기록이 없습니다", "auto-run-not-paused": "일시정지 상태가 아닙니다", "auto-run-judge-output": "판단자 응답을 읽지 못했습니다", "schedule-invalid": "예약 규칙이 올바르지 않습니다",
       "link-not-remote": "다른 머신의 캐릭터가 아닙니다", "no-resume-session": "이어할 세션이 없습니다", "link-device-offline": "그 머신이 끊겼습니다", "link-request-timeout": "그 머신이 제때 답하지 않았습니다" },
@@ -75,8 +76,9 @@ const S = {
     followUp: "Send follow-up", newSession: "Send in a new session", newWarn: "Sending in a new session ends the current one and opens a new one in the chosen folder.",
     officeWorking: "Working. What you send now is queued and follows once the turn ends.", officeHuman: "Waiting for an answer. Reply above or in the app; what you send now is queued.", officeShellBusy: "Another command is running in the terminal.",
     opening: "Opening…", openFailed: "Last open failed",
-    message: "Message", messageHelp: "Goes straight to the CLI in the current session, without a task on the board. While Claude works it goes in right away and is picked up after the next tool call; while waiting for an answer, or with other CLIs, messages are queued and sent one per finished turn. At a shell prompt it starts the CLI picked above and sends this as the first prompt, like sending a task.", messagePh: "Message to the agent",
+    message: "Message", messageHelp: "Goes straight to the CLI in the current session, without a task on the board. While Claude works it goes in right away and is picked up after the next tool call; while waiting for an answer, or with other CLIs, messages are queued and sent one per finished turn. While it works, ‘Interrupt & send now’ skips the queue, stops the running turn and sends this right away (answer any permission request or question first). At a shell prompt it starts the CLI picked above and sends this as the first prompt, like sending a task.", messagePh: "Message to the agent",
     launchSend: (cli) => `Start ${cli} and send`, launchedSend: "Started the CLI and sent it", launchSending: "Starting the CLI…",
+    sendNow: "Interrupt & send now", sentNow: "Interrupted the turn and sent it",
     queueBtn: "Queue", queued: "Queued. It will be sent when the turn ends.", queueTitle: (n) => `${n} queued · one is sent each time a turn ends`, queueCancel: "Remove", queueRemoved: "Removed from the queue",
     taskHelp: "kept on the task board",
     split: "Split view", splitHint: "Watch the conversation logs of all active characters side by side",
@@ -111,7 +113,7 @@ const S = {
     err: { "office-agent-busy": "The general agent is opening", "office-agent-running": "The general agent is already running", "office-agent-working": "It is working; follow up after the turn ends", "office-agent-needs-human": "Waiting for an answer (reply in the app or CLI remote)", "office-agent-shell-busy": "Another command is running in the terminal", "office-agent-invalid-cwd": "That folder can't be chosen", "too-large": "Text too long", "control-char": "Text contains characters that can't be sent", "work-send-human-input": "Unsent input is pending in the app terminal", "work-send-cli-returned": "The CLI exited", "work-send-launch-timeout": "The CLI didn't start in time", "work-send-shell-unsupported": "Unsupported shell",
       "ask-gone": "Already answered or gone", "ask-unanswered": "Answer every question", "ask-invalid": "This question can't take that answer", "ask-no-rule": "This request has no 'don't ask again' rule", "bad-request": "Bad request",
       "not-running": "Terminal is not running", "not-at-shell-prompt": "Not at a shell prompt (CLI running or input pending)", "human-input-pending": "Unsent input is pending in the app", "renderer-unavailable": "App window is not responding", "busy": "Another input is in progress", "shell-unsupported": "Unsupported shell", "empty": "Empty",
-      "queue-full": "The queue is full (20 max)", "queue-gone": "Already sent or gone", "queue-dropped-session": "The session changed, so the queue was cleared", "chat-view-no-cli": "Can't tell whether Claude/Codex is waiting for input in this terminal", "work-send-session-changed": "The session changed",
+      "queue-full": "The queue is full (20 max)", "queue-gone": "Already sent or gone", "queue-dropped-session": "The session changed, so the queue was cleared", "queue-returned-to-input": "↑ or Esc in the terminal put the queued message back into Claude's input. Press Enter there to send it", "send-now-ask-pending": "Answer the permission request or question first", "chat-view-no-cli": "Can't tell whether Claude/Codex is waiting for input in this terminal", "work-send-session-changed": "The session changed",
       "restart-required": "A CLI is running in the terminal. Confirm the restart warning and send again", "work-send-busy": "A task is already being sent to this character", "work-send-clocked-out": "This character has clocked out", "work-send-auto-run": "This character is running an auto-run", "work-send-profile-unsupported": "Characters with a startup command can't receive tasks", "work-send-agent-missing": "Assign a character first", "work-send-blocked": "Complete prerequisites before sending", "work-send-plan-root": "Plan roots are notes only. Use Auto-run below", "work-send-schedule-template": "Recurring templates clone a new card on each run", "work-not-loaded": "The app hasn't loaded tasks yet", "task-not-found": "Task not found", "unknown-agent": "Unknown character", "unknown-cli": "Unsupported CLI",
       "auto-run-root-done": "Completed tasks can't start auto-run", "auto-run-no-assignee": "Assign a character to the root task first", "auto-run-no-plan": "No remaining tasks to run", "auto-run-root-busy": "Only the root remains. Move it back to To do to run again", "auto-run-schedule-template": "Recurring templates can't be auto-run directly", "auto-run-runner-busy": "This character is already running another plan", "auto-run-observer-off": "Enable agent observer in settings to use auto-run", "auto-run-already-running": "Auto-run is already active", "auto-run-no-run": "No auto-run record found", "auto-run-not-paused": "Auto-run is not paused", "auto-run-judge-output": "Couldn't read judge output", "schedule-invalid": "Invalid schedule rule",
       "link-not-remote": "Not a character on another machine", "no-resume-session": "No session to resume", "link-device-offline": "That machine is offline", "link-request-timeout": "That machine did not answer in time" },
@@ -1085,19 +1087,22 @@ function renderMsgActions(c) {
   const launch = launchCliFor(c);
   const queue = !launch && willQueue(c);
   const text = launch ? (d.sending ? S.launchSending : S.launchSend(CLI_NAMES[launch] || launch)) : queue ? S.queueBtn : S.send;
-  return el("div", { id: "msgact", class: "btns", "data-key": JSON.stringify([running, queue, launch, d.sending]) },
-    el("button", { class: "b primary", disabled: !running || d.sending, text, onclick: () => sendMessage(c.agentId) }));
+  // 작업 중이면 대기열을 건너뛰고 턴을 끊어 바로 보낼 수 있다(답을 기다리는 중이면 글이 대화상자로 들어가 막는다).
+  const now = running && !launch && !c.office && c.turn && c.turn.phase === "working" && !(c.asks && c.asks.length);
+  return el("div", { id: "msgact", class: "btns", "data-key": JSON.stringify([running, queue, launch, d.sending, now]) },
+    el("button", { class: "b primary", disabled: !running || d.sending, text, onclick: () => sendMessage(c.agentId) }),
+    now && el("button", { class: "b", disabled: d.sending, text: S.sendNow, onclick: () => sendMessage(c.agentId, true) }));
 }
-async function sendMessage(agentId) {
+async function sendMessage(agentId, now = false) {
   const d = msgDraftOf(agentId);
   if (d.sending) return;
   if (!d.text.trim()) { toast(errText("empty")); return; }
   const c = currentChar();
-  const cli = c && c.agentId === agentId ? launchCliFor(c) : null;
+  const cli = !now && c && c.agentId === agentId ? launchCliFor(c) : null;
   d.sending = true; refreshMsg();
   try {
-    const r = await api(`/agents/${encodeURIComponent(agentId)}/message`, { method: "POST", body: { text: d.text, ...(cli ? { cli } : {}) } });
-    toast(r && r.outcome === "queued" ? S.queued : r && r.outcome === "launched" ? S.launchedSend : S.done);
+    const r = await api(`/agents/${encodeURIComponent(agentId)}/message`, { method: "POST", body: { text: d.text, ...(cli ? { cli } : {}), ...(now ? { now: true } : {}) } });
+    toast(now ? S.sentNow : r && r.outcome === "queued" ? S.queued : r && r.outcome === "launched" ? S.launchedSend : S.done);
     d.text = "";
     const box = document.getElementById("msgtext");
     if (box) box.value = "";

@@ -410,6 +410,7 @@ impl PeerState {
                             cli: data.get("cli").and_then(Value::as_str).map(str::to_string),
                             text: None,
                             id: data.get("id").and_then(Value::as_str).map(str::to_string),
+                            now: false,
                             quiet: true,
                         };
                         crate::webdash::agent_op(ctl.clone(), dash.clone(), &agent, op, body).await.map(|v| if v.is_null() { json!({}) } else { v })
@@ -435,7 +436,7 @@ impl PeerState {
         self.upsert(t.clone());
         let text = arrival_message(&t, &cli::shim_path());
         let (ctl, dash) = self.ctx()?;
-        let body = crate::webdash::AgentCommandBody { cli: None, text: Some(text), id: None, quiet: true };
+        let body = crate::webdash::AgentCommandBody { cli: None, text: Some(text), id: None, now: false, quiet: true };
         match crate::webdash::agent_op(ctl.clone(), dash.clone(), &agent, "message", body).await {
             Ok(v) => Ok(json!({ "outcome": v.get("outcome").cloned().unwrap_or(Value::Null) })),
             Err(e) => {

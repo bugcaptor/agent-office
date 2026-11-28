@@ -243,7 +243,8 @@ export interface AgentOfficeApi {
   /** 권한 요청·질문에 답한다(터미널에서 먼저 답했으면 `ask-gone`). `agentId`가 다른 머신 캐릭터면 그 머신에서 답한다. */
   chatViewAnswer(askId: string, action: AskAction, answers?: Record<string, string>, message?: string, agentId?: AgentId): Promise<void>;
   /** 대화 보기에서 쓴 지시를 같은 세션에 넣는다. 작업 중이면 대기열에 쌓아 턴이 끝날 때 넣는다. */
-  chatViewSend(agentId: AgentId, text: string): Promise<ChatSendOutcome>;
+  /** `now`: 대기열을 건너뛰고 도는 턴을 끊어 바로 보낸다. */
+  chatViewSend(agentId: AgentId, text: string, now?: boolean): Promise<ChatSendOutcome>;
   /** 지금 상태(생각 중·멈춤 판정 재료)와 보낼 메시지 대기열. */
   chatViewStatus(agentId: AgentId): Promise<ChatLiveStatus>;
   /** 대기열 메시지 하나를 뺀다(이미 넣었으면 `queue-gone`). */

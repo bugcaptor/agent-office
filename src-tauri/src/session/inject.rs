@@ -461,15 +461,25 @@ impl InjectGate {
         owner: &TransitionOwnerGuard,
         request: StrictSubmitRequest<'_>,
     ) -> StrictOutcome {
-        self.submit_strict_inner(owner, request, false).await
+        self.submit_strict_inner(owner, request, false, "\r").await
     }
 
     /// CLI 프롬프트는 bracketed paste로 줄바꿈을 보존한다. 호출자가 제어문자를 검증한다.
     pub async fn submit_strict_paste(&self, owner: &TransitionOwnerGuard, request: StrictSubmitRequest<'_>) -> StrictOutcome {
-        self.submit_strict_inner(owner, request, true).await
+        self.submit_strict_inner(owner, request, true, "\r").await
     }
 
-    async fn submit_strict_inner(&self, owner: &TransitionOwnerGuard, request: StrictSubmitRequest<'_>, paste: bool) -> StrictOutcome {
+    /// `submit_strict_paste`와 같되 제출 키를 고른다(Claude "지금 보내기" `Ctrl-X Ctrl-S` 등).
+    pub async fn submit_strict_paste_with(
+        &self,
+        owner: &TransitionOwnerGuard,
+        request: StrictSubmitRequest<'_>,
+        submit: &str,
+    ) -> StrictOutcome {
+        self.submit_strict_inner(owner, request, true, submit).await
+    }
+
+    async fn submit_strict_inner(&self, owner: &TransitionOwnerGuard, request: StrictSubmitRequest<'_>, paste: bool, submit: &str) -> StrictOutcome {
         let validate = |before_cr: bool, inner: &AgentGateInner| {
             if request.cancelled.load(Ordering::Relaxed) {
                 return Some(if before_cr {
@@ -543,7 +553,7 @@ impl InjectGate {
             }
             if !self
                 .sink
-                .write_for_session(&owner.agent_id, &owner.session_id, "\r")
+                .write_for_session(&owner.agent_id, &owner.session_id, submit)
             {
                 return StrictOutcome::SessionChangedBeforeCr;
             }

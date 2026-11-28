@@ -411,9 +411,9 @@ const impl: Partial<AgentOfficeApi> = {
     chatAnswers.push({ askId, action, answers, message, agentId });
     chatAsks = chatAsks.filter((a) => a.id !== askId);
   },
-  async chatViewSend(agentId, text) {
+  async chatViewSend(agentId, text, now) {
     // 가짜 터미널은 늘 작업 중이다 — "queue:"로 시작하면 대기열에 쌓는 길을 흉내 낸다.
-    if (text.startsWith("queue:")) {
+    if (!now && text.startsWith("queue:")) {
       chatQueue.push({ id: `q${chatQueue.length + 1}`, text, at: Date.now() });
       return "queued";
     }
