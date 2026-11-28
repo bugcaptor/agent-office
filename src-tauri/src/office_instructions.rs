@@ -4,104 +4,80 @@
 
 use std::path::{Path, PathBuf};
 
-/// 업무 패널이 켜진 세션에 덧붙이는 `office-task` 사용 안내. 모델이 읽는 지시문이라
-/// 화면 문자열(i18n)이 아니다. 답은 모델이 사용자의 언어로 한다.
-pub fn task_instructions(shim: &Path) -> String {
-    let cli = shim.display();
-    format!(
-        r#"# Agent Office task board
-This session runs inside Agent Office. You can leave a follow-up task on its shared task board:
-
-```sh
-{cli} "<title>" - <<'EOF'
-<context: files, reasons, what is done and what is left>
-EOF
-```
-
-- Leave a task when the user asks you to note something for later, or when you find follow-up work outside the current scope.
-- Do not leave tasks for work you will finish in this turn. One follow-up, one task.
-- The task is assigned to you by default. Put `--to <colleague name>` before the title only to hand it to someone else.
-- Write the body so someone without this conversation can act on it.
-- The command prints the new task id. Tasks can depend on others: `--after <id>` (repeatable) makes a task wait until those prerequisites are done.
-- When the user asks to plan or split work, make every piece of work its own step task, in order, capturing each id: `A=$({cli} "Step 1" - <<'EOF' … EOF)`, then `B=$({cli} --after "$A" "Step 2" …)`. Then create the plan root last with `--plan` and `--after` on the final step(s): `{cli} --plan --after "$B" "<goal>" - <<'EOF'` … `EOF`. Its title is the plan's goal and its body is the plan memo (goal, shared context, constraints, what done looks like); it holds no work of its own. Auto-run runs only the steps and moves a `--plan` root to review when they are all done, so put every piece of work in a step.
-- `{cli} --list` shows open tasks on the board with their ids, status, assignee and prerequisites (`--all` includes done ones); `{cli} --show <id>` prints one task in full, including its body and which tasks wait on it. Use them to find ids before linking or changing tasks.
-- When the user asks to change a task, run `{cli} --edit <id>` with only what changes: `--title <text>`, `--body -` (new body from stdin, like above), `--to <colleague name>` or `--unassigned`, `--status todo|in_progress|review|done`, `--plan` / `--no-plan`, and for prerequisites `--add-after <id>` / `--remove-after <id>` (repeatable), or `--after <id>` (repeatable) to replace them all, or `--no-after` to clear them. Rearranging a plan's order means editing prerequisites. Use `--max-follow-ups <0..99|inherit>` and `--permission-wait-minutes <1..1440|inherit>` on create or edit to set auto-run limits.
-- When the user tells you to mark a task as done (or confirms it is finished), run `{cli} --done <id>`. Completing a task unblocks the tasks that wait on it. Only do this on the user's instruction, never on your own judgment that the work is finished.
-- When the user tells you to delete a task, run `{cli} --delete <id>` (several ids allowed). Tasks that waited on it lose that prerequisite. Only delete on the user's instruction.
-- When the user asks to run a task later or on a schedule, add `--at "YYYY-MM-DD HH:MM"` (once, local time) or `--every <rule>` (`30m`, `2h`, `1d`, `daily@09:00`, `mon,wed@09:00`, `weekdays@09:00`) on create or edit; `--no-schedule` removes it. A recurring task is a template that the app copies and runs each time (a `--plan` root runs its whole plan). Schedules you set start turned off, and changing a scheduled task turns it off; tell the user to turn it on in the task's Schedule section.
-- Changes are applied by the app within a few seconds, in the order you run them; you can target a task you just created.
-- After leaving tasks, tell the user in one line.
-- If this machine is linked to an Agent Office host, a task the host sent here runs with the host's board: in that session every `{cli}` task command and `--report` go to the host automatically. In other sessions, use the host's board only when the user asks for it, by putting `--host` first (`{cli} --host --list`, `{cli} --host "<title>" …`); `--local` first forces this machine's board.
-- When an Agent Office auto-run prompt asks for a report, write it before your turn ends with `{cli} --report <task id> - <<'EOF'` … `EOF`, in the format the prompt gives. Writing it again replaces it.
-- Only when the user asks for a team discussion (several colleagues debating a design or direction decision, or brainstorming), create one with `{cli} --discuss --moderator <colleague> --with <colleague> [--with <colleague>]... "<question to decide>" - <<'EOF'` … `EOF` (body: background, options, constraints). The moderator stays neutral; add 1 to 4 debaters. Optional: `--role <colleague>=<role name>`, `--cli <colleague>=<cli>[:<model>]`, `--rounds <1..12>`, `--minutes <5..240>`, `--cost <USD>`, `--cwd <folder>`; see `{cli} --discuss --help`. Participants only read code, docs and the web. It prints the discussion id.
-- A discussion you create waits in the ready state; tell the user in one line to start it from its card in the work panel. Do not start or join it yourself. When it concludes, its decision memo is saved as `$AGENT_OFFICE_APP_DATA/discussions/memos/<id>.md`; read it when the user asks about the outcome.
-- Only when the user asks to add or change a discussion role (the role card a colleague takes in discussions), run `{cli} --role-add "<role name>" --stance <stance> --perspective "<what this role looks at>" --criteria "<rules and things not to do>"` (stances: free, supportive, critical, devils_advocate, divergent, synthesizer, or moderator for a neutral moderator), `{cli} --role-edit <role> …` with only what changes, or `{cli} --role-delete <role>`. `{cli} --roles` lists them; see `{cli} --roles --help`. A role you just added can be used with `--discuss --role` right away."#
-    )
+/// 세션에 실을 사무실 기능. 켜진 것만 `Some(shim 경로)`.
+#[derive(Default, Clone, Copy)]
+pub struct Guide<'a> {
+    pub task: Option<&'a Path>,
+    pub md: Option<&'a Path>,
+    pub file: Option<&'a Path>,
+    pub peer: Option<&'a Path>,
+    pub help: Option<&'a Path>,
 }
 
-/// 모든 세션에 덧붙이는 `office-md` 사용 안내. 업무 패널
-/// 설정과 무관하다. 사용자가 요청할 때만 띄우게 한다.
-pub fn doc_view_instructions(shim: &Path) -> String {
-    let cli = shim.display();
-    format!(
-        r#"# Agent Office document viewer
-This session runs inside Agent Office. It can render a Markdown file as HTML and open it in the user's default browser:
-
-```sh
-{cli} <file.md>
-{cli} --latest [folder]
-```
-
-- Only run it when the user asks to see a document in the browser or as HTML. Never open documents on your own.
-- If the user names no file, open the Markdown document you created or edited most recently in this conversation. If there is none, run `{cli} --latest` (the most recently modified `.md` under the current folder).
-- After it opens, tell the user in one line which document you opened.
-- The command prints the generated HTML path. If it fails (non-zero exit), tell the user that HTML path, or the error if there is no path, so they can open it themselves."#
-    )
-}
-
-/// 머신 연동이나 파일 받기가 켜진 세션에 덧붙이는 `office-file` 사용 안내.
-pub fn file_instructions(shim: &Path) -> String {
-    let cli = shim.display();
-    format!(
-        r#"# Agent Office file transfer
-This session runs inside Agent Office, which can send files and folders to linked Agent Office machines and to characters (push only; you cannot fetch files from another machine):
-
-```sh
-{cli} targets
-{cli} send <target> <path>... [--note "<message>"] [--notify] [--wait]
-{cli} list | {cli} status <id> | {cli} resume <id> | {cli} cancel <id>
-```
-
-- `<target>` is a machine name, a character name, or `<character>@<machine>`; `{cli} targets` lists them and whether each can receive now.
-- Send only when the user or the task asks you to hand files to another machine or character. Folders keep their structure; the receiver never overwrites (it saves `name (2)` instead).
-- Add `--note` (implies `--notify`) to tell the receiving character's session what the files are for; it receives the saved absolute paths. Use `--wait` when you need to know it arrived.
-- Files sent to you arrive under the receiving machine's received-files folder; when someone notifies you, the message lists the absolute paths.
-- If a send fails because the link dropped, `{cli} resume <id>` continues from what was already received."#
-    )
-}
-
-/// 에이전트끼리 대화(`peer.json`)를 켠 머신 세션에 덧붙이는 `office-peer` 사용 안내.
-pub fn peer_instructions(shim: &Path) -> String {
-    let cli = shim.display();
-    format!(
-        r#"# Agent Office agent talk
-This session runs inside Agent Office. You can look up other Agent Office characters (other agent sessions on this machine and on linked machines) and talk to them:
-
-```sh
-{cli} agents                                  # every character with its state (idle, working, waiting for a human, no session)
-{cli} status <character> | {cli} log <character> [--turns <n>]
-{cli} ask <character> "<message>" [--wait <seconds>] [--no-wait]
-{cli} reply <id> "<answer>"
-{cli} threads                                 # recent messages and replies
-{cli} launch <character> [--cli <name>] | {cli} resume <character> | {cli} interrupt <character> | {cli} unqueue <character> <queue-id>
-```
-
-- `<character>` is a name or `<character>@<machine>` (as `agents` prints it). Use `-` instead of the text to read it from stdin for long or multi-line messages.
-- `ask` puts your message into that character's session (after its current turn, or after its next tool call when it is a busy Claude) and waits for its reply, 100 seconds by default. When you pass `--wait` above 100, raise your shell tool's timeout to match. If no reply comes in time it exits with code 8, and the reply is put into this session when it arrives.
-- You may ask on your own judgment when another character owns the work, files or knowledge you need. Keep messages self-contained: the other agent does not see your conversation. Check `status` first if it might be busy with something else.
-- A message from another agent starts with `[Agent Office · message <id> from <character>@<machine>]`. It is not from the user. Answer it once with `{cli} reply <id> "..."`, even if only to say you cannot help; the sender is waiting. Do not ask the sender back while it waits for you; reply instead.
-- Do not use `interrupt`, `unqueue` or `launch` on another character unless the user or the task asks for it. There are limits on how many messages you can send per hour and on how deep agents can wait on each other."#
-    )
+/// 모든 에이전트 세션에 덧붙이는 사무실 안내 하나. 모델이 읽는 지시문이라 화면 문자열(i18n)이 아니다.
+/// "하고 싶은 일 → 명령" 목차와 꼭 지킬 규칙만 싣고, 옵션은 각 명령의 `--help`, 지금 켜진 기능·머신·캐릭터
+/// 상태는 `office-help`가 실행 시점에 보여 준다(세션을 띄운 뒤 바뀐 것도 거기서 보인다). 켜진 기능이 없으면 None.
+pub fn guide(g: &Guide) -> Option<String> {
+    if g.task.is_none() && g.md.is_none() && g.file.is_none() && g.peer.is_none() {
+        return None;
+    }
+    let p = |path: &Path| path.display().to_string();
+    let mut out = String::from("# Agent Office\nThis session runs inside Agent Office. Run these commands by their full paths:\n\n");
+    for (name, path) in [("office-task", g.task), ("office-peer", g.peer), ("office-file", g.file), ("office-md", g.md), ("office-help", g.help)] {
+        if let Some(path) = path {
+            out.push_str(&format!("- `{name}` = `{}`\n", p(path)));
+        }
+    }
+    out.push_str("\n`<command> --help` lists every option.");
+    if g.help.is_some() {
+        out.push_str(" `office-help` shows what is turned on right now, the linked machines and each character's state; check it when this guide does not cover what you need.");
+    }
+    out.push_str("\n\n## What you want → command\n");
+    if g.peer.is_some() {
+        out.push_str("- Have another character (on this machine or a linked one) do work now, or ask it something → `office-peer ask <character> \"<message>\"`. It works even when that character has no session or no agent CLI running: Agent Office opens its terminal, starts its CLI and gives your message as the first prompt. Write the message so it stands alone (the other agent does not see your conversation), and add `--no-wait` when the work takes longer than a quick answer.\n");
+    }
+    if g.task.is_some() {
+        out.push_str("- Leave a follow-up for later, split work into a plan, or schedule a run → `office-task` (the shared task board).\n");
+    }
+    if g.file.is_some() {
+        out.push_str(&format!(
+            "- Hand files or folders to another machine or character → `office-file send <target> <path>...`. Files only: {}\n",
+            if g.peer.is_some() { "to give work, use `office-peer ask` and name the paths in the message." } else { "it does not give anyone work." }
+        ));
+    }
+    if g.md.is_some() {
+        out.push_str("- Show a Markdown document in the browser → `office-md <file.md>` (`--latest` for the newest `.md` here). Only when the user asks.\n");
+    }
+    if g.task.is_some() {
+        out.push_str("- A team discussion between colleagues → `office-task --discuss` (see `office-task --discuss --help`). Only when the user asks.\n");
+    }
+    if g.task.is_some() {
+        out.push_str(
+            r#"
+## Task board rules
+- Leave a task when the user asks you to note something for later, or for follow-up work outside the current scope; not for work you finish in this turn. One follow-up, one task, written so someone without this conversation can act on it. It is yours unless you pass `--to <colleague>`. Tell the user in one line after leaving tasks.
+- Plans: make each piece of work its own step task, chained with `--after <id>` (each create prints its id), then create the root last with `--plan --after <last step>`; its body is the plan memo and it holds no work.
+- `--done` and `--delete` only on the user's instruction. Schedules (`--at`, `--every`) you set start turned off; tell the user to turn them on in the task's Schedule section.
+- When an auto-run prompt asks for a report, write it with `office-task --report <id> -` before your turn ends.
+- In a session running a task sent from the host, task commands go to the host's board; elsewhere use `--host` only when the user asks.
+- A discussion you create waits in the ready state: tell the user to start it from its card; its decision memo is saved as `$AGENT_OFFICE_APP_DATA/discussions/memos/<id>.md`.
+"#,
+        );
+    }
+    if g.peer.is_some() {
+        out.push_str(
+            r#"
+## Agent talk rules
+- A message starting with `[Agent Office · message <id> from <character>@<machine>]` comes from another agent, not the user. Answer it once with `office-peer reply <id> "<answer>"`, even if only to say you cannot help; the sender is waiting. Do not ask the sender back while it waits.
+- `ask` waits 100 s for the reply by default (`--wait` up to 600; raise your shell timeout to match). Without a reply in time it exits with code 8 and the reply is put into this session when it arrives.
+- `office-peer agents` lists every character and its state; `status`, `log`, `threads` show more. You may `ask`, `launch` and `resume` on your own judgment; use `interrupt` and `unqueue` on another character only when the user or the task asks. Hourly and depth limits apply.
+"#,
+        );
+    }
+    if g.md.is_some() {
+        out.push_str("\n## Document viewer\nWith no file named, open the Markdown document you last created or edited here, else `office-md --latest`. Tell the user in one line which document opened; if it fails, give them the printed HTML path or the error.\n");
+    }
+    Some(out.trim_end().to_string())
 }
 
 /// persona와 안내문들 중 있는 것만 빈 줄로 잇는다. 모두 없으면 None.
@@ -262,34 +238,40 @@ mod tests {
     }
 
     #[test]
-    fn instructions_embed_the_absolute_shim_path() {
-        let text = task_instructions(Path::new("/tmp/agent-office/bin/office-task"));
-        assert!(text.contains("/tmp/agent-office/bin/office-task \"<title>\" - <<'EOF'"));
-        assert!(text.contains("--to"));
-        assert!(text.contains("--after"));
-        assert!(text.contains("/tmp/agent-office/bin/office-task --plan --after \"$B\""));
-        assert!(text.contains("it holds no work of its own"));
-        assert!(text.contains("/tmp/agent-office/bin/office-task --list"));
-        assert!(text.contains("/tmp/agent-office/bin/office-task --done <id>"));
-        assert!(text.contains("/tmp/agent-office/bin/office-task --edit <id>"));
-        assert!(text.contains("--every <rule>") && text.contains("start turned off"));
-        assert!(text.contains("/tmp/agent-office/bin/office-task --delete <id>"));
-        assert!(text.contains("/tmp/agent-office/bin/office-task --show <id>"));
-        assert!(text.contains("/tmp/agent-office/bin/office-task --discuss --moderator <colleague> --with <colleague>"));
-        assert!(text.contains("/tmp/agent-office/bin/office-task --discuss --help"));
-        assert!(text.contains("start it from its card") && text.contains("discussions/memos/<id>.md"));
-        assert!(text.contains("/tmp/agent-office/bin/office-task --role-add \"<role name>\" --stance <stance>"));
-        assert!(text.contains("/tmp/agent-office/bin/office-task --roles --help"));
-    }
+    fn guide_lists_only_enabled_commands_with_full_paths() {
+        let (task, md, file, peer, help) = (
+            Path::new("/tmp/ao/bin/office-task"),
+            Path::new("/tmp/ao/bin/office-md"),
+            Path::new("/tmp/ao/bin/office-file"),
+            Path::new("/tmp/ao/bin/office-peer"),
+            Path::new("/tmp/ao/bin/office-help"),
+        );
+        assert_eq!(guide(&Guide::default()), None);
+        assert_eq!(guide(&Guide { help: Some(help), ..Guide::default() }), None, "도움말만으로는 싣지 않는다");
 
-    #[test]
-    fn doc_view_instructions_embed_the_shim_and_open_only_on_request() {
-        let text = doc_view_instructions(Path::new("/tmp/agent-office/bin/office-md"));
-        assert!(text.contains("/tmp/agent-office/bin/office-md <file.md>"));
-        assert!(text.contains("`/tmp/agent-office/bin/office-md --latest`"));
-        assert!(text.contains("Never open documents on your own."));
-        assert!(text.contains("in this conversation"));
-        assert!(text.contains("HTML path"));
+        let all = guide(&Guide { task: Some(task), md: Some(md), file: Some(file), peer: Some(peer), help: Some(help) }).unwrap();
+        assert!(all.starts_with("# Agent Office\n"));
+        for line in ["`office-task` = `/tmp/ao/bin/office-task`", "`office-peer` = `/tmp/ao/bin/office-peer`", "`office-file` = `/tmp/ao/bin/office-file`", "`office-md` = `/tmp/ao/bin/office-md`", "`office-help` = `/tmp/ao/bin/office-help`"] {
+            assert!(all.contains(line), "{line}");
+        }
+        // 일 맡기기는 peer, 파일 보내기는 일 지시가 아님을 목차에서 못박는다.
+        assert!(all.contains("even when that character has no session"));
+        assert!(all.contains("to give work, use `office-peer ask`"));
+        assert!(all.contains("office-peer reply <id>"));
+        assert!(all.contains("`--done` and `--delete` only on the user's instruction"));
+        assert!(all.contains("--plan --after <last step>"));
+        assert!(all.contains("discussions/memos/<id>.md"));
+        assert!(all.contains("Only when the user asks"));
+
+        // 문서 뷰어만 켜진 세션: 다른 기능 이름이 나오지 않는다.
+        let md_only = guide(&Guide { md: Some(md), help: Some(help), ..Guide::default() }).unwrap();
+        assert!(md_only.contains("office-md <file.md>"));
+        for absent in ["office-task", "office-peer", "office-file", "Task board rules", "Agent talk rules"] {
+            assert!(!md_only.contains(absent), "{absent}");
+        }
+        // peer가 꺼지면 파일 보내기가 일 지시 통로가 아니라고만 말한다.
+        let no_peer = guide(&Guide { file: Some(file), md: Some(md), ..Guide::default() }).unwrap();
+        assert!(no_peer.contains("it does not give anyone work") && !no_peer.contains("office-help"));
     }
 
     #[test]

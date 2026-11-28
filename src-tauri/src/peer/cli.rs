@@ -250,6 +250,9 @@ fn explain(code: &str) -> String {
         "peer-not-in-session" | "peer-not-a-character" => "this works only inside an Agent Office character session".into(),
         "not-running" => "that character has no running session (try `office-peer launch <character>`)".into(),
         "chat-view-no-cli" => "that character's terminal has no agent CLI running (try `office-peer launch <character>`)".into(),
+        "clocked-out" => "that character is clocked out; only a person can bring it back".into(),
+        "session-open-timeout" => "the character's terminal did not open in time; try again".into(),
+        "human-input-pending" | "work-send-human-input" => "a person is typing in that terminal; try later".into(),
         "queue-gone" => "that queued message is already gone".into(),
         "peer-timeout" | "link-request-timeout" => "the other machine did not answer in time".into(),
         _ => return code.to_string(),
@@ -424,7 +427,11 @@ fn print_op(cmd: &str, v: &Value, o: &Opts, out: &mut dyn Write) -> i32 {
             }
         }
         "launch" => {
-            let what = if v["outcome"] == "launched" { "launched" } else { "launch requested" };
+            let what = match v["outcome"].as_str() {
+                Some("launched") => "launched; it got a short first prompt, so its state shows once that turn runs",
+                Some("already-running") => "already running an agent CLI (nothing sent)",
+                _ => "launch requested",
+            };
             let _ = writeln!(out, "{label}: {what}");
         }
         _ => {

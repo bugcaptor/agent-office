@@ -255,7 +255,7 @@ export interface WebDashWorkEditPatch {
 export interface WebDashControlRequest {
   requestId: string;
   op:
-    | "restart" | "terminate" | "resume"
+    | "restart" | "terminate" | "resume" | "open-session"
     | "work-create" | "work-edit" | "work-delete" | "work-reorder" | "work-send" | "work-done" | "work-schedule"
     | "autorun-start" | "autorun-pause" | "autorun-resume" | "autorun-end" | "autorun-usage-guard"
     | "discuss-start" | "discuss-answer"

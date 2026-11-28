@@ -17,6 +17,7 @@ import { hasWorkContent, type WorkItemDraft } from "../workpanels/workItemDraft"
 import { disabledSchedule, enabledSchedule, scheduleTemplateOf } from "../workpanels/workSchedule";
 import { handleDiscussionControl } from "../discussion/discussionControl";
 import { isRemoteAgentId, remoteSendBlocked } from "../link/remoteWork";
+import { reserveSessionReplacement, runGuardedCreateSession } from "../ipc/sessionBridge";
 
 function fireAndForget(label: string, work: Promise<unknown>): void {
   work.catch((err: unknown) => console.warn(`web dash: ${label} failed`, err));
@@ -53,6 +54,21 @@ export async function handleWebDashControl(request: WebDashControlRequest): Prom
         const { resumeAgentSession } = await import("../agent/resumeAgentSession");
         fireAndForget("resume", resumeAgentSession(agentId, entry.sessionId));
       }
+      return {};
+    }
+    // 터미널이 없는 캐릭터의 세션을 연다(에이전트끼리 대화가 세션 없는 상대에게 일을 맡길 때). 화면 탭은 바꾸지 않는다.
+    // 다리는 5초만 기다리므로 시작만 하고 답한다 — 백엔드가 세션이 뜰 때까지 기다린다.
+    case "open-session": {
+      const agentId = request.agentId ?? "";
+      const agent = app.agents[agentId];
+      if (!agent) return { error: "unknown-agent" };
+      if (agent.clockedOut) return { error: "clocked-out" };
+      const status = app.sessions[agentId]?.status ?? "idle";
+      if (status === "starting" || status === "running") return {};
+      const release = reserveSessionReplacement(agentId);
+      if (!release) return { error: "work-send-busy" };
+      app.setSessionState({ agentId, status: "starting" });
+      fireAndForget("open session", runGuardedCreateSession(agentId).finally(release));
       return {};
     }
     case "work-create": {

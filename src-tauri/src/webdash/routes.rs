@@ -590,6 +590,9 @@ pub(crate) struct AgentCommandBody {
     /// 앱 화면에 웹 조작 알림을 띄우지 않는다(에이전트끼리 대화 `crate::peer` — 세션 안에만 남긴다).
     #[serde(skip)]
     pub quiet: bool,
+    /// `message`: 터미널이 없는 캐릭터면 먼저 연다(에이전트끼리 대화가 세션 없는 상대에게 일을 맡길 때).
+    #[serde(skip)]
+    pub open: bool,
 }
 
 /// 원격 조작이 오래 걸릴 수 있는 것(CLI를 띄워 첫 프롬프트를 넣는 데 수십 초가 걸린다)까지 기다릴 시간.
@@ -639,6 +642,9 @@ async fn run_agent_op(ctx: &Dash, agent: &str, op: &str, body: AgentCommandBody)
     match op {
         "message" => {
             let text = body.text.as_deref().unwrap_or("");
+            if body.open {
+                ensure_open(ctx, &profile).await?;
+            }
             // 셸 프롬프트만 있는 터미널(새 세션 등)이면 업무 보내기처럼 CLI를 띄워 첫 프롬프트로 넣는다.
             if let Some(result) = launch_with_prompt(ctx, &profile, body.cli.as_deref(), text).await {
                 result?;
@@ -646,6 +652,19 @@ async fn run_agent_op(ctx: &Dash, agent: &str, op: &str, body: AgentCommandBody)
                 return Ok(json!({ "outcome": "launched" }));
             }
             return message(ctx, agent, text, body.now, quiet).await;
+        }
+        // 세션을 띄우고 첫 프롬프트로 안내를 넣는다. 턴이 한 번 돌아야 훅이 상태(대기·작업 중)를 알린다.
+        "start" => {
+            ensure_open(ctx, &profile).await?;
+            let text = body.text.as_deref().unwrap_or("");
+            let target = ctx.ctl.work_send.inspect(&ctx.ctl.gate, &profile.id)?;
+            if target.restart_required {
+                return Ok(json!({ "outcome": "already-running" }));
+            }
+            let result = launch_with_prompt(ctx, &profile, body.cli.as_deref(), text).await.ok_or("not-running")?;
+            result?;
+            activity(ctx, "launch", Some(agent), body.cli.as_deref());
+            return Ok(json!({ "outcome": "launched" }));
         }
         "queue-cancel" => return queue_cancel(ctx, agent, body.id.as_deref().unwrap_or("")).map(|()| Value::Null),
         _ => {}
@@ -660,6 +679,31 @@ async fn run_agent_op(ctx: &Dash, agent: &str, op: &str, body: AgentCommandBody)
     }
     activity(ctx, op, Some(agent), body.cli.as_deref());
     Ok(Value::Null)
+}
+
+/// 터미널이 없는 캐릭터면 렌더러에 열게 하고(업무 보내기와 같은 세션 만들기) 셸이 뜰 때까지 기다린다.
+/// 시작 명령이 CLI를 띄우는 캐릭터는 셸 프롬프트가 오지 않으므로 잠깐 기다린 뒤 그대로 넘긴다.
+async fn ensure_open(ctx: &Dash, profile: &AgentProfile) -> Result<(), String> {
+    use std::time::{Duration, Instant};
+    if ctx.ctl.work_send.inspect(&ctx.ctl.gate, &profile.id)?.session_id.is_some() {
+        return Ok(());
+    }
+    if profile.clocked_out == Some(true) {
+        return Err("clocked-out".into());
+    }
+    bridged(ctx, json!({ "op": "open-session", "agentId": profile.id })).await?;
+    let start = Instant::now();
+    loop {
+        tokio::time::sleep(Duration::from_millis(300)).await;
+        if let Ok(target) = ctx.ctl.work_send.inspect(&ctx.ctl.gate, &profile.id) {
+            if target.session_id.is_some() && (!target.restart_required || start.elapsed() > Duration::from_secs(8)) {
+                return Ok(());
+            }
+        }
+        if start.elapsed() > Duration::from_secs(25) {
+            return Err("session-open-timeout".into());
+        }
+    }
 }
 
 /// 터미널의 CLI에 직접 쓴 글을 넣는다(업무 보내기와 달리 업무 보드에 남지 않는다). 입력 대기면 바로,

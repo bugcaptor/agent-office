@@ -81,6 +81,7 @@ mod work_inbox_cli;
 mod doc_view;
 mod doc_view_cli;
 mod legacy_cleanup;
+mod office_help;
 mod office_instructions;
 
 use std::sync::{Arc, RwLock};
@@ -218,6 +219,7 @@ where
         Some("discuss") => discussion_cli::run,
         Some("file") => files::cli::run,
         Some("peer") => peer::cli::run,
+        Some("help") => office_help::run,
         Some("ctl") => control::client::run,
         _ => return None,
     };
@@ -471,6 +473,7 @@ pub fn run() {
                     (discussion_cli::shim_path(), "discuss"),
                     (files::cli::shim_path(), "file"),
                     (peer::cli::shim_path(), "peer"),
+                    (office_help::shim_path(), "help"),
                 ],
                 forwarder_executable_path(),
                 Duration::from_secs(5),
@@ -577,6 +580,7 @@ pub fn run() {
                         shims.push(crate::work_inbox_cli::shim_path());
                     }
                     shims.push(crate::doc_view_cli::shim_path());
+                    shims.push(crate::office_help::shim_path());
                     shims.push(crate::files::cli::shim_path());
                     if crate::peer::current().is_some_and(|p| p.config().enabled) {
                         shims.push(crate::peer::cli::shim_path());

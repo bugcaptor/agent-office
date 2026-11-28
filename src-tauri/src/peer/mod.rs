@@ -406,12 +406,21 @@ impl PeerState {
                     }
                     op if AGENT_OPS.contains(&op) => {
                         let (ctl, dash) = self.ctx()?;
+                        // 띄우기는 터미널이 없으면 열고, 첫 프롬프트로 안내를 넣는다(턴이 돌아야 상태가 보인다).
+                        let (op, text) = match op {
+                            "launch" => {
+                                let from = data.get("from").cloned().and_then(|v| serde_json::from_value::<Party>(v).ok());
+                                ("start", Some(launch_message(from.as_ref())))
+                            }
+                            other => (other, None),
+                        };
                         let body = crate::webdash::AgentCommandBody {
                             cli: data.get("cli").and_then(Value::as_str).map(str::to_string),
-                            text: None,
+                            text,
                             id: data.get("id").and_then(Value::as_str).map(str::to_string),
                             now: false,
                             quiet: true,
+                            open: false,
                         };
                         crate::webdash::agent_op(ctl.clone(), dash.clone(), &agent, op, body).await.map(|v| if v.is_null() { json!({}) } else { v })
                     }
@@ -436,7 +445,8 @@ impl PeerState {
         self.upsert(t.clone());
         let text = arrival_message(&t, &cli::shim_path());
         let (ctl, dash) = self.ctx()?;
-        let body = crate::webdash::AgentCommandBody { cli: None, text: Some(text), id: None, now: false, quiet: true };
+        // 상대에게 터미널이 없으면 열고, CLI가 없으면 띄워 이 글을 첫 프롬프트로 넣는다.
+        let body = crate::webdash::AgentCommandBody { cli: None, text: Some(text), id: None, now: false, quiet: true, open: true };
         match crate::webdash::agent_op(ctl.clone(), dash.clone(), &agent, "message", body).await {
             Ok(v) => Ok(json!({ "outcome": v.get("outcome").cloned().unwrap_or(Value::Null) })),
             Err(e) => {
@@ -641,6 +651,9 @@ impl PeerState {
             "status" | "log" | "launch" | "resume" | "interrupt" | "queue-cancel" => {
                 let to = self.resolve(target())?;
                 let mut data = json!({ "agentId": to.agent_id, "op": op });
+                if let Some(me) = from_agent.and_then(|a| self.local_party(a).ok()) {
+                    data["from"] = json!(me);
+                }
                 for key in ["cli", "id", "turns"] {
                     if let Some(v) = body.get(key).filter(|v| !v.is_null()) {
                         data[key] = v.clone();
@@ -703,6 +716,14 @@ pub fn arrival_message(t: &Thread, shim: &std::path::Path) -> String {
         from = t.from.label(),
         text = t.text,
         cli = shim.display(),
+    )
+}
+
+/// `launch`로 띄운 세션에 넣는 첫 프롬프트. 한 턴이 돌아야 앱·웹·보낸 에이전트가 켜진 걸 안다.
+pub fn launch_message(from: Option<&Party>) -> String {
+    let by = from.map(|p| format!(" by {}", p.label())).unwrap_or_default();
+    format!(
+        "[Agent Office · session started{by} (another agent)]\nAnother agent started this session so it can hand you work through Agent Office messages. Nothing to do yet: answer with one short line that you are ready, then wait for the next message."
     )
 }
 

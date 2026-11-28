@@ -134,6 +134,7 @@ pub struct SessionManager {
     file_cli: Option<(std::path::PathBuf, std::path::PathBuf)>,
     /// `office-peer` shim 경로와 실행할 앱 바이너리.
     peer_cli: Option<(std::path::PathBuf, std::path::PathBuf)>,
+    help_cli: Option<(std::path::PathBuf, std::path::PathBuf)>,
     /// 업무 패널 설정(`workPanelsEnabled`) 조회. 켜졌을 때만 공통 안내문과 Codex
     /// 수신함 쓰기 허용을 싣는다. 세션을 띄울 때 고정된다.
     work_panels_enabled: Arc<dyn Fn() -> bool + Send + Sync>,
@@ -179,6 +180,7 @@ impl SessionManager {
             discuss_cli: None,
             file_cli: None,
             peer_cli: None,
+            help_cli: None,
             work_panels_enabled: Arc::new(|| false),
             codex_user_config: Arc::new(|| {
                 let path = crate::agent_paths::codex_home_from_env()?.join("config.toml");
@@ -246,7 +248,8 @@ impl SessionManager {
         self.md_cli = Some((crate::doc_view_cli::shim_path(), exe.clone()));
         self.discuss_cli = Some((crate::discussion_cli::shim_path(), exe.clone()));
         self.file_cli = Some((crate::files::cli::shim_path(), exe.clone()));
-        self.peer_cli = Some((crate::peer::cli::shim_path(), exe));
+        self.peer_cli = Some((crate::peer::cli::shim_path(), exe.clone()));
+        self.help_cli = Some((crate::office_help::shim_path(), exe));
         self
     }
 
@@ -477,22 +480,12 @@ impl SessionManager {
         if let Some(dir) = peer_requests.as_deref() {
             let _ = std::fs::create_dir_all(dir);
         }
-        let peer_instructions = peer_shim.as_deref().map(crate::office_instructions::peer_instructions);
         let work_inbox = self.app_data_dir.as_ref().map(|dir| dir.join("work-inbox"));
         // 머신 연동 클라이언트의 호스트 보드 수신함(`office-task --host`·받은 업무 세션이 쓴다).
         let host_inbox = self.app_data_dir.as_ref().map(|dir| crate::link::work::host_board_inbox(dir));
         let doc_view_cache = self.app_data_dir.as_ref().map(|dir| crate::doc_view::cache_dir(dir));
         // 토의 세션은 업무 보드·문서 뷰어 안내를 싣지 않는다(읽기 전용 토의에 필요 없다).
         let office_enabled = task_shim.is_some() && (self.work_panels_enabled)() && !discussion;
-        let office_instructions = task_shim
-            .as_deref()
-            .filter(|_| office_enabled)
-            .map(crate::office_instructions::task_instructions);
-        // 문서 뷰어 안내문은 업무 패널 설정과 무관하게 항상 싣는다.
-        let doc_view_instructions = md_shim
-            .as_deref()
-            .filter(|_| !discussion)
-            .map(crate::office_instructions::doc_view_instructions);
         // 파일 보내기 안내문은 머신 연동이 켜져 있거나 이 머신이 파일 받기를 켰을 때만 싣는다.
         let file_instructions_on =
             file_shim.is_some() && self.app_data_dir.as_deref().is_some_and(crate::files::cli::instructions_wanted);
@@ -500,16 +493,17 @@ impl SessionManager {
         if let Some(dir) = file_requests.as_deref().filter(|_| file_instructions_on) {
             let _ = std::fs::create_dir_all(dir);
         }
-        let file_instructions =
-            file_shim.as_deref().filter(|_| file_instructions_on).map(crate::office_instructions::file_instructions);
-        let doc_view_instructions = match (doc_view_instructions, file_instructions) {
-            (Some(a), Some(b)) => Some(format!("{a}\n\n{b}")),
-            (a, b) => a.or(b),
-        };
-        let doc_view_instructions = match (doc_view_instructions, peer_instructions) {
-            (Some(a), Some(b)) => Some(format!("{a}\n\n{b}")),
-            (a, b) => a.or(b),
-        };
+        // 켜진 기능만 담은 안내 하나(목차 + 꼭 지킬 규칙). 문서 뷰어는 업무 패널 설정과 무관하게 늘 싣는다.
+        // `office-help`는 안내가 실리는 세션이면 함께 둔다(지금 켜진 기능·머신·캐릭터를 실행 시점에 본다).
+        let help_shim = if discussion { None } else { ensure(&self.help_cli, "help") };
+        let office_instructions = crate::office_instructions::guide(&crate::office_instructions::Guide {
+            task: task_shim.as_deref().filter(|_| office_enabled),
+            md: md_shim.as_deref().filter(|_| !discussion),
+            file: file_shim.as_deref().filter(|_| file_instructions_on),
+            peer: peer_shim.as_deref(),
+            help: help_shim.as_deref(),
+        });
+        let doc_view_instructions: Option<String> = None;
 
         // 덧붙일 지시문 = persona + 사무실 안내문 + 문서 뷰어 안내문(있는 것만, 빈 줄로). env 이름
         // `AGENT_OFFICE_PERSONA`는 래퍼 함수 호환과 IDE 페르소나 경로 때문에 유지한다.

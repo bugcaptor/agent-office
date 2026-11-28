@@ -407,6 +407,7 @@
         manager.task_cli = Some((scratch.join("bin").join("office-task"), PathBuf::from("/opt/ao")));
         manager.md_cli = Some((scratch.join("bin").join("office-md"), PathBuf::from("/opt/ao")));
         manager.discuss_cli = Some((scratch.join("bin").join("office-discuss"), PathBuf::from("/opt/ao")));
+        manager.help_cli = Some((scratch.join("bin").join("office-help"), PathBuf::from("/opt/ao")));
         manager.codex_user_config =
             Arc::new(|| Some("[sandbox_workspace_write]\nwritable_roots = [\"/mine\"]\n".into()));
         Arc::new(manager)
@@ -415,6 +416,19 @@
     /// TOML 기본 문자열 안의 경로 — Windows 백슬래시는 `\\`로 이스케이프된다.
     fn toml_path(path: &Path) -> String {
         path.display().to_string().replace('\\', "\\\\")
+    }
+
+    /// 테스트 shim 폴더 기준의 사무실 안내(업무 패널 켜짐 여부만 다르다).
+    fn office_guide(scratch: &Path, task: bool) -> String {
+        let bin = scratch.join("bin");
+        let (task_shim, md, help) = (bin.join("office-task"), bin.join("office-md"), bin.join("office-help"));
+        crate::office_instructions::guide(&crate::office_instructions::Guide {
+            task: task.then_some(task_shim.as_path()),
+            md: Some(md.as_path()),
+            help: Some(help.as_path()),
+            ..Default::default()
+        })
+        .unwrap()
     }
 
     fn env_value(control: &FakeControl, key: &str) -> Option<String> {
@@ -430,14 +444,7 @@
         let shim = scratch.join("bin").join("office-task");
         let md = scratch.join("bin").join("office-md");
         let appended = env_value(&control, "AGENT_OFFICE_PERSONA").expect("안내문만으로도 주입");
-        assert_eq!(
-            appended,
-            format!(
-                "{}\n\n{}",
-                crate::office_instructions::task_instructions(&shim),
-                crate::office_instructions::doc_view_instructions(&md)
-            )
-        );
+        assert_eq!(appended, office_guide(&scratch, true));
         assert!(env_value(&control, "AGENT_OFFICE_CODEX_PERSONA").unwrap().starts_with("developer_instructions=\"# Agent Office"));
         assert_eq!(
             env_value(&control, "AGENT_OFFICE_AGY_SESSION_START"),
@@ -483,14 +490,14 @@
         let manager = with_office(manager, &scratch, true);
         manager.create(req_with_persona("a1", Some("해적처럼 말한다.".into()))).unwrap();
         let appended = env_value(&control, "AGENT_OFFICE_PERSONA").unwrap();
-        assert!(appended.starts_with("해적처럼 말한다.\n\n# Agent Office task board"));
+        assert!(appended.starts_with("해적처럼 말한다.\n\n# Agent Office\n"));
         cleanup_observer_fixture(&control, &scratch);
 
         // 업무 패널이 꺼지면 업무 안내문·수신함 쓰기 허용만 빠지고 문서 뷰어는 남는다.
         let (manager, control, _wrappers, scratch) = build_observer_manager(false, vec![]);
         let manager = with_office(manager, &scratch, false);
         manager.create(req("a1", Some(false))).unwrap();
-        let doc_view = crate::office_instructions::doc_view_instructions(&scratch.join("bin").join("office-md"));
+        let doc_view = office_guide(&scratch, false);
         assert_eq!(env_value(&control, "AGENT_OFFICE_PERSONA"), Some(doc_view.clone()));
         assert_eq!(env_value(&control, "AGENT_OFFICE_OFFICE_PROMPT"), Some(doc_view));
         assert_eq!(
@@ -613,11 +620,7 @@
         // persona 없이 공통 안내문만 싣는다.
         let shim = scratch.join("bin").join("office-task");
         let md = scratch.join("bin").join("office-md");
-        let office = format!(
-            "{}\n\n{}",
-            crate::office_instructions::task_instructions(&shim),
-            crate::office_instructions::doc_view_instructions(&md)
-        );
+        let office = office_guide(&scratch, true);
         assert_eq!(env_value(&control, "AGENT_OFFICE_PERSONA"), Some(office.clone()));
         assert_eq!(
             env_value(&control, "AGENT_OFFICE_AGY_SESSION_START"),
