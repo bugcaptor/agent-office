@@ -39,6 +39,9 @@ pub fn install(link: &Arc<LinkState>, ctl: Arc<ControlContext>, dash: Arc<WebDas
         link.client.set_request_handler(Arc::new(move |kind, data| {
             let (ctl, dash, work, linked, handle) = (ctl.clone(), dash.clone(), work.clone(), linked.clone(), handle.clone());
             Box::pin(async move {
+                if let Some(result) = super::files::answer(&kind, &data).await {
+                    return result;
+                }
                 if let Some(result) = super::work::answer(&work, &ctl, &dash, &kind, &data).await {
                     return result;
                 }

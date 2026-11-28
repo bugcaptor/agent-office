@@ -43,6 +43,8 @@ mod chat_view;
 mod web_dash;
 // 머신 연동 설정·페어링.
 mod link;
+// 머신 간 파일 보내기.
+mod files;
 // 셸 캐릭터 LLM 설정·명령 제안.
 mod shell_assist;
 
@@ -71,6 +73,7 @@ pub(crate) use doc_view::*;
 pub(crate) use chat_view::*;
 pub(crate) use web_dash::*;
 pub(crate) use link::*;
+pub(crate) use files::*;
 pub(crate) use shell_assist::*;
 
 #[cfg(test)]

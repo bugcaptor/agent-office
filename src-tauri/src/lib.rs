@@ -70,6 +70,7 @@ pub mod usage;
 mod editor;
 pub mod webdash;
 pub mod link;
+pub mod files;
 // pub: contract 테스트가 `agent_office_lib::workdir::{GitStatusResult, ...}`에
 // 닿아야 한다(model.rs가 이미 `pub use model::*`로 재수출). 로직 변경 없음 —
 // 가시성만 승격.
@@ -213,6 +214,7 @@ where
         Some("task") => work_inbox_cli::run,
         Some("md") => doc_view_cli::run,
         Some("discuss") => discussion_cli::run,
+        Some("file") => files::cli::run,
         Some("ctl") => control::client::run,
         _ => return None,
     };
@@ -464,6 +466,7 @@ pub fn run() {
                     (work_inbox_cli::shim_path(), "task"),
                     (doc_view_cli::shim_path(), "md"),
                     (discussion_cli::shim_path(), "discuss"),
+                    (files::cli::shim_path(), "file"),
                 ],
                 forwarder_executable_path(),
                 Duration::from_secs(5),
@@ -570,6 +573,7 @@ pub fn run() {
                         shims.push(crate::work_inbox_cli::shim_path());
                     }
                     shims.push(crate::doc_view_cli::shim_path());
+                    shims.push(crate::files::cli::shim_path());
                     shims
                 })
             };
@@ -798,6 +802,11 @@ pub fn run() {
             web_dash.set_link_host(link.host.clone());
             web_dash.set_link_remote(link.remote.clone());
             crate::link::share::install(&link, control_ctx.clone(), web_dash.clone(), handle.clone());
+            // 파일 보내기(`files.json`): 연동 위에서 머신·캐릭터에게 파일을 보낸다(`files/`, `link/files.rs`).
+            let files = crate::files::FilesState::new(Some(data_dir.clone()), link.machine_id().to_string());
+            files.attach(&link, control_ctx.clone(), Arc::new(crate::files::TauriFilesEvents(handle.clone())));
+            crate::link::files::install(&link, &files);
+            crate::files::cli::spawn_request_watcher(files.clone());
             link.start();
             if web_dash.config().enabled {
                 tauri::async_runtime::block_on(web_dash.reconcile(control_ctx.clone(), web_dash.clone()));
@@ -855,6 +864,7 @@ pub fn run() {
                 run_recipes,
                 web_dash,
                 link,
+                files,
             });
             Ok(())
         })
@@ -959,6 +969,16 @@ pub fn run() {
             ipc::commands::web_dash_publish_labels,
             ipc::commands::web_dash_control_reply,
             ipc::commands::link_status,
+            ipc::commands::files_status,
+            ipc::commands::files_configure,
+            ipc::commands::files_targets,
+            ipc::commands::files_list,
+            ipc::commands::files_send,
+            ipc::commands::files_cancel,
+            ipc::commands::files_resume,
+            ipc::commands::files_forget,
+            ipc::commands::files_pick,
+            ipc::commands::files_reveal,
             ipc::commands::link_configure,
             ipc::commands::link_start_pairing,
             ipc::commands::link_cancel_pairing,

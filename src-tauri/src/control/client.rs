@@ -279,6 +279,38 @@ fn build_request(p: &Parsed) -> Result<(&'static str, Value), String> {
             }
             Ok((path, body))
         }
+        "file" => {
+            let op = pos.get(1).map(String::as_str).ok_or("file: targets|list|status|send|resume|cancel 하위 명령이 필요합니다")?;
+            match op {
+                "targets" => Ok(("/v1/file/targets", json!({}))),
+                "list" => Ok(("/v1/file/list", json!({}))),
+                "status" | "resume" | "cancel" => {
+                    let id = pos.get(2).cloned().ok_or_else(|| format!("file {op}: 전송 id가 필요합니다"))?;
+                    let path = match op {
+                        "status" => "/v1/file/status",
+                        "resume" => "/v1/file/resume",
+                        _ => "/v1/file/cancel",
+                    };
+                    Ok((path, json!({ "id": id })))
+                }
+                "send" => {
+                    let target = pos.get(2).cloned().ok_or("file send: 대상(머신·캐릭터·캐릭터@머신)이 필요합니다")?;
+                    let cwd = std::env::current_dir().unwrap_or_default();
+                    let paths: Vec<String> = pos
+                        .iter()
+                        .skip(3)
+                        .map(|p| std::path::absolute(cwd.join(p)).unwrap_or_else(|_| cwd.join(p)).to_string_lossy().into_owned())
+                        .collect();
+                    if paths.is_empty() {
+                        return Err("file send: 보낼 경로가 필요합니다".into());
+                    }
+                    let note = p.kv.get("note").cloned();
+                    let notify = note.is_some() || p.kv.get("notify").is_some_and(|v| v != "false");
+                    Ok(("/v1/file/send", json!({ "target": target, "paths": paths, "note": note, "notify": notify })))
+                }
+                other => Err(format!("file: 알 수 없는 하위 명령: {other}")),
+            }
+        }
         "discuss" => {
             let op = pos.get(1).map(String::as_str).ok_or("discuss: list|status|watch|memo|start|answer 하위 명령이 필요합니다")?;
             if op == "list" {
@@ -415,6 +447,15 @@ agent-office ctl — 실행 중인 Agent Office를 조종하는 CLI (이슈 #55)
   discuss memo <id>               결정 메모(Markdown)를 출력한다
   토의 만들기는 office-task --discuss(준비 상태로 생기고 사람이 카드에서 시작).
   결론 확인(review → finished)은 앱에서 사람이 한다.
+
+파일 보내기(머신 연동, 받는 머신에서 '파일 받기'를 켜야 함):
+  file targets                    보낼 수 있는 머신·캐릭터와 받기 상태
+  file send <대상> <경로>... [--note 메모] [--notify true]
+                                  파일·폴더를 머신·캐릭터(캐릭터@머신)에게 보낸다. --note·--notify는
+                                  받는 캐릭터 세션에 저장 경로를 알린다
+  file list | file status <id>    보낸·받은 기록
+  file resume <id> | file cancel <id>
+                                  끊겨 멈춘 전송을 이어 보낸다 / 취소한다
 
 종료 코드(기다리는 명령): 0 끝남, 10 조치 필요(멈춤·승인 대기), 11 시간 초과.
 
@@ -789,6 +830,9 @@ fn render_success(parsed: &Parsed, data: &Value) -> String {
         },
         "autorun" => render_autorun(&mut out, data),
         "discuss" => render_discuss(&mut out, parsed.positionals.get(1).map(String::as_str).unwrap_or(""), data),
+        "file" if !data.is_null() && data != &json!({}) => {
+            let _ = writeln!(out, "{}", serde_json::to_string_pretty(data).unwrap_or_else(|_| data.to_string()));
+        }
         _ => out.push_str("ok\n"),
     }
     out

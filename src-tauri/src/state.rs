@@ -234,6 +234,8 @@ pub struct AppState {
     pub web_dash: Arc<crate::webdash::WebDashState>,
     /// 머신 연동(호스트·클라이언트).
     pub link: Arc<crate::link::LinkState>,
+    /// 머신 간 파일 보내기.
+    pub files: Arc<crate::files::FilesState>,
 }
 
 // ── 테스트용 페이크 ────────────────────────────────────────────────────

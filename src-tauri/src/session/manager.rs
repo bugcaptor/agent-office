@@ -130,6 +130,8 @@ pub struct SessionManager {
     /// `office-discuss` shim 경로와 실행할 앱 바이너리(토의 세션만 쓴다).
     /// None이면 shim·`AGENT_OFFICE_DISCUSS`를 생략한다 -- 테스트 기본값이다.
     discuss_cli: Option<(std::path::PathBuf, std::path::PathBuf)>,
+    /// `office-file` shim 경로와 실행할 앱 바이너리.
+    file_cli: Option<(std::path::PathBuf, std::path::PathBuf)>,
     /// 업무 패널 설정(`workPanelsEnabled`) 조회. 켜졌을 때만 공통 안내문과 Codex
     /// 수신함 쓰기 허용을 싣는다. 세션을 띄울 때 고정된다.
     work_panels_enabled: Arc<dyn Fn() -> bool + Send + Sync>,
@@ -173,6 +175,7 @@ impl SessionManager {
             task_cli: None,
             md_cli: None,
             discuss_cli: None,
+            file_cli: None,
             work_panels_enabled: Arc::new(|| false),
             codex_user_config: Arc::new(|| {
                 let path = crate::agent_paths::codex_home_from_env()?.join("config.toml");
@@ -238,7 +241,8 @@ impl SessionManager {
     pub fn with_office_cli(mut self, exe: std::path::PathBuf) -> Self {
         self.task_cli = Some((crate::work_inbox_cli::shim_path(), exe.clone()));
         self.md_cli = Some((crate::doc_view_cli::shim_path(), exe.clone()));
-        self.discuss_cli = Some((crate::discussion_cli::shim_path(), exe));
+        self.discuss_cli = Some((crate::discussion_cli::shim_path(), exe.clone()));
+        self.file_cli = Some((crate::files::cli::shim_path(), exe));
         self
     }
 
@@ -461,6 +465,7 @@ impl SessionManager {
         let task_shim = ensure(&self.task_cli, "task");
         let md_shim = ensure(&self.md_cli, "md");
         let discuss_shim = if discussion { ensure(&self.discuss_cli, "discuss") } else { None };
+        let file_shim = if discussion { None } else { ensure(&self.file_cli, "file") };
         let work_inbox = self.app_data_dir.as_ref().map(|dir| dir.join("work-inbox"));
         // 머신 연동 클라이언트의 호스트 보드 수신함(`office-task --host`·받은 업무 세션이 쓴다).
         let host_inbox = self.app_data_dir.as_ref().map(|dir| crate::link::work::host_board_inbox(dir));
@@ -476,6 +481,19 @@ impl SessionManager {
             .as_deref()
             .filter(|_| !discussion)
             .map(crate::office_instructions::doc_view_instructions);
+        // 파일 보내기 안내문은 머신 연동이 켜져 있거나 이 머신이 파일 받기를 켰을 때만 싣는다.
+        let file_instructions_on =
+            file_shim.is_some() && self.app_data_dir.as_deref().is_some_and(crate::files::cli::instructions_wanted);
+        let file_requests = self.app_data_dir.as_ref().map(|dir| dir.join(crate::files::REQUESTS_DIR));
+        if let Some(dir) = file_requests.as_deref().filter(|_| file_instructions_on) {
+            let _ = std::fs::create_dir_all(dir);
+        }
+        let file_instructions =
+            file_shim.as_deref().filter(|_| file_instructions_on).map(crate::office_instructions::file_instructions);
+        let doc_view_instructions = match (doc_view_instructions, file_instructions) {
+            (Some(a), Some(b)) => Some(format!("{a}\n\n{b}")),
+            (a, b) => a.or(b),
+        };
 
         // 덧붙일 지시문 = persona + 사무실 안내문 + 문서 뷰어 안내문(있는 것만, 빈 줄로). env 이름
         // `AGENT_OFFICE_PERSONA`는 래퍼 함수 호환과 IDE 페르소나 경로 때문에 유지한다.
@@ -555,6 +573,8 @@ impl SessionManager {
             // 클라이언트로 호스트 보드를 받은 적이 있을 때만(폴더가 있을 때) 더한다.
             host_inbox.as_deref().filter(|p| office_enabled && p.is_dir()),
             doc_view_cache.as_deref().filter(|_| md_shim.is_some()),
+            // 파일 보내기 요청(`office-file`). 안내문을 실은 세션만.
+            file_requests.as_deref().filter(|_| file_instructions_on),
         ]
         .into_iter()
         .flatten()
@@ -624,6 +644,9 @@ impl SessionManager {
         }
         // 문서 뷰어: 사람이 터미널에서 `office-md`로 쓰게
         // shim 폴더를 PATH 앞에 붙인다. 셸 rc가 PATH를 덮어쓸 수 있으므로 절대 경로도 싣는다.
+        if let Some(shim) = &file_shim {
+            env.push(("AGENT_OFFICE_FILE".into(), shim.to_string_lossy().into_owned()));
+        }
         if let Some(shim) = &md_shim {
             env.push(("AGENT_OFFICE_MD".into(), shim.to_string_lossy().into_owned()));
             if let Some(path) = shim.parent().and_then(|dir| prepend_path(dir, std::env::var_os("PATH"))) {

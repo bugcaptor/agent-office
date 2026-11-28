@@ -15,6 +15,7 @@ pub mod address;
 pub mod client;
 mod client_tls;
 pub mod discuss;
+pub mod files;
 pub mod host;
 pub mod outbox;
 pub mod protocol;
@@ -173,6 +174,7 @@ impl LinkState {
                         r.ingest(device, kind, data);
                     }
                     work::host_event(dir.as_deref(), events.as_ref(), &tasks, device, kind, data);
+                    files::host_event(device, kind, data);
                 }));
             }
             {
@@ -187,6 +189,11 @@ impl LinkState {
 
     pub fn config(&self) -> LinkConfig {
         self.config.lock().unwrap().clone()
+    }
+
+    /// 이 기계의 연동 id.
+    pub fn machine_id(&self) -> &str {
+        &self.machine_id
     }
 
     /// 지금 설정을 호스트·클라이언트에 건다.

@@ -59,6 +59,27 @@ This session runs inside Agent Office. It can render a Markdown file as HTML and
     )
 }
 
+/// 머신 연동이나 파일 받기가 켜진 세션에 덧붙이는 `office-file` 사용 안내.
+pub fn file_instructions(shim: &Path) -> String {
+    let cli = shim.display();
+    format!(
+        r#"# Agent Office file transfer
+This session runs inside Agent Office, which can send files and folders to linked Agent Office machines and to characters (push only; you cannot fetch files from another machine):
+
+```sh
+{cli} targets
+{cli} send <target> <path>... [--note "<message>"] [--notify] [--wait]
+{cli} list | {cli} status <id> | {cli} resume <id> | {cli} cancel <id>
+```
+
+- `<target>` is a machine name, a character name, or `<character>@<machine>`; `{cli} targets` lists them and whether each can receive now.
+- Send only when the user or the task asks you to hand files to another machine or character. Folders keep their structure; the receiver never overwrites (it saves `name (2)` instead).
+- Add `--note` (implies `--notify`) to tell the receiving character's session what the files are for; it receives the saved absolute paths. Use `--wait` when you need to know it arrived.
+- Files sent to you arrive under the receiving machine's received-files folder; when someone notifies you, the message lists the absolute paths.
+- If a send fails because the link dropped, `{cli} resume <id>` continues from what was already received."#
+    )
+}
+
 /// persona와 안내문들 중 있는 것만 빈 줄로 잇는다. 모두 없으면 None.
 pub fn appended_prompt(persona: Option<&str>, office: Option<&str>, doc_view: Option<&str>) -> Option<String> {
     let parts: Vec<&str> = [persona, office, doc_view]

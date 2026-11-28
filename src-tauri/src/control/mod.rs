@@ -19,6 +19,7 @@ pub mod client;
 pub(crate) mod discussion;
 /// VS Code 연결 확장이 캐릭터·외형·사용량을 읽는 제한된 표시 API.
 mod display;
+mod files;
 pub mod protocol;
 /// 토큰 파일과 인증 미들웨어.
 mod token;
@@ -142,6 +143,12 @@ fn router(ctx: Arc<ControlContext>) -> Router {
         .route("/v1/autorun/pause", post(autorun_pause))
         .route("/v1/autorun/end", post(autorun_end))
         .route("/v1/autorun/escalate", post(escalate))
+        .route("/v1/file/targets", post(files::targets))
+        .route("/v1/file/list", post(files::list))
+        .route("/v1/file/status", post(files::status))
+        .route("/v1/file/send", post(files::send))
+        .route("/v1/file/resume", post(files::resume))
+        .route("/v1/file/cancel", post(files::cancel))
         .route("/v1/discuss/list", post(discussion::list))
         .route("/v1/discuss/status", post(discussion::status))
         .route("/v1/discuss/memo", post(discussion::memo))

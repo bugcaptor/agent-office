@@ -385,6 +385,7 @@
                 Arc::new(crate::webdash::fake::RecordingDashEvents::default()),
             )),
             link: crate::link::LinkState::new(None, Arc::new(|| "test".to_string()), Arc::new(crate::link::fake::NoLinkEvents)),
+            files: crate::files::FilesState::new(None, "test-machine".into()),
         };
         (state, ctl, observer_dir, profile_dir)
     }
