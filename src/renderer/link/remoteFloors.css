@@ -104,4 +104,5 @@
 }
 .remote-chat-name { font-weight: bold; color: var(--text); }
 .remote-chat-machine { font-size: 11px; color: var(--text-dim); }
+.remote-chat-files { margin-left: auto; font-size: 11px; }
 .remote-chat-body { position: relative; flex: 1; min-height: 0; }

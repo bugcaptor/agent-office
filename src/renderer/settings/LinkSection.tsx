@@ -11,6 +11,7 @@ import type { LinkClientStatus, LinkDevice, LinkMode, LinkStatus } from "@shared
 import { tauriApi } from "../ipc/tauriApi";
 import { linkErrorKey, setLinkStatus, useLinkStore } from "../link/linkStore";
 import { setWebDashStatus, useWebDashStore } from "../webdash/webDashStore";
+import { setFilesStatus, useFilesStore } from "../files/filesStore";
 import "../webdash/webDash.css";
 
 const MODES: LinkMode[] = ["off", "host", "client"];
@@ -84,7 +85,59 @@ export function LinkSection() {
       {error && <LinkError code={error} />}
       {status.host && <HostPanel status={status} busy={busy} run={run} />}
       {status.client && <ClientPanel status={status} client={status.client} busy={busy} run={run} />}
+      <FilesReceiveSection />
       <small style={{ opacity: 0.6 }}>{t("link.version", { protocol: status.protocol, app: status.appVersion })}</small>
+    </div>
+  );
+}
+
+/** 파일 받기 옵트인과 받은 파일 폴더(`files.json`). 연동이 꺼져 있어도 이 머신 캐릭터끼리 쓰므로 늘 보인다. */
+function FilesReceiveSection() {
+  const { t } = useTranslation("files");
+  const status = useFilesStore((s) => s.status);
+  const [error, setError] = useState<string | null>(null);
+  useEffect(() => {
+    void tauriApi.filesStatus().then(setFilesStatus).catch(() => {});
+  }, []);
+  if (!status) return null;
+  const save = async (config: typeof status.config) => {
+    setError(null);
+    try {
+      setFilesStatus(await tauriApi.filesConfigure(config));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    }
+  };
+  const pick = async () => {
+    const dir = await tauriApi.pickDirectory(status.receiveDir).catch(() => null);
+    if (dir) await save({ ...status.config, receiveDir: dir });
+  };
+  return (
+    <div className="settings-item settings-item-stacked" style={{ cursor: "default", marginTop: 8, paddingTop: 8, borderTop: "1px dashed var(--border-dark)" }}>
+      <label style={{ display: "flex", gap: 8, alignItems: "flex-start" }}>
+        <input
+          type="checkbox"
+          checked={status.config.receiveEnabled}
+          onChange={(e) => void save({ ...status.config, receiveEnabled: e.target.checked })}
+        />
+        <span>
+          <strong>{t("settings.title")}</strong>
+          <small>{t("settings.help")}</small>
+        </span>
+      </label>
+      <small>{t("settings.dir")}</small>
+      <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+        <code style={{ userSelect: "text", wordBreak: "break-all" }}>{status.receiveDir}</code>
+        {!status.config.receiveDir && <small>({t("settings.default")})</small>}
+      </div>
+      <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+        <button className="pixel-btn" onClick={() => void pick()}>{t("settings.change")}</button>
+        {status.config.receiveDir && (
+          <button className="pixel-btn" onClick={() => void save({ ...status.config, receiveDir: undefined })}>{t("settings.reset")}</button>
+        )}
+        <button className="pixel-btn" onClick={() => void tauriApi.filesReveal().catch(() => {})}>{t("settings.open")}</button>
+      </div>
+      {error && <div className="link-error" role="alert">{t(`errors.${error}`, { defaultValue: error, detail: "" })}</div>}
     </div>
   );
 }

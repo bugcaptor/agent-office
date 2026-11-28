@@ -45,6 +45,7 @@ import { installDiscussionControl } from "./discussion/discussionControl";
 import { installWebDashControl } from "./webdash/webDashControl";
 import { installWebDash } from "./webdash/webDashStore";
 import { installLink } from "./link/linkStore";
+import { installFiles } from "./files/filesStore";
 import { installRemoteFloors } from "./link/remoteFloors";
 import { installRemoteImages } from "./link/remoteImages";
 import { installRemoteWork } from "./link/remoteWork";
@@ -188,6 +189,8 @@ export async function bootApp(): Promise<() => void> {
   const offWebDashControl = installWebDashControl();
   const offWebDash = installWebDash();
   const offLink = installLink();
+  // 머신 간 파일 보내기: 기록·받은 알림.
+  const offFiles = installFiles();
   // 머신 연동 호스트: 붙은 머신들의 캐릭터(오피스 머신별 층).
   const offRemoteFloors = installRemoteFloors();
   // 그 머신 캐릭터의 초상·커스텀 시트·미니미(원격 id로 같은 캐시에).
@@ -256,6 +259,7 @@ export async function bootApp(): Promise<() => void> {
     offWebDashControl();
     offWebDash();
     offLink();
+    offFiles();
     offRemoteFloors();
     offRemoteImages();
     offRemoteWork();

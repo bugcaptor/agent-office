@@ -672,6 +672,12 @@ export function AgentTabStrip() {
               onSelect: () => openModal({ kind: "settings", initialTab: "system" }),
             },
             {
+              // 머신 간 파일 보내기: 이 캐릭터에게(받은 파일 폴더 아래 캐릭터 폴더로, 세션에 알림).
+              label: t("files:menuSend"),
+              icon: "📤",
+              onSelect: () => openModal({ kind: "files", target: { agentId: menu.agentId } }),
+            },
+            {
               // 인앱 PTY(터미널 재시작/종료)와 구분되는 외부 OS 터미널 앱.
               label: t("menu.osTerminal"),
               icon: "⌨️",

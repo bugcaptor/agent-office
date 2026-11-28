@@ -28,6 +28,7 @@ export * from './types/settings';
 export * from './types/chatView';
 export * from './types/shellAssist';
 export * from './types/link';
+export * from './types/files';
 export * from './types/apiKeys';
 export * from './types/markdown';
 export * from './types/git';

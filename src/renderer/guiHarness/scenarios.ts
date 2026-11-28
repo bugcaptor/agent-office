@@ -11,6 +11,8 @@ import type {
   AwardsFile,
   Discussion,
   DiscussionsFile,
+  FileTarget,
+  FileTransfer,
   GetAppSettingsResult,
   NotificationEvent,
   PersistedState,
@@ -41,7 +43,40 @@ export interface Scenario {
   discussions: Discussion[];
   /** 머신 연동 호스트가 받은 다른 머신 캐릭터(없으면 이 머신만). */
   remote?: RemoteOffice;
+  /** 파일 보내기 대상·기록(없으면 빈 목록). */
+  fileTargets?: FileTarget[];
+  fileTransfers?: FileTransfer[];
 }
+
+const HOST = { machineId: "m-host", machineName: "Studio" };
+const PC = { machineId: "m-pc", machineName: "studio-pc" };
+const FILE_TARGETS: FileTarget[] = [
+  { ...HOST, local: true, online: true, receive: true },
+  { ...HOST, agentId: "p1", agentName: "Ada", local: true, online: true, receive: true },
+  { ...HOST, agentId: "p2", agentName: "Bo", local: true, online: true, receive: true },
+  { ...PC, deviceId: "d-1a2b3c4d", local: false, online: true, receive: true },
+  { ...PC, agentId: "agent-a", agentName: "Ada", deviceId: "d-1a2b3c4d", local: false, online: true, receive: true },
+  { ...PC, agentId: "agent-b", agentName: "Bo", deviceId: "d-1a2b3c4d", local: false, online: true, receive: true },
+  { machineId: "m-laptop", machineName: "old-laptop", deviceId: "d-9f8e7d6c", local: false, online: false, receive: false },
+];
+const fileEntry = (path: string, size: number) => ({ path, size, sha256: "0".repeat(64), mtime: 0 });
+const FILE_TRANSFERS: FileTransfer[] = [
+  {
+    id: "f-1", createdAt: 1720000300000, updatedAt: 1720000300000, from: HOST, to: { ...PC, agentId: "agent-a", agentName: "Ada" },
+    items: ["dataset"], files: [fileEntry("dataset/a.parquet", 900_000_000), fileEntry("dataset/b.parquet", 600_000_000)],
+    totalBytes: 1_500_000_000, doneBytes: 630_000_000, state: "sending", notify: true, note: "Train on this split", via: "app",
+  },
+  {
+    id: "f-2", createdAt: 1720000200000, updatedAt: 1720000200000, from: { ...PC, agentId: "agent-b", agentName: "Bo" }, to: { ...HOST, agentId: "p1", agentName: "Ada" },
+    items: ["report.pdf"], files: [fileEntry("report.pdf", 2_400_000)], totalBytes: 2_400_000, doneBytes: 2_400_000, state: "done",
+    notify: true, saved: ["/Users/me/Downloads/Agent Office/Ada/report.pdf"], via: "agent",
+  },
+  {
+    id: "f-3", createdAt: 1720000100000, updatedAt: 1720000100000, from: HOST, to: PC,
+    items: ["build.zip"], files: [fileEntry("build.zip", 300_000_000)], totalBytes: 300_000_000, doneBytes: 120_000_000, state: "failed",
+    error: "link-device-offline", notify: false, via: "app",
+  },
+];
 
 const harnessCwd = IS_WINDOWS ? "C:/tmp/gui-harness" : "/tmp/gui-harness";
 
@@ -212,6 +247,8 @@ const SCENARIOS: Record<string, (lang: string) => Scenario> = {
   office: base,
   /** 머신 연동 호스트: 붙은 머신 하나·끊긴 머신 하나의 층이 생긴다. */
   machines: (lang) => ({ ...base(lang), remote: linkRemoteFixture as RemoteOffice }),
+  /** 머신 간 파일 보내기: 이 머신·붙은 머신(캐릭터 포함)·끊긴 머신 대상과 보내는 중·받음·멈춤 기록. */
+  files: (lang) => ({ ...base(lang), remote: linkRemoteFixture as RemoteOffice, fileTargets: FILE_TARGETS, fileTransfers: FILE_TRANSFERS }),
   /**
    * 머신 연동 업무 분배: 호스트 보드에 다른 머신 캐릭터(studio-pc의 Ada)에게 맡긴 플랜 단계가 있고, 이 앱이 클라이언트로
    * 받은 업무 하나가 맨 위 묶음에 있다(한 화면에서 두 쪽을 본다).

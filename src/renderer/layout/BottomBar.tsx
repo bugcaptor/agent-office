@@ -33,6 +33,7 @@ import { ContextMenu } from "../ui/ContextMenu";
 import { clockInAgent, clockInAll } from "../agent/clockOut";
 import { summonAllToDesk } from "../agent/summonToDesk";
 import { UsageWidget } from "../usage/UsageWidget";
+import { activeCount, useFilesStore } from "../files/filesStore";
 
 export function BottomBar() {
   const { t } = useTranslation("common");
@@ -53,6 +54,8 @@ export function BottomBar() {
   const [sceneThemeMenu, setSceneThemeMenu] = useState<{ x: number; y: number } | null>(null);
   const [clockAllMenu, setClockAllMenu] = useState<{ x: number; y: number } | null>(null);
   const [recordMenu, setRecordMenu] = useState<{ x: number; y: number } | null>(null);
+  const { t: tf } = useTranslation("files");
+  const sendingFiles = useFilesStore((s) => activeCount(s.transfers));
 
   return (
     <footer className="bottom-bar pixel-panel">
@@ -129,6 +132,15 @@ export function BottomBar() {
         {t("bottomBar.status", { running: runningCount, pending: pendingCount })}
       </span>
       <UsageWidget />
+      <button
+        type="button"
+        className="pixel-btn files-btn"
+        title={tf("bottomTitle")}
+        onClick={() => openModal({ kind: "files" })}
+      >
+        {tf("bottomButton")}
+        {sendingFiles > 0 && <span className="files-btn-count">↑{sendingFiles}</span>}
+      </button>
       <button
         type="button"
         className="pixel-btn records-btn"

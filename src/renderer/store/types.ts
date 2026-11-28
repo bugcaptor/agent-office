@@ -72,6 +72,8 @@ export type ModalState =
   | { kind: "usage" }
   | { kind: "about" }
   | { kind: "awards" }
+  /** 머신 간 파일 보내기(기록·보내기). `target`이 있으면 그 머신·캐릭터를 골라 둔다. */
+  | { kind: "files"; target?: { machineId?: string; agentId?: string; remoteId?: string }; fromAgent?: string }
   /** 토의 역할 목록 편집. */
   | { kind: "roles" };
 

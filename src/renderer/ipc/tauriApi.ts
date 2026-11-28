@@ -24,6 +24,7 @@ import { invoke, Channel } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { Commands, Events } from "@shared/ipc";
 import type {
+  FileTransfer,
   LinkDiscussionSessionEvent,
   LinkTaskEvent,
   ActivityEvent,
@@ -298,6 +299,16 @@ export const tauriApi: AgentOfficeApi = {
   async linkForgetHost() { return await invoke(Commands.linkForgetHost); },
   async linkRemote() { return await invoke(Commands.linkRemote); },
   async linkWork(agentId, kind, data) { return await invoke(Commands.linkWork, { agentId, kind, data }); },
+  async filesStatus() { return await invoke(Commands.filesStatus); },
+  async filesConfigure(config) { return await invoke(Commands.filesConfigure, { config }); },
+  async filesTargets() { return await invoke(Commands.filesTargets); },
+  async filesList() { return await invoke(Commands.filesList); },
+  async filesSend(request) { return await invoke(Commands.filesSend, { request }); },
+  async filesCancel(id) { await invoke(Commands.filesCancel, { id }); },
+  async filesResume(id) { await invoke(Commands.filesResume, { id }); },
+  async filesForget(id) { await invoke(Commands.filesForget, { id }); },
+  async filesPick(folders) { return await invoke(Commands.filesPick, { folders }); },
+  async filesReveal(path) { await invoke(Commands.filesReveal, { path: path ?? null }); },
   async linkTaskReport(report) { await invoke(Commands.linkTaskReport, { report }); },
   async linkTaskStates() { return await invoke(Commands.linkTaskStates); },
   async shellAssistGetConfig() { return await invoke(Commands.shellAssistGetConfig); },
@@ -591,6 +602,14 @@ export const tauriApi: AgentOfficeApi = {
 
   onLinkDiscussionSession(cb) {
     return wrapListen<LinkDiscussionSessionEvent>(Events.linkDiscussionSession, cb);
+  },
+
+  onFileTransfers(cb) {
+    return wrapListen<FileTransfer[]>(Events.fileTransfers, cb);
+  },
+
+  onFileReceived(cb) {
+    return wrapListen<FileTransfer>(Events.fileReceived, cb);
   },
 
   onAppSettingsChanged(cb) {

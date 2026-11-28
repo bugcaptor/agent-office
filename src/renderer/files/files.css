@@ -1,0 +1,174 @@
+/* src/renderer/files/files.css — 머신 간 파일 보내기 대화상자·받은 알림. */
+.files-dialog {
+  width: min(720px, calc(100vw - 32px));
+  max-height: calc(100vh - 64px);
+  overflow: auto;
+  display: flex;
+  flex-direction: column;
+  gap: calc(var(--unit) * 3);
+}
+.files-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: calc(var(--unit) * 2);
+}
+.files-receive-line,
+.files-hint {
+  color: var(--text-dim);
+  margin: 0;
+}
+.files-link {
+  background: none;
+  border: none;
+  padding: 0;
+  color: var(--accent);
+  text-decoration: underline;
+  cursor: pointer;
+  font: inherit;
+}
+.files-send,
+.files-history {
+  display: flex;
+  flex-direction: column;
+  gap: calc(var(--unit) * 2);
+}
+.files-history h3 {
+  margin: 0;
+}
+.files-field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--unit);
+}
+.files-field select,
+.files-field textarea {
+  font: inherit;
+  color: var(--text);
+  background: var(--bg-panel-hi);
+  border: 2px solid var(--border-dark);
+  padding: var(--unit) calc(var(--unit) * 2);
+}
+.files-check {
+  display: flex;
+  gap: calc(var(--unit) * 2);
+  align-items: center;
+}
+.files-paths ul,
+.files-history ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--unit);
+}
+.files-paths li {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  gap: calc(var(--unit) * 2);
+  align-items: baseline;
+}
+.files-paths li small {
+  color: var(--text-dim);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.files-row {
+  display: flex;
+  gap: calc(var(--unit) * 2);
+  flex-wrap: wrap;
+  margin-top: var(--unit);
+}
+.files-x {
+  background: none;
+  border: none;
+  color: var(--text-dim);
+  cursor: pointer;
+  font: inherit;
+  font-size: 1.1em;
+  line-height: 1;
+}
+.files-error {
+  color: var(--accent-error);
+}
+.files-transfer {
+  display: grid;
+  grid-template-columns: 1.5em 1fr auto;
+  gap: calc(var(--unit) * 2);
+  align-items: start;
+  padding: calc(var(--unit) * 2);
+  background: var(--bg-panel-hi);
+  border: 2px solid var(--border-dark);
+}
+.files-dir {
+  font-weight: bold;
+  text-align: center;
+}
+.files-main {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.files-items {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: bold;
+}
+.files-main small {
+  color: var(--text-dim);
+}
+.files-failed .files-state {
+  color: var(--accent-error);
+}
+.files-done .files-state {
+  color: var(--accent);
+}
+.files-note {
+  font-style: italic;
+}
+.files-bar {
+  display: block;
+  height: 6px;
+  background: var(--bg-base);
+  border: 1px solid var(--border-dark);
+}
+.files-bar > span {
+  display: block;
+  height: 100%;
+  background: var(--accent);
+}
+.files-actions {
+  display: flex;
+  gap: var(--unit);
+  align-items: center;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+.files-arrivals {
+  position: fixed;
+  left: 12px;
+  bottom: 64px;
+  display: flex;
+  flex-direction: column;
+  gap: calc(var(--unit) * 2);
+  z-index: 60;
+  max-width: min(420px, calc(100vw - 24px));
+}
+.files-arrival {
+  display: flex;
+  gap: calc(var(--unit) * 2);
+  align-items: center;
+  padding: calc(var(--unit) * 2) calc(var(--unit) * 3);
+}
+.files-arrival > span {
+  flex: 1;
+  min-width: 0;
+}
+.files-btn-count {
+  margin-left: 4px;
+  font-size: 0.85em;
+}

@@ -45,6 +45,16 @@ export const Commands = {
   linkWork: "link_work",
   linkTaskReport: "link_task_report",
   linkTaskStates: "link_task_states",
+  filesStatus: "files_status",
+  filesConfigure: "files_configure",
+  filesTargets: "files_targets",
+  filesList: "files_list",
+  filesSend: "files_send",
+  filesCancel: "files_cancel",
+  filesResume: "files_resume",
+  filesForget: "files_forget",
+  filesPick: "files_pick",
+  filesReveal: "files_reveal",
   shellAssistGetConfig: "shell_assist_get_config",
   shellAssistSetConfig: "shell_assist_set_config",
   shellAssistListModels: "shell_assist_list_models",
@@ -261,4 +271,7 @@ export const Events = {
   // 호스트: 붙은 머신이 받은 업무의 진행 상태를 올렸다.
   linkTask: "link-task",
   linkDiscussionSession: "link-discussion-session",
+  // 파일 보내기 기록이 바뀌었다 / 이 머신이 파일을 다 받았다.
+  fileTransfers: "file-transfers",
+  fileReceived: "file-received",
 } as const;

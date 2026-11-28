@@ -25,6 +25,7 @@ import { AnalyticsDialog } from "./analytics/AnalyticsDialog";
 import { UsageDialog } from "./usage/UsageDialog";
 import { AboutDialog } from "./about/AboutDialog";
 import { AwardsDialog } from "./awards/AwardsDialog";
+import { FileArrivals, FilesDialog } from "./files/FilesDialog";
 import { RolesDialog } from "./discussion/RolesDialog";
 import { useAppStore } from "./store/appStore";
 import { useAgentList, useLightsOff } from "./store/selectors";
@@ -163,6 +164,8 @@ function App() {
       <AgentHoverCard />
       <RemoteHoverCard />
       <RemoteChatDialog />
+      {/* 방금 받은 파일 알림(화면 아래 왼쪽). */}
+      <FileArrivals />
       <DeskAssignMenu />
       <TerminalOverlay />
       {/* 마크다운 문서 탐색·편집(이슈 #10). 항상 마운트, 각자 store 상태로
@@ -202,6 +205,8 @@ function App() {
             트로피 버튼에서 열리고, modal.kind로 self-gate한다. */}
         <AwardsDialog />
         <RolesDialog />
+        {/* 머신 간 파일 보내기(하단 바 📁·탭 메뉴·원격 대화 창). */}
+        <FilesDialog />
       </div>
     </div>
   );

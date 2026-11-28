@@ -306,6 +306,8 @@ const impl: Partial<AgentOfficeApi> = {
   onActivity: (cb) => subscribe(Events.activityEvent, cb),
   onTurnUsage: (cb) => subscribe(Events.turnUsage, cb),
   onLinkTask: (cb) => subscribe(Events.linkTask, cb),
+  onFileTransfers: (cb) => subscribe(Events.fileTransfers, cb),
+  onFileReceived: (cb) => subscribe(Events.fileReceived, cb),
   onLinkDiscussionSession: (cb) => subscribe(Events.linkDiscussionSession, cb),
   onAppSettingsChanged: (cb) => subscribe(Events.appSettingsChanged, cb),
   appendSessionTurn() {},
@@ -345,6 +347,29 @@ const impl: Partial<AgentOfficeApi> = {
     return { ...status, host: status.host && { ...status.host, pairing: { code: "ABCDEFGH", expiresAt: Date.now() + 5 * 60_000 } } };
   },
   async linkWork() { return {}; },
+  async filesStatus() {
+    return { config: { receiveEnabled: true }, receiveDir: "/Users/me/Downloads/Agent Office", machineId: "m-host", machineName: "Studio", linked: true };
+  },
+  async filesConfigure(config) {
+    return { config, receiveDir: config.receiveDir ?? "/Users/me/Downloads/Agent Office", machineId: "m-host", machineName: "Studio", linked: true };
+  },
+  async filesTargets() { return scenario.fileTargets ?? []; },
+  async filesList() { return scenario.fileTransfers ?? []; },
+  async filesSend(request) {
+    const target = (scenario.fileTargets ?? []).find((t) => t.machineId === request.machineId && t.agentId === request.agentId);
+    return {
+      id: "f-new", createdAt: Date.now(), updatedAt: Date.now(),
+      from: { machineId: "m-host", machineName: "Studio" },
+      to: { machineId: request.machineId, machineName: target?.machineName ?? "?", agentId: request.agentId, agentName: target?.agentName },
+      items: request.paths.map((p) => p.split("/").pop() ?? p), files: [], totalBytes: 0, doneBytes: 0,
+      state: "preparing", notify: request.notify, via: "app",
+    };
+  },
+  async filesCancel() {},
+  async filesResume() {},
+  async filesForget() {},
+  async filesPick() { return ["/Users/me/proj/report.pdf"]; },
+  async filesReveal() {},
   async linkTaskReport() {},
   async linkTaskStates() { return []; },
   async linkRemote() {

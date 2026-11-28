@@ -36,6 +36,7 @@ import type {
 } from './settings';
 import type { ApiKeyStatus } from './apiKeys';
 import type { ShellAssistConfig, ShellAssistEndpoint, ShellSuggestion } from './shellAssist';
+import type { FileSendRequest, FilesConfig, FilesStatus, FileTarget, FileTransfer } from './files';
 import type { LinkConfig, LinkDiscussionSessionEvent, LinkStatus, LinkTaskEvent, LinkTaskReport, LinkWorkKind, RemoteOffice } from './link';
 import type { AwardRecord, AwardSpeech, AwardsFile } from './awards';
 import type { DiaryEntry, WorkLogItem } from './diary';
@@ -280,6 +281,24 @@ export interface AgentOfficeApi {
   linkTaskReport(report: LinkTaskReport): Promise<void>;
   /** 호스트: 붙은 머신들이 마지막으로 올린 받은 업무 진행 상태. */
   linkTaskStates(): Promise<LinkTaskEvent[]>;
+  /** 파일 보내기 설정·받은 파일 폴더. */
+  filesStatus(): Promise<FilesStatus>;
+  filesConfigure(config: FilesConfig): Promise<FilesStatus>;
+  /** 보낼 수 있는 머신·캐릭터(이 머신이 먼저). */
+  filesTargets(): Promise<FileTarget[]>;
+  /** 보낸·받은 기록(최근 200건). */
+  filesList(): Promise<FileTransfer[]>;
+  /** 보내기를 시작한다. 대상이 끊겼거나 받기를 껐으면 이유 코드로 거절한다. */
+  filesSend(request: FileSendRequest): Promise<FileTransfer>;
+  filesCancel(id: string): Promise<void>;
+  /** 끊겨 멈춘 전송을 받은 데까지 이어 보낸다. */
+  filesResume(id: string): Promise<void>;
+  /** 끝난 기록 한 건을 지운다(받은 파일은 그대로). */
+  filesForget(id: string): Promise<void>;
+  /** 보낼 파일들(또는 폴더들)을 고른다. 취소하면 빈 목록. */
+  filesPick(folders: boolean): Promise<string[]>;
+  /** 받은 파일을 Finder·탐색기에서 보인다. 경로가 없으면 받은 파일 폴더를 연다. */
+  filesReveal(path?: string): Promise<void>;
   /** 셸 캐릭터 LLM 설정(`shell-assist.json`). */
   shellAssistGetConfig(): Promise<ShellAssistConfig>;
   /** 저장하고 다듬은 값을 돌려준다. */
@@ -335,6 +354,8 @@ export interface AgentOfficeApi {
   onLinkTask(cb: (e: LinkTaskEvent) => void): () => void;
   /** 클라이언트: 호스트가 이 머신에 토의 참가자 세션을 열었다·닫았다. */
   onLinkDiscussionSession(cb: (e: LinkDiscussionSessionEvent) => void): () => void;
+  onFileTransfers(cb: (list: FileTransfer[]) => void): () => void;
+  onFileReceived(cb: (t: FileTransfer) => void): () => void;
   /** app-settings-changed(백엔드가 저장한 새 설정 전체) 구독. Returns an unsubscribe function. */
   onAppSettingsChanged(cb: (settings: AppSettings) => void): () => void;
   /** 완료된 턴 1건을 로컬 시계열 로그에 append (fire-and-forget). */
