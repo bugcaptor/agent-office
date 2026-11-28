@@ -8,7 +8,7 @@ const S = {
     notify: { on: "🔔 알림", off: "🔕 알림", hintOn: "데스크톱 알림 켜짐 · 답을 기다리거나 턴이 끝나면 알림(이 화면을 보고 있을 땐 안 보냄) · 눌러서 끄기", hintOff: "데스크톱 알림 꺼짐 · 눌러서 켜기", hintNo: "이 브라우저에서는 알림을 쓸 수 없습니다(HTTPS 주소로 열어야 함)", turnedOn: "데스크톱 알림을 켰습니다", turnedOff: "데스크톱 알림을 껐습니다", denied: "브라우저가 알림을 막았습니다 · 사이트 설정에서 허용하세요", unsupported: "이 브라우저에서는 알림을 쓸 수 없습니다(HTTPS 주소로 열어야 함)", human: (name) => `${name} · 답을 기다림`, done: (name) => `${name} · 턴 끝남` },
     phase: { working: "작업 중", "needs-human": "답을 기다림", idle: "입력 대기", ended: "종료됨", starting: "시작 중", off: "꺼짐", running: "켜짐" },
     clockedOut: "퇴근", back: "← 목록", log: "대화 로그", noLog: "이 터미널에는 읽을 대화 로그가 없습니다(Claude·Codex·Antigravity 전사가 없는 세션).", noItems: "아직 대화가 없습니다.",
-    restart: "터미널 재시작", resume: "이어하기", terminate: "종료", interrupt: "작업 중단(Esc)", ctrlc: "Ctrl-C", launch: "CLI 실행", launchCli: "띄울 CLI", headOpen: "제어 펼치기", headClose: "제어 접기",
+    restart: "터미널 재시작", resume: "이어하기", terminate: "종료", interrupt: "작업 중단(Esc)", ctrlc: "Ctrl-C", launch: "CLI 실행", launchCli: "띄울 CLI", headOpen: "제어 펼치기", headClose: "제어 접기", toTop: "눌러서 맨 위로", miniCost: (cost, turns) => `${cost} · ${turns}턴`,
     again: "한 번 더 눌러 확인", done: "보냈습니다", saved: "저장했습니다", deleted: "삭제했습니다", result: "결과", lines: "줄",
     sentTasks: "보낸 업무", taskState: { in_progress: "진행 중", review: "끝남 · 확인 대기" }, markDone: "완료", markedDone: "완료로 옮겼습니다",
     workNow: "업무 진행 중", workStep: (n, total) => `단계 ${n}/${total}`, workDone: (d, total) => `${d}/${total} 완료`, workAuto: { running: "자동 진행", paused: "자동 진행 멈춤" }, workOpen: "눌러서 업무 탭에서 이 업무 보기",
@@ -65,7 +65,7 @@ const S = {
     notify: { on: "🔔 Alerts", off: "🔕 Alerts", hintOn: "Desktop alerts on · when an agent waits for an answer or finishes a turn (not while you are looking at this page) · tap to turn off", hintOff: "Desktop alerts off · tap to turn on", hintNo: "Alerts aren't available in this browser (open the HTTPS address)", turnedOn: "Desktop alerts on", turnedOff: "Desktop alerts off", denied: "The browser blocked alerts · allow them in site settings", unsupported: "Alerts aren't available in this browser (open the HTTPS address)", human: (name) => `${name} · waiting for an answer`, done: (name) => `${name} · turn finished` },
     phase: { working: "Working", "needs-human": "Waiting for answer", idle: "Waiting for input", ended: "Ended", starting: "Starting", off: "Off", running: "On" },
     clockedOut: "Clocked out", back: "← List", log: "Conversation", noLog: "No conversation log for this terminal (no Claude/Codex/Antigravity transcript).", noItems: "No messages yet.",
-    restart: "Restart terminal", resume: "Resume", terminate: "Terminate", interrupt: "Interrupt (Esc)", ctrlc: "Ctrl-C", launch: "Run CLI", launchCli: "CLI to run", headOpen: "Show controls", headClose: "Hide controls",
+    restart: "Restart terminal", resume: "Resume", terminate: "Terminate", interrupt: "Interrupt (Esc)", ctrlc: "Ctrl-C", launch: "Run CLI", launchCli: "CLI to run", headOpen: "Show controls", headClose: "Hide controls", toTop: "Tap to go to the top", miniCost: (cost, turns) => `${cost} · ${turns} ${turns === 1 ? "turn" : "turns"}`,
     again: "Tap again to confirm", done: "Sent", saved: "Saved", deleted: "Deleted", result: "Result", lines: "lines",
     sentTasks: "Sent tasks", taskState: { in_progress: "In progress", review: "Finished · to review" }, markDone: "Done", markedDone: "Marked done",
     workNow: "Working on task", workStep: (n, total) => `Step ${n}/${total}`, workDone: (d, total) => `${d}/${total} done`, workAuto: { running: "Auto-run", paused: "Auto-run paused" }, workOpen: "Click to open this task in the Tasks tab",
@@ -416,6 +416,7 @@ function render() {
   else if (view.tab === "files" && window.Dash && window.Dash.files) window.Dash.files.render(main);
   else if (view.tab === "talks") main.replaceChildren(...renderTalks());
   else main.replaceChildren(...renderUsage());
+  updateUp();
 }
 function officeChar() {
   const o = officeData || {};
@@ -1746,6 +1747,7 @@ function updateShellView(changed) {
   const head = document.getElementById("head");
   if (!c || !head || !document.getElementById("shell")) { if (changed) render(); return; }
   if (changed) { head.replaceWith(renderHead(c)); window.Dash.shell.update(c); }
+  updateMini();
 }
 function updateAgentView(changed, logMode) {
   const c = currentChar();
@@ -1758,6 +1760,7 @@ function updateAgentView(changed, logMode) {
   refreshCost();
   if (logMode === "reset") document.getElementById("log").replaceWith(renderLog(c.agentId));
   else if (logMode === "append") appendLog(document.getElementById("log"));
+  updateMini();
 }
 function appendLog(box) {
   const agentId = box && box._agent;
@@ -1771,9 +1774,43 @@ function appendLog(box) {
 }
 function updateUp() {
   document.getElementById("up").style.display = view.tab === "chars" && view.agent && window.scrollY > 600 ? "block" : "none";
+  updateMini();
 }
+// 캐릭터 화면에서 머리 카드가 스크롤로 상단 바 밑에 가려지면, 그 자리에 이름·작업 위치·상태·추정 비용만 담은
+// 한 줄 바를 고정해 둔다. 누르면 맨 위로 간다.
+let miniKey = "";
+function miniPlace(c) {
+  if (!c.office) return placeOf(c);
+  return c.session && c.session.state === "running" && c.cwd ? leaf(c.cwd) : S.officeSub;
+}
+function updateMini() {
+  const mini = document.getElementById("mini");
+  const c = view.tab === "chars" && view.agent ? currentChar() : null;
+  const head = c && document.getElementById("head");
+  const hdr = document.querySelector("header");
+  const show = !!head && head.getBoundingClientRect().bottom <= (hdr ? hdr.getBoundingClientRect().bottom : 0);
+  if (mini.hidden === show) mini.hidden = !show;
+  if (!show) return;
+  const [cls, label] = phaseOf(c);
+  const u = c.label && c.label.usage;
+  const place = miniPlace(c), cost = costText(c) ? S.miniCost(u.cost, u.turns) : "";
+  const key = JSON.stringify([c.agentId, c.name, place, cls, label, cost]);
+  if (key === miniKey) return;
+  miniKey = key;
+  mini.title = S.toTop;
+  mini.replaceChildren(
+    el("span", { class: "mini-name", text: c.name }),
+    place && el("span", { class: "mini-place", title: c.office ? c.cwd || "" : cwdOf(c), text: place }),
+    el("span", { class: "chip " + cls, text: label }),
+    cost && el("span", { class: "mini-cost", title: costText(c), text: cost }));
+}
+const toTop = () => window.scrollTo({ top: 0, behavior: "smooth" });
+const miniEl = document.getElementById("mini");
+miniEl.onclick = toTop;
+miniEl.onkeydown = (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); toTop(); } };
 document.getElementById("up").onclick = () => window.scrollTo(0, 0);
 window.addEventListener("scroll", updateUp, { passive: true });
+window.addEventListener("resize", updateMini);
 function refreshNow() { setTimeout(tick, 0); }
 document.addEventListener("visibilitychange", () => { if (!document.hidden) refreshNow(); });
 

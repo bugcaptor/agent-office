@@ -6,7 +6,7 @@
 // CLI 실행 중 재시작 경고, 셸 프롬프트에서 고른 CLI 띄우기, 끝난 업무 완료, 일반 에이전트 새 지시·이어서 보내기,
 // 대화 로그 속 이미지(썸네일·확대), 권한 요청·선택지 카드(AskUserQuestion 답·Bash 허용),
 // 텍스트·이미지 클립보드 복사와 이미지·파일 다운로드, 하단 사용량 바, 생각 중·멈춤 상태 줄,
-// 직접 입력과 보낼 대기열(쌓기·빼기), 로그 위 이 세션 추정 사용량, 화면 테마 토글(브라우저에 저장),
+// 직접 입력과 보낼 대기열(쌓기·빼기), 로그 위 이 세션 추정 사용량, 스크롤하면 상단에 붙는 이름·위치·비용 한 줄 바(누르면 맨 위로), 화면 테마 토글(브라우저에 저장),
 // 목록·업무 탭 진행 중 카드의 활성 캐릭터 로그 미리보기(접기·세션이 바뀌면 다시 펼침), 스플릿뷰(칸 격자·완료로 내리기·사이드 패널),
 // 목록·상세·스플릿 칸의 진행 중 업무 표시와 플랜 진행도, 머신 연동 호스트의 머신별 구역(끊긴 머신 흐림)과
 // 다른 머신 캐릭터 화면(보기만 — 입력·조작 단추 없음, 권한 요청은 그 머신에서 답하라는 카드).
@@ -318,6 +318,18 @@ await p.locator("#live.thinking .live-dots").waitFor();
 assert.match(await p.locator("#live").textContent(), /생각 중… 1분 1\d초/);
 assert.equal(await p.locator("#cost").textContent(), "이 세션 추정 사용량 · 토큰 11.7K CH(1.7M) · ~$3.45 · 12턴");
 await p.screenshot({ path: `${outDir}/agent-cost.png` });
+// 머리 카드가 스크롤로 가려지면 이름·위치·상태·추정 비용만 담은 한 줄 바가 상단 바 밑에 붙고, 누르면 맨 위로 간다.
+assert.equal(await p.locator("#mini").isVisible(), false, "맨 위에선 미니 바가 없다");
+await p.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
+await p.locator("#mini").waitFor();
+assert.equal(await p.locator("#mini .mini-name").textContent(), "에이다");
+assert.equal(await p.locator("#mini .mini-place").textContent(), "agent-office ⎇ main");
+assert.equal(await p.locator("#mini .mini-cost").textContent(), "~$3.45 · 12턴");
+assert.equal(await p.evaluate(() => Math.round(document.getElementById("mini").getBoundingClientRect().top)), await p.evaluate(() => Math.round(document.querySelector("header").getBoundingClientRect().bottom)), "미니 바는 상단 바 바로 밑");
+await p.screenshot({ path: `${outDir}/agent-mini.png` });
+await p.locator("#mini").click();
+await p.waitForFunction(() => window.scrollY === 0);
+await p.locator("#mini").waitFor({ state: "hidden" });
 // 직접 입력: 작업 중이라 대기열에 쌓이고, 뺄 수 있다.
 await p.fill("#msgtext", "다음엔 테스트도 돌려 줘");
 await p.getByRole("button", { name: "대기열에 넣기" }).click();
